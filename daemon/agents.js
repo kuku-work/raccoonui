@@ -102,11 +102,16 @@ export const AGENT_DEFS = [
       { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
       { id: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
     ],
-    buildArgs: (prompt, _imagePaths, extraAllowedDirs = [], options = {}) => {
+    // Prompt delivered via stdin (`claude -p` reads from stdin when no
+    // positional prompt argument is given — documented as "useful for
+    // pipes" in `claude --help`). Avoids Windows `spawn ENAMETOOLONG`
+    // for the composed prompt (base output contract + design system +
+    // skill body + user message), which routinely exceeds CreateProcess's
+    // ~32 KB combined-command-line cap for skills like `magazine-web-ppt`.
+    buildArgs: (_prompt, _imagePaths, extraAllowedDirs = [], options = {}) => {
       const caps = agentCapabilities.get('claude') || {};
       const args = [
         '-p',
-        prompt,
         '--output-format',
         'stream-json',
         '--verbose',
@@ -131,6 +136,7 @@ export const AGENT_DEFS = [
       args.push('--permission-mode', 'bypassPermissions');
       return args;
     },
+    promptViaStdin: true,
     streamFormat: 'claude-stream-json',
   },
   {
