@@ -17,6 +17,9 @@
     "preview": "pnpm build && node daemon/cli.js --no-open",
     "test:e2e:live": "node --test scripts/runtime-adapter.e2e.live.test.mjs",
     "test": "vitest run",
+    "test:ui:clean": "node scripts/reset-e2e-artifacts.mjs",
+    "test:ui": "npm run test:ui:clean && playwright test -c e2e/playwright.config.ts",
+    "test:ui:headed": "npm run test:ui:clean && playwright test -c e2e/playwright.config.ts --headed",
     "typecheck": "tsc -b --noEmit",
     "start": "npm run build && node daemon/cli.js",
     "test:run": "vitest run"
@@ -32,6 +35,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20.17.10",

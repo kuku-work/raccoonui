@@ -211,6 +211,7 @@ export function ChatPane({
             <button
               type="button"
               className="icon-only"
+              data-testid="conversation-history-trigger"
               title={
                 activeConversation?.title
                   ? `${t('chat.conversationsTitle')} · ${activeConversation.title}`
@@ -227,7 +228,7 @@ export function ChatPane({
               ) : null}
             </button>
             {showConvList ? (
-              <div className="chat-history-menu" role="menu">
+              <div className="chat-history-menu" role="menu" data-testid="conversation-history-menu">
                 <div className="chat-history-menu-head">
                   <span className="chat-history-menu-title">
                     {t('chat.conversationsHeading')}
@@ -236,6 +237,7 @@ export function ChatPane({
                     <button
                       type="button"
                       className="chat-history-new"
+                      data-testid="conversation-history-new"
                       onClick={() => {
                         onNewConversation();
                         setShowConvList(false);
@@ -246,7 +248,7 @@ export function ChatPane({
                     </button>
                   ) : null}
                 </div>
-                <div className="chat-history-list">
+                <div className="chat-history-list" data-testid="conversation-list">
                   {conversations.length === 0 ? (
                     <div className="chat-history-empty">
                       {t('chat.emptyConversations')}
@@ -274,6 +276,7 @@ export function ChatPane({
           <button
             type="button"
             className="icon-only"
+            data-testid="new-conversation"
             title={t('chat.newConversationsTitle')}
             aria-label={t('chat.newConversation')}
             onClick={onNewConversation}
@@ -411,7 +414,10 @@ function ConversationRow({
   const displayTitle =
     conversation.title || t('chat.untitledConversation');
   return (
-    <div className={`chat-conv-item${active ? ' active' : ''}`}>
+    <div
+      className={`chat-conv-item${active ? ' active' : ''}`}
+      data-testid={`conversation-item-${conversation.id}`}
+    >
       {editing && onRename ? (
         <input
           autoFocus
@@ -436,6 +442,7 @@ function ConversationRow({
         <button
           type="button"
           className="chat-conv-item-name"
+          data-testid={`conversation-select-${conversation.id}`}
           style={{ background: 'transparent', border: 'none', padding: 0, textAlign: 'left' }}
           onClick={onSelect}
           onDoubleClick={() => {
@@ -451,6 +458,7 @@ function ConversationRow({
       <button
         type="button"
         className="chat-conv-item-del"
+        data-testid={`conversation-delete-${conversation.id}`}
         title={t('chat.deleteConversation')}
         onClick={(e) => {
           e.stopPropagation();

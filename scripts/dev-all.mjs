@@ -17,36 +17,19 @@
 // the switch so the user notices.
 
 import { spawn } from 'node:child_process';
-import net from 'node:net';
-
-const HOST = '127.0.0.1';
-const PORT_SEARCH_RANGE = 50;
-
-function isPortFree(port, host = HOST) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.unref();
-    server.once('error', () => resolve(false));
-    server.listen({ port, host, exclusive: true }, () => {
-      server.close(() => resolve(true));
-    });
-  });
-}
-
-async function findFreePort(start, label) {
-  for (let port = start; port < start + PORT_SEARCH_RANGE; port++) {
-    if (await isPortFree(port)) return port;
-  }
-  throw new Error(
-    `[dev:all] could not find a free ${label} port near ${start} (tried ${PORT_SEARCH_RANGE})`,
-  );
-}
+import { findFreePort } from './resolve-dev-ports.mjs';
 
 const desiredDaemon = Number(process.env.OD_PORT) || 7456;
 const desiredNext = Number(process.env.NEXT_PORT) || 3000;
+const strictDaemonPort = process.env.OD_PORT_STRICT === '1';
+const strictNextPort = process.env.NEXT_PORT_STRICT === '1';
 
-const daemonPort = await findFreePort(desiredDaemon, 'daemon');
-const nextPort = await findFreePort(desiredNext, 'next');
+const daemonPort = strictDaemonPort
+  ? desiredDaemon
+  : await findFreePort(desiredDaemon, 'daemon');
+const nextPort = strictNextPort
+  ? desiredNext
+  : await findFreePort(desiredNext, 'next');
 
 if (daemonPort !== desiredDaemon) {
   console.log(
