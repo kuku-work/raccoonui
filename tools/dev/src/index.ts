@@ -32,6 +32,7 @@ import {
 } from "@open-design/platform";
 
 import {
+  ALL_APPS,
   DEFAULT_START_APPS,
   DEFAULT_STOP_APPS,
   parsePortOption,
@@ -85,6 +86,153 @@ function output(payload: unknown, options: CliOptions = {}): void {
     return;
   }
   printJson(payload);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberArrayField(record: Record<string, unknown> | null, key: string): number[] {
+  const value = record?.[key];
+  return Array.isArray(value) ? value.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry)) : [];
+}
+
+function formatProcessList(pids: readonly number[]): string | null {
+  if (pids.length === 0) return null;
+  const visible = pids.slice(0, 5).join(", ");
+  return pids.length > 5 ? `${visible}, +${pids.length - 5} more` : visible;
+}
+
+function formatStatusSummary(status: unknown): string {
+  const record = asRecord(status);
+  if (record == null) return "status unavailable";
+
+  const parts = [stringField(record, "state") ?? "unknown"];
+  const url = stringField(record, "url");
+  const pid = numberField(record, "pid");
+  const title = stringField(record, "title");
+  const windowVisible = record.windowVisible;
+  if (url != null) parts.push(url);
+  if (pid != null) parts.push(`pid ${pid}`);
+  if (title != null) parts.push(`title ${JSON.stringify(title)}`);
+  if (typeof windowVisible === "boolean") parts.push(`window ${windowVisible ? "visible" : "hidden"}`);
+
+  return parts.join(" · ");
+}
+
+function printStatusEntries(apps: Record<string, unknown>): void {
+  for (const [appName, appStatus] of Object.entries(apps)) {
+    process.stdout.write(`- ${appName}: ${formatStatusSummary(appStatus)}\n`);
+  }
+}
+
+function printStartSection(result: Partial<Record<ToolDevAppName, unknown>>, heading: string): void {
+  process.stdout.write(`${heading}\n`);
+  const entries = Object.entries(result);
+  if (entries.length === 0) {
+    process.stdout.write("(no apps)\n");
+    return;
+  }
+
+  for (const [appName, rawEntry] of entries) {
+    const entry = asRecord(rawEntry);
+    const created = entry?.created;
+    const action = created === true ? "started" : created === false ? "already running" : "ready";
+    process.stdout.write(`- ${appName}: ${action} · ${formatStatusSummary(entry?.status)}\n`);
+    const logPath = entry == null ? null : stringField(entry, "logPath");
+    if (logPath != null) process.stdout.write(`  log: ${logPath}\n`);
+  }
+}
+
+function printStartResult(result: Partial<Record<ToolDevAppName, unknown>>, options: CliOptions, heading = "tools-dev start"): void {
+  if (options.json === true) {
+    printJson(result);
+    return;
+  }
+  printStartSection(result, heading);
+}
+
+function printStopSection(result: Partial<Record<ToolDevAppName, unknown>>, heading: string): void {
+  process.stdout.write(`${heading}\n`);
+  const entries = Object.entries(result);
+  if (entries.length === 0) {
+    process.stdout.write("(no apps)\n");
+    return;
+  }
+
+  for (const [appName, rawEntry] of entries) {
+    const entry = asRecord(rawEntry);
+    const stop = asRecord(entry?.stop);
+    const stoppedPids = formatProcessList(numberArrayField(stop, "stoppedPids"));
+    const remainingPids = formatProcessList(numberArrayField(stop, "remainingPids"));
+    const parts = [entry == null ? "unknown" : stringField(entry, "status") ?? "unknown"];
+    const via = entry == null ? null : stringField(entry, "via");
+    if (via != null) parts.push(`via ${via}`);
+    if (stoppedPids != null) parts.push(`stopped pids ${stoppedPids}`);
+    if (remainingPids != null) parts.push(`remaining pids ${remainingPids}`);
+    process.stdout.write(`- ${appName}: ${parts.join(" · ")}\n`);
+  }
+}
+
+function printStopResult(result: Partial<Record<ToolDevAppName, unknown>>, options: CliOptions, heading = "tools-dev stop"): void {
+  if (options.json === true) {
+    printJson(result);
+    return;
+  }
+  printStopSection(result, heading);
+}
+
+function printRestartResult(result: unknown, options: CliOptions): void {
+  if (options.json === true) {
+    printJson(result);
+    return;
+  }
+
+  const record = asRecord(result);
+  process.stdout.write("tools-dev restart\n");
+  printStopSection((asRecord(record?.stop) ?? {}) as Partial<Record<ToolDevAppName, unknown>>, "Stop");
+  printStartSection((asRecord(record?.start) ?? {}) as Partial<Record<ToolDevAppName, unknown>>, "Start");
+}
+
+function printStatusResult(result: unknown, options: CliOptions, appName: string | undefined): void {
+  if (options.json === true) {
+    printJson(result);
+    return;
+  }
+
+  const record = asRecord(result);
+  const apps = asRecord(record?.apps);
+  if (apps != null) {
+    const namespace = stringField(record ?? {}, "namespace");
+    const statusLabel = stringField(record ?? {}, "status");
+    const details = [namespace == null ? null : `namespace ${namespace}`, statusLabel].filter((entry): entry is string => entry != null);
+    process.stdout.write(`tools-dev status${details.length > 0 ? ` (${details.join(" · ")})` : ""}\n`);
+    printStatusEntries(apps);
+    return;
+  }
+
+  process.stdout.write("tools-dev status\n");
+  process.stdout.write(`- ${appName ?? ALL_APPS.join("/")}: ${formatStatusSummary(result)}\n`);
+}
+
+function printRunForegroundResult(started: Partial<Record<ToolDevAppName, unknown>>, options: CliOptions): void {
+  if (options.json === true) {
+    printJson({ mode: "foreground", started });
+    return;
+  }
+
+  printStartSection(started, "tools-dev run");
+  process.stdout.write("Foreground loop is active. Press Ctrl+C to stop.\n");
 }
 
 function runtimeLookup(config: ToolDevConfig) {
@@ -524,6 +672,29 @@ function printLogs(result: LogResult | Record<string, LogResult>, options: CliOp
   }
 }
 
+function printCheckResult(result: unknown, options: CliOptions): void {
+  if (options.json === true) {
+    printJson(result);
+    return;
+  }
+
+  const record = asRecord(result);
+  const namespace = record == null ? null : stringField(record, "namespace");
+  process.stdout.write(`tools-dev check${namespace == null ? "" : ` (namespace ${namespace})`}\n`);
+
+  const apps = asRecord(record?.apps);
+  if (apps != null) {
+    process.stdout.write("Status\n");
+    printStatusEntries(apps);
+  }
+
+  const logs = asRecord(record?.logs);
+  if (logs != null) {
+    process.stdout.write("\nLogs\n");
+    printLogs(logs as Record<string, LogResult>, options);
+  }
+}
+
 function parseTimeoutMs(value: string | undefined): number | undefined {
   if (value == null) return undefined;
   const seconds = Number(value);
@@ -594,7 +765,7 @@ async function runForeground(config: ToolDevConfig, appName: string | undefined,
   const targets = resolveRunApps(appName);
   const foregroundOptions = { ...options, parentPid: process.pid };
   const started = await runSequential(targets, (target) => startApp(config, target, foregroundOptions));
-  output({ mode: "foreground", started }, options);
+  printRunForegroundResult(started, options);
 
   let shuttingDown = false;
   const keepAlive = setInterval(() => undefined, 60_000);
@@ -631,7 +802,7 @@ addPortOptions(addSharedOptions(cli.command("start [app]", "Start daemon, web, d
     const config = resolveToolDevConfig(options);
     const targets = resolveStartApps(appName);
     const result = await runSequential(targets, (target) => startApp(config, target, options));
-    output(result, options);
+    printStartResult(result, options);
   },
 );
 
@@ -643,7 +814,7 @@ addPortOptions(addSharedOptions(cli.command("run [app]", "Start apps and keep th
 
 addSharedOptions(cli.command("status [app]", "Show app status for daemon, web, desktop, or all")).action(
   async (appName: string | undefined, options: CliOptions) => {
-    output(await status(resolveToolDevConfig(options), appName), options);
+    printStatusResult(await status(resolveToolDevConfig(options), appName), options, appName);
   },
 );
 
@@ -652,13 +823,13 @@ addSharedOptions(cli.command("stop [app]", "Stop daemon, web, desktop, or all wh
     const config = resolveToolDevConfig(options);
     const targets = resolveStopApps(appName);
     const result = await runSequential(targets, (target) => stopApp(config, target));
-    output(result, options);
+    printStopResult(result, options);
   },
 );
 
 addPortOptions(addSharedOptions(cli.command("restart [app]", "Restart daemon, web, desktop, or all when app is omitted"))).action(
   async (appName: string | undefined, options: CliOptions) => {
-    output(await restartTargets(resolveToolDevConfig(options), appName, options), options);
+    printRestartResult(await restartTargets(resolveToolDevConfig(options), appName, options), options);
   },
 );
 
@@ -694,7 +865,7 @@ addSharedOptions(cli.command("check [app]", "Print status and recent logs for qu
     const logs = Object.fromEntries(
       await Promise.all(targets.map(async (target) => [target, await readLogs(config, target)] as const)),
     );
-    output({ apps, logs, namespace: config.namespace }, options);
+    printCheckResult({ apps, logs, namespace: config.namespace }, options);
   },
 );
 
