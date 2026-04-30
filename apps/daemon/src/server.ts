@@ -76,13 +76,38 @@ export function resolveProjectRoot(moduleDir: string): string {
 }
 
 const PROJECT_ROOT = resolveProjectRoot(__dirname);
+const RESOURCE_ROOT_ENV = 'OD_RESOURCE_ROOT';
+
+function resolveDaemonResourceRoot() {
+  const configured = process.env[RESOURCE_ROOT_ENV];
+  return configured && configured.length > 0 ? path.resolve(configured) : null;
+}
+
+function resolveDaemonResourceDir(resourceRoot, segment, fallback) {
+  return resourceRoot ? path.join(resourceRoot, segment) : fallback;
+}
+
+const DAEMON_RESOURCE_ROOT = resolveDaemonResourceRoot();
 // Built web app lives in `out/` — that's where Next.js writes the static
 // export configured in next.config.ts. The folder name used to be `dist/`
 // when this project shipped with Vite; the daemon serves whatever the
 // frontend toolchain emits, no further config needed.
 const STATIC_DIR = path.join(PROJECT_ROOT, 'apps', 'web', 'out');
-const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
-const DESIGN_SYSTEMS_DIR = path.join(PROJECT_ROOT, 'design-systems');
+const SKILLS_DIR = resolveDaemonResourceDir(
+  DAEMON_RESOURCE_ROOT,
+  'skills',
+  path.join(PROJECT_ROOT, 'skills'),
+);
+const DESIGN_SYSTEMS_DIR = resolveDaemonResourceDir(
+  DAEMON_RESOURCE_ROOT,
+  'design-systems',
+  path.join(PROJECT_ROOT, 'design-systems'),
+);
+const FRAMES_DIR = resolveDaemonResourceDir(
+  DAEMON_RESOURCE_ROOT,
+  'frames',
+  path.join(PROJECT_ROOT, 'assets', 'frames'),
+);
 const RUNTIME_DATA_DIR = process.env.OD_DATA_DIR
   ? path.resolve(PROJECT_ROOT, process.env.OD_DATA_DIR)
   : path.join(PROJECT_ROOT, '.od');
@@ -840,7 +865,7 @@ export async function startServer({ port = 7456, returnServer = false } = {}) {
   // Skills can compose multi-screen / multi-device layouts by pointing at
   // these files via `<iframe src="/frames/iphone-15-pro.html?screen=...">`.
   // No mtime-based caching — frames are static and small.
-  app.use('/frames', express.static(path.join(PROJECT_ROOT, 'assets', 'frames')));
+  app.use('/frames', express.static(FRAMES_DIR));
 
   // Project files. Each project owns a flat folder under .od/projects/<id>/
   // containing every file the user has uploaded, pasted, sketched, or that

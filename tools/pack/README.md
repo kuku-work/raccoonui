@@ -1,5 +1,12 @@
 # tools/pack
 
-Minimal placeholder for the future `tools-pack` workstream.
+Local packaging control plane for Open Design.
 
-No active packaging command, release logic, package manifest, or root script lives here yet.
+The first active slice is mac-first and intentionally small:
+
+- `tools-pack mac build --to app`
+- `tools-pack mac start`
+- `tools-pack mac stop`
+- `tools-pack mac logs`
+
+Release publishing, signing, installers, and Windows packaging are later phases.

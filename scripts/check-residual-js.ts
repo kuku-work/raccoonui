@@ -27,8 +27,11 @@ const allowedExactPaths = new Set([
   "packages/sidecar/esbuild.config.mjs",
   "packages/sidecar-proto/esbuild.config.mjs",
   "scripts/postinstall.mjs",
+  "apps/packaged/esbuild.config.mjs",
   "tools/dev/bin/tools-dev.mjs",
   "tools/dev/esbuild.config.mjs",
+  "tools/pack/bin/tools-pack.mjs",
+  "tools/pack/esbuild.config.mjs",
 ]);
 
 const allowedPathPrefixes = [

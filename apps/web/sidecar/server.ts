@@ -1,4 +1,11 @@
-import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer as createHttpServer,
+  request as createHttpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
+import { request as createHttpsRequest } from "node:https";
 import { readFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -20,6 +27,7 @@ import {
 } from "@open-design/sidecar";
 
 const HOST = "127.0.0.1";
+const DAEMON_PORT_ENV = SIDECAR_ENV.DAEMON_PORT;
 const WEB_PORT_ENV = SIDECAR_ENV.WEB_PORT;
 const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
 const require = createRequire(import.meta.url);
@@ -58,10 +66,57 @@ function resolveWebRoot(): string {
 function parsePort(value: string | undefined): number {
   if (value == null || value.trim().length === 0) return 0;
   const port = Number(value);
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error(`${WEB_PORT_ENV} must be an integer between 1 and 65535`);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`${WEB_PORT_ENV} must be an integer between 0 and 65535`);
   }
   return port;
+}
+
+function resolveDaemonOrigin(): string | null {
+  const port = parsePort(process.env[DAEMON_PORT_ENV]);
+  return port === 0 ? null : `http://${HOST}:${port}`;
+}
+
+function shouldProxyToDaemon(requestUrl: string | undefined): boolean {
+  if (requestUrl == null) return false;
+  const pathname = new URL(requestUrl, `http://${HOST}`).pathname;
+  return pathname === "/api" || pathname.startsWith("/api/") || pathname === "/artifacts" || pathname.startsWith("/artifacts/") || pathname === "/frames" || pathname.startsWith("/frames/");
+}
+
+async function proxyToDaemon(
+  daemonOrigin: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const target = new URL(request.url ?? "/", daemonOrigin);
+  const proxyRequestFactory = target.protocol === "https:" ? createHttpsRequest : createHttpRequest;
+  const headers = { ...request.headers, host: target.host };
+
+  await new Promise<void>((resolveProxy) => {
+    const proxyRequest = proxyRequestFactory(
+      target,
+      {
+        headers,
+        method: request.method,
+      },
+      (proxyResponse) => {
+        response.writeHead(proxyResponse.statusCode ?? 502, proxyResponse.headers);
+        proxyResponse.pipe(response);
+        proxyResponse.on("end", resolveProxy);
+      },
+    );
+
+    proxyRequest.on("error", (error) => {
+      if (!response.headersSent) {
+        response.statusCode = 502;
+        response.setHeader("content-type", "text/plain; charset=utf-8");
+      }
+      response.end(error instanceof Error ? error.message : String(error));
+      resolveProxy();
+    });
+
+    request.pipe(proxyRequest);
+  });
 }
 
 async function prepareNextApp(app: { prepare(): Promise<void> }, dir: string): Promise<void> {
@@ -124,8 +179,17 @@ export async function startWebSidecar(runtime: SidecarRuntimeContext<SidecarStam
   const app = createNextServer({ dev: runtime.mode === "dev", dir });
   await prepareNextApp(app, dir);
 
+  const daemonOrigin = resolveDaemonOrigin();
   const handleRequest = app.getRequestHandler();
   const httpServer = createHttpServer((request, response) => {
+    if (daemonOrigin != null && shouldProxyToDaemon(request.url)) {
+      void proxyToDaemon(daemonOrigin, request, response).catch((error: unknown) => {
+        response.statusCode = 502;
+        response.end(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+
     void handleRequest(request, response).catch((error: unknown) => {
       response.statusCode = 500;
       response.end(error instanceof Error ? error.message : String(error));
