@@ -84,10 +84,12 @@ export async function buildDeployFileSet(projectsRoot, projectId, entryName) {
 
   const entry = await readProjectFile(projectsRoot, projectId, entryPath);
   const html = entry.buffer.toString('utf8');
+  const entryBase = path.posix.dirname(entryPath);
+  const deployHtml = rewriteEntryHtmlReferences(html, entryBase);
   const files = new Map();
   files.set('index.html', {
     file: 'index.html',
-    data: entry.buffer,
+    data: Buffer.from(deployHtml, 'utf8'),
     contentType: entry.mime,
     sourcePath: entryPath,
   });
@@ -97,11 +99,11 @@ export async function buildDeployFileSet(projectsRoot, projectId, entryName) {
   const invalid = [];
   const pending = extractHtmlReferences(html).map((ref) => ({
     ref,
-    base: path.posix.dirname(entryPath),
+    base: entryBase,
   }));
 
   for (const manifestRef of entry.artifactManifest?.supportingFiles ?? []) {
-    pending.push({ ref: manifestRef, base: path.posix.dirname(entryPath) });
+    pending.push({ ref: manifestRef, base: entryBase });
   }
 
   while (pending.length > 0) {
@@ -242,6 +244,47 @@ export function resolveReferencedPath(raw, baseDir) {
   if (!withoutQuery) return null;
   if (withoutQuery.startsWith('/')) return withoutQuery.slice(1);
   return path.posix.normalize(path.posix.join(baseDir || '.', withoutQuery));
+}
+
+export function rewriteEntryHtmlReferences(html, baseDir) {
+  return html
+    .replace(/\b(src|href|poster)\s*=\s*(['"])(.*?)\2/gi, (_match, attr, quote, raw) => {
+      return `${attr}=${quote}${rewriteHtmlReference(raw, baseDir)}${quote}`;
+    })
+    .replace(/\bsrcset\s*=\s*(['"])(.*?)\1/gi, (_match, quote, raw) => {
+      return `srcset=${quote}${rewriteSrcset(raw, baseDir)}${quote}`;
+    });
+}
+
+function rewriteSrcset(raw, baseDir) {
+  return String(raw)
+    .split(',')
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) return part;
+      const pieces = trimmed.split(/\s+/);
+      const nextUrl = rewriteHtmlReference(pieces[0], baseDir);
+      return [nextUrl, ...pieces.slice(1)].join(' ');
+    })
+    .join(', ');
+}
+
+function rewriteHtmlReference(raw, baseDir) {
+  if (typeof raw !== 'string') return raw;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('#')) return raw;
+  const resolved = resolveReferencedPath(raw, baseDir);
+  if (!resolved) return raw;
+  const suffix = referenceSuffix(trimmed);
+  return `${resolved}${suffix}`;
+}
+
+function referenceSuffix(raw) {
+  const queryIdx = raw.indexOf('?');
+  const hashIdx = raw.indexOf('#');
+  const suffixIdx =
+    queryIdx === -1 ? hashIdx : hashIdx === -1 ? queryIdx : Math.min(queryIdx, hashIdx);
+  return suffixIdx === -1 ? '' : raw.slice(suffixIdx);
 }
 
 async function pollVercelDeployment(config, id) {

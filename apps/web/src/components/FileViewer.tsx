@@ -255,12 +255,17 @@ function HtmlViewer({
 
   useEffect(() => {
     let cancelled = false;
+    setDeployResult(null);
+    setDeployError(null);
+    setCopiedDeployLink(false);
+    setDeployPhase('idle');
     void fetchProjectDeployments(projectId).then((items) => {
       if (cancelled) return;
       const current = items.find(
         (item) => item.fileName === file.name && item.providerId === 'vercel-self',
       );
       setDeployment(current ?? null);
+      setDeployResult(current ?? null);
     });
     return () => {
       cancelled = true;
@@ -443,10 +448,8 @@ function HtmlViewer({
     const current = deployments.find(
       (item) => item.fileName === file.name && item.providerId === 'vercel-self',
     );
-    if (current) {
-      setDeployment(current);
-      setDeployResult(current);
-    }
+    setDeployment(current ?? null);
+    setDeployResult(current ?? null);
   }
 
   async function saveDeployConfig() {

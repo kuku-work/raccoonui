@@ -13,6 +13,7 @@ import {
   extractHtmlReferences,
   isVercelProtectedResponse,
   resolveReferencedPath,
+  rewriteEntryHtmlReferences,
   waitForReachableDeploymentUrl,
 } from '../src/deploy.js';
 import { ensureProject } from '../src/projects.js';
@@ -61,6 +62,56 @@ describe('deploy file set', () => {
     ]);
   });
 
+  it('rewrites subdirectory html references to preserved project paths', async () => {
+    const { projectsRoot, projectId, dir } = await setupProject();
+    await mkdir(path.join(dir, 'sub', 'assets'), { recursive: true });
+    await writeFile(
+      path.join(dir, 'sub', 'page.html'),
+      '<!doctype html><img src="assets/logo.png?cache=1#mark"><img src="/assets/root.png"><img srcset="assets/small.png 1x, assets/large.png 2x">',
+    );
+    await writeFile(path.join(dir, 'sub', 'assets', 'logo.png'), 'logo');
+    await writeFile(path.join(dir, 'sub', 'assets', 'small.png'), 'small');
+    await writeFile(path.join(dir, 'sub', 'assets', 'large.png'), 'large');
+    await mkdir(path.join(dir, 'assets'));
+    await writeFile(path.join(dir, 'assets', 'root.png'), 'root');
+
+    const files = await buildDeployFileSet(projectsRoot, projectId, 'sub/page.html');
+    const index = files.find((f) => f.file === 'index.html');
+
+    expect(files.map((f) => f.file).sort()).toEqual([
+      'assets/root.png',
+      'index.html',
+      'sub/assets/large.png',
+      'sub/assets/logo.png',
+      'sub/assets/small.png',
+    ]);
+    expect(index?.data.toString('utf8')).toContain('src="sub/assets/logo.png?cache=1#mark"');
+    expect(index?.data.toString('utf8')).toContain('src="/assets/root.png"');
+    expect(index?.data.toString('utf8')).toContain(
+      'srcset="sub/assets/small.png 1x, sub/assets/large.png 2x"',
+    );
+  });
+
+  it('keeps css content unchanged while deploying subdirectory css assets', async () => {
+    const { projectsRoot, projectId, dir } = await setupProject();
+    await mkdir(path.join(dir, 'sub', 'assets'), { recursive: true });
+    await writeFile(path.join(dir, 'sub', 'page.html'), '<link href="style.css" rel="stylesheet">');
+    await writeFile(path.join(dir, 'sub', 'style.css'), 'body{background:url("assets/bg.png")}');
+    await writeFile(path.join(dir, 'sub', 'assets', 'bg.png'), 'bg');
+
+    const files = await buildDeployFileSet(projectsRoot, projectId, 'sub/page.html');
+    const index = files.find((f) => f.file === 'index.html');
+    const css = files.find((f) => f.file === 'sub/style.css');
+
+    expect(files.map((f) => f.file).sort()).toEqual([
+      'index.html',
+      'sub/assets/bg.png',
+      'sub/style.css',
+    ]);
+    expect(index?.data.toString('utf8')).toContain('href="sub/style.css"');
+    expect(css?.data.toString('utf8')).toBe('body{background:url("assets/bg.png")}');
+  });
+
   it('rejects missing referenced local files', async () => {
     const { projectsRoot, projectId, dir } = await setupProject();
     await writeFile(path.join(dir, 'index.html'), '<img src="missing.png">');
@@ -85,6 +136,15 @@ describe('deploy file set', () => {
       'img/bg.png',
       './theme.css',
     ]);
+  });
+
+  it('rewrites only local relative entry references', () => {
+    expect(
+      rewriteEntryHtmlReferences(
+        '<a href="#x"></a><img src="https://x.test/a.png"><img src="data:image/png,abc"><script src="//cdn.test/a.js"></script><img src="asset.png">',
+        'sub',
+      ),
+    ).toContain('src="sub/asset.png"');
   });
 });
 
