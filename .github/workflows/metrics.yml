@@ -26,7 +26,9 @@ jobs:
           filename: docs/assets/github-metrics.svg
 
           # Auth: prefers a fine-grained PAT (richer plugins) but falls back to GITHUB_TOKEN.
-          # Add a `METRICS_TOKEN` repository secret to enable traffic / follow-up time plugins.
+          # METRICS_TOKEN (fine-grained PAT) unlocks richer plugins (traffic, follow-up time);
+          # without it, GITHUB_TOKEN is sufficient for core metrics — the traffic / follow-up
+          # plugins simply silently no-op and the rest of the SVG still renders.
           token: ${{ secrets.METRICS_TOKEN || secrets.GITHUB_TOKEN }}
           committer_token: ${{ secrets.GITHUB_TOKEN }}
 

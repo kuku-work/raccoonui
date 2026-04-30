@@ -50,7 +50,7 @@ OD 站在四个开源项目的肩膀上：
 | | 你拿到的 |
 |---|---|
 | **Coding-agent CLI（10 套）** | Claude Code · Codex CLI · Cursor Agent · Gemini CLI · OpenCode · Qwen Code · GitHub Copilot CLI · Hermes（ACP）· Kimi CLI（ACP）· Pi（RPC）—— 在 `PATH` 上自动检测，picker 一键切换 |
-| **BYOK 兜底** | OpenAI 兼容代理 `/api/proxy/stream` —— 填 `baseUrl` + `apiKey` + `model`，任意 vendor（Anthropic-via-OpenAI、DeepSeek、Groq、MiMo、OpenRouter、自托管 vLLM…）都能直接当引擎用。daemon 边界拒绝 loopback / link-local / RFC1918 防 SSRF。 |
+| **BYOK 兜底** | OpenAI 兼容代理 `/api/proxy/stream` —— 填 `baseUrl` + `apiKey` + `model`，任意 vendor（Anthropic-via-OpenAI、DeepSeek、Groq、MiMo、OpenRouter、自托管 vLLM，或任何 OpenAI 兼容的 provider）都能直接当引擎用。daemon 边界拒绝 loopback / link-local / RFC1918 防 SSRF。 |
 | **内置 design system** | **72 套** —— 2 套手写起手 + 70 套从 [`awesome-design-md`][acd2] 导入的产品系统（Linear、Stripe、Vercel、Airbnb、Tesla、Notion、Anthropic、Apple、Cursor、Supabase、Figma、小红书…） |
 | **内置 skill** | **31 个** —— 27 个 `prototype` 模式（web-prototype、saas-landing、dashboard、mobile-app、gamified-app、social-carousel、magazine-poster、dating-web、sprite-animation、motion-frames、critique、tweaks、wireframe-sketch、pm-spec、eng-runbook、finance-report、hr-onboarding、invoice、kanban-board、team-okrs…）+ 4 个 `deck` 模式（`guizang-ppt` · `simple-deck` · `replit-deck` · `weekly-update`）。Picker 按 `scenario` 分组：design / marketing / operation / engineering / product / finance / hr / sale / personal。 |
 | **视觉方向** | 5 套精选流派（Editorial Monocle · Modern Minimal · Warm Soft · Tech Utility · Brutalist Experimental），每套自带 OKLch 色板 + 字体栈（[`apps/web/src/prompts/directions.ts`](apps/web/src/prompts/directions.ts)） |

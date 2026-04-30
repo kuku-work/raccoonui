@@ -50,7 +50,7 @@ OD는 네 개의 오픈소스 프로젝트의 어깨 위에 서 있습니다:
 | | 제공 내용 |
 |---|---|
 | **코딩 에이전트 CLI(10개)** | Claude Code · Codex CLI · Cursor Agent · Gemini CLI · OpenCode · Qwen Code · GitHub Copilot CLI · Hermes(ACP) · Kimi CLI(ACP) · Pi(RPC) — `PATH`에서 자동 감지, 한 번의 클릭으로 전환 |
-| **BYOK 폴백** | OpenAI 호환 프록시 `/api/proxy/stream` — `baseUrl` + `apiKey` + `model`만 붙여 넣으면 어떤 벤더(Anthropic-via-OpenAI 어댑터, DeepSeek, Groq, MiMo, OpenRouter, 자체 호스팅 vLLM…)든 엔진이 됩니다. daemon 경계에서 내부 IP / SSRF를 차단합니다. |
+| **BYOK 폴백** | OpenAI 호환 프록시 `/api/proxy/stream` — `baseUrl` + `apiKey` + `model`만 붙여 넣으면 어떤 벤더(Anthropic-via-OpenAI 어댑터, DeepSeek, Groq, MiMo, OpenRouter, 자체 호스팅 vLLM, 또는 OpenAI 호환 프로바이더 무엇이든)든 엔진이 됩니다. daemon 경계에서 내부 IP / SSRF를 차단합니다. |
 | **내장 디자인 시스템** | **72개** — 2개의 수작업 스타터 + [`awesome-design-md`][acd2]에서 가져온 70개의 제품 시스템(Linear, Stripe, Vercel, Airbnb, Tesla, Notion, Anthropic, Apple, Cursor, Supabase, Figma, Xiaohongshu …) |
 | **내장 Skill** | **31개** — `prototype` 모드 27개(web-prototype, saas-landing, dashboard, mobile-app, gamified-app, social-carousel, magazine-poster, dating-web, sprite-animation, motion-frames, critique, tweaks, wireframe-sketch, pm-spec, eng-runbook, finance-report, hr-onboarding, invoice, kanban-board, team-okrs …) + `deck` 모드 4개(`guizang-ppt` · `simple-deck` · `replit-deck` · `weekly-update`). picker에서 `scenario`로 그룹화: design / marketing / operation / engineering / product / finance / hr / sale / personal. |
 | **시각적 방향** | 5개의 엄선된 학파(Editorial Monocle · Modern Minimal · Warm Soft · Tech Utility · Brutalist Experimental) — 각각 결정론적 OKLch 팔레트 + 폰트 스택 제공([`apps/web/src/prompts/directions.ts`](apps/web/src/prompts/directions.ts)) |
