@@ -40,7 +40,9 @@ function addSharedOptions(command: CacCommand) {
 }
 
 function addBuildOptions(command: CacCommand) {
-  return command.option("--to <target>", "build target: all|app|dmg|zip (default: all)");
+  return command
+    .option("--signed", "build a signed/notarized mac artifact")
+    .option("--to <target>", "build target: all|app|dmg|zip (default: all)");
 }
 
 const cli = cac("tools-pack");

@@ -32,6 +32,7 @@ const allowedExactPaths = new Set([
   "tools/dev/esbuild.config.mjs",
   "tools/pack/bin/tools-pack.mjs",
   "tools/pack/esbuild.config.mjs",
+  "tools/pack/resources/mac/notarize.cjs",
 ]);
 
 const allowedPathPrefixes = [

@@ -21,6 +21,7 @@ export type ToolPackCliOptions = {
   dir?: string;
   json?: boolean;
   namespace?: string;
+  signed?: boolean;
   to?: string;
 };
 
@@ -45,6 +46,7 @@ export type ToolPackConfig = {
   namespace: string;
   platform: ToolPackPlatform;
   roots: ToolPackRoots;
+  signed: boolean;
   to: ToolPackBuildOutput;
   workspaceRoot: string;
 };
@@ -112,6 +114,7 @@ export function resolveToolPackConfig(
       },
       toolPackRoot,
     },
+    signed: options.signed === true,
     to: resolveToolPackBuildOutput(options.to),
     workspaceRoot: WORKSPACE_ROOT,
   };

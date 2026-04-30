@@ -20,7 +20,7 @@ This file is the single source of truth for agents entering this repository. Rea
 - `packages/contracts` is the pure TypeScript web/daemon app contract layer.
 - `packages/sidecar-proto` owns the Open Design sidecar business protocol; `packages/sidecar` owns the generic sidecar runtime; `packages/platform` owns generic OS process primitives.
 - `tools/dev` is the local development lifecycle control plane.
-- `tools/pack` is the local packaged build/start/stop/logs control plane; the active slice is mac-first `.app` packaging.
+- `tools/pack` is the local packaged build/start/stop/logs control plane and mac beta release artifact preparation surface.
 - `e2e` contains Playwright UI specs and Vitest/jsdom integration tests.
 
 ## Inactive or placeholder directories

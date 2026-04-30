@@ -26,6 +26,7 @@ import {
 } from "@open-design/platform";
 
 import type { ToolPackBuildOutput, ToolPackConfig } from "./config.js";
+import { macResources } from "./resources.js";
 
 const execFileAsync = promisify(execFile);
 const PRODUCT_NAME = "Open Design";
@@ -224,6 +225,15 @@ async function runNpmInstall(appRoot: string): Promise<void> {
   });
 }
 
+async function readPackagedVersion(config: ToolPackConfig): Promise<string> {
+  const packageJsonPath = join(config.workspaceRoot, "apps", "packaged", "package.json");
+  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as { version?: unknown };
+  if (typeof packageJson.version !== "string" || packageJson.version.length === 0) {
+    throw new Error(`missing apps/packaged package version in ${packageJsonPath}`);
+  }
+  return packageJson.version;
+}
+
 async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
   const webNextEnvPath = join(config.workspaceRoot, "apps", "web", "next-env.d.ts");
   const previousWebNextEnv = await readFile(webNextEnvPath, "utf8").catch(() => null);
@@ -299,6 +309,7 @@ async function writeAssembledApp(
   paths: MacPaths,
   packedTarballs: PackedTarballInfo[],
 ): Promise<void> {
+  const packagedVersion = await readPackagedVersion(config);
   await rm(join(config.roots.output.namespaceRoot, "assembled"), { force: true, recursive: true });
   await mkdir(paths.assembledAppRoot, { recursive: true });
   const tarballByPackage = Object.fromEntries(
@@ -322,7 +333,7 @@ async function writeAssembledApp(
         name: "open-design-packaged-app",
         private: true,
         productName: PRODUCT_NAME,
-        version: "0.1.0",
+        version: packagedVersion,
       },
       null,
       2,
@@ -369,9 +380,11 @@ async function runElectronBuilder(
   targets: ElectronBuilderTarget[],
 ): Promise<void> {
   const namespaceToken = sanitizeNamespace(config.namespace);
+  const packagedVersion = await readPackagedVersion(config);
   const builderConfig = {
     appId: "io.open-design.desktop",
     artifactName: `${PRODUCT_NAME}-${namespaceToken}.\${ext}`,
+    afterSign: config.signed ? macResources.notarizeHook : undefined,
     asar: false,
     buildDependenciesFromSource: false,
     compression: "store",
@@ -379,6 +392,9 @@ async function runElectronBuilder(
       output: paths.appBuilderOutputRoot,
     },
     dmg: {
+      background: macResources.dmgBackground,
+      icon: macResources.icon,
+      iconSize: 96,
       title: `${PRODUCT_NAME}-${namespaceToken}`,
     },
     electronDist: config.electronDistPath,
@@ -388,7 +404,7 @@ async function runElectronBuilder(
       main: "./main.cjs",
       name: "open-design-packaged-app",
       productName: PRODUCT_NAME,
-      version: "0.1.0",
+      version: packagedVersion,
     },
     extraResources: [
       { from: paths.resourceRoot, to: "open-design" },
@@ -397,12 +413,19 @@ async function runElectronBuilder(
     files: ["**/*", "!**/node_modules/.bin", "!**/node_modules/electron{,/**/*}"],
     mac: {
       category: "public.app-category.developer-tools",
-      identity: null,
+      entitlements: config.signed ? macResources.entitlements : undefined,
+      entitlementsInherit: config.signed ? macResources.entitlementsInherit : undefined,
+      gatekeeperAssess: false,
+      hardenedRuntime: config.signed,
+      icon: macResources.icon,
+      identity: config.signed ? undefined : null,
+      notarize: false,
       target: targets,
     },
     nodeGypRebuild: false,
     npmRebuild: false,
     productName: PRODUCT_NAME,
+    icon: macResources.icon,
     publish: [
       {
         provider: "generic",
@@ -427,7 +450,7 @@ async function runElectronBuilder(
     cwd: config.workspaceRoot,
     env: {
       ...process.env,
-      CSC_IDENTITY_AUTO_DISCOVERY: "false",
+      ...(config.signed ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: "false" }),
     },
   });
 }
@@ -453,6 +476,18 @@ async function moveBuilderArtifact(options: {
   await rename(options.sourcePath, options.destinationPath);
   await clearQuarantine(options.destinationPath);
   return options.destinationPath;
+}
+
+async function cleanBuilderScratchMetadata(paths: MacPaths): Promise<void> {
+  const entries = await readdir(paths.appBuilderOutputRoot).catch(() => []);
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry === "latest-mac.yml" || entry.endsWith(".blockmap"))
+      .map(async (entry) => {
+        await rm(join(paths.appBuilderOutputRoot, entry), { force: true, recursive: true });
+      }),
+  );
 }
 
 async function finalizeMacArtifacts(
@@ -487,6 +522,8 @@ async function finalizeMacArtifacts(
     await rename(builderLatestMacYmlPath, paths.latestMacYmlPath);
     latestMacYmlPath = paths.latestMacYmlPath;
   }
+
+  await cleanBuilderScratchMetadata(paths);
 
   return { dmgPath, latestMacYmlPath, zipPath };
 }

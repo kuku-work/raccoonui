@@ -13,7 +13,7 @@ Follow the root `AGENTS.md` and `tools/AGENTS.md` first. This tool owns the repo
 - Product business logic.
 - Sidecar protocol definitions.
 - A second process identity model.
-- Release publishing, updater runtime integration, or signing until the local packaged runtime is stable.
+- Product/business update runtime integration.
 
 ## Rules
 
@@ -21,4 +21,4 @@ Follow the root `AGENTS.md` and `tools/AGENTS.md` first. This tool owns the repo
 - Do not use port numbers in data/log/runtime/cache path decisions. Namespace decides paths; ports are only transient transports.
 - Release artifacts keep canonical `Open Design.app`; local tools-pack installs may use `Open Design.<namespace>.app` only as an install-path/app-bundle naming convention for developer multi-instance validation.
 - Do not let namespace-named `.app` installs change data/log/runtime/cache path conventions.
-- Keep signing/notarization/release publishing/windows out of this local mac packaging loop unless explicitly requested.
+- Pack resource files used by electron-builder belong under `tools/pack/resources/`; do not point pack logic at Downloads, web public assets, docs assets, or other app-owned resource paths.

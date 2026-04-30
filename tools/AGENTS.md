@@ -8,11 +8,12 @@ Follow the root `AGENTS.md` first. This file only records module-level boundarie
 - `pnpm tools-dev` manages daemon -> web -> desktop.
 - `pnpm tools-dev run web` runs foreground daemon + web for the Playwright webServer flow.
 - `pnpm tools-dev inspect desktop ...` inspects the desktop runtime through sidecar IPC.
-- `tools/pack` provides `@open-design/tools-pack` and the `tools-pack` bin. The active slice is mac-first packaged artifact build/install/start/stop/logs/uninstall/cleanup.
+- `tools/pack` provides `@open-design/tools-pack` and the `tools-pack` bin. The active slice is mac-first packaged artifact build/install/start/stop/logs/uninstall/cleanup plus beta release artifact preparation.
 
 ## Packaging scope
 
-- Keep `tools-pack` focused on local packaging/runtime control. Release workflows, signing/notarization, updater runtime integration, and Windows packaging should follow after the mac local artifact loop is stable.
+- Keep `tools-pack` focused on mac packaging/runtime control and release artifact preparation. Runtime updater integration and Windows packaging remain later phases.
+- Pack-specific Electron builder resources belong under `tools/pack/resources/`; do not reference app/docs/download assets directly from pack logic.
 - Namespace controls packaged data/log/runtime/cache paths. Ports are transient transport details and must not participate in path decisions.
 - The package/build boundary of root `pnpm build` is intentionally unchanged in this round and should be handled by the future `tools-pack` task.
 
