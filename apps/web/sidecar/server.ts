@@ -7,15 +7,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  SIDECAR_ENV,
+  SIDECAR_MESSAGES,
+  normalizeWebSidecarMessage,
+  type SidecarStamp,
+  type WebStatusSnapshot,
+} from "@open-design/contracts/sidecar";
+import {
   createJsonIpcServer,
   type JsonIpcServerHandle,
   type SidecarRuntimeContext,
-  type WebStatusSnapshot,
 } from "@open-design/sidecar";
 
 const HOST = "127.0.0.1";
-const WEB_PORT_ENV = "OD_WEB_PORT";
-const TOOLS_DEV_PARENT_PID_ENV = "OD_TOOLS_DEV_PARENT_PID";
+const WEB_PORT_ENV = SIDECAR_ENV.WEB_PORT;
+const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
 const require = createRequire(import.meta.url);
 const createNextServer = require("next") as (options: { dev: boolean; dir: string }) => {
   close?: () => Promise<void>;
@@ -113,7 +119,7 @@ function attachParentMonitor(stop: () => Promise<void>): void {
   timer.unref();
 }
 
-export async function startWebSidecar(runtime: SidecarRuntimeContext): Promise<WebSidecarHandle> {
+export async function startWebSidecar(runtime: SidecarRuntimeContext<SidecarStamp>): Promise<WebSidecarHandle> {
   const dir = resolveWebRoot();
   const app = createNextServer({ dev: runtime.mode === "dev", dir });
   await prepareNextApp(app, dir);
@@ -154,15 +160,17 @@ export async function startWebSidecar(runtime: SidecarRuntimeContext): Promise<W
 
   ipcServer = await createJsonIpcServer({
     socketPath: runtime.ipc,
-    handler: async (message: { type?: string }) => {
-      if (message?.type === "status") return { ...state };
-      if (message?.type === "shutdown") {
-        setImmediate(() => {
-          void stop().finally(() => process.exit(0));
-        });
-        return { accepted: true };
+    handler: async (message: unknown) => {
+      const request = normalizeWebSidecarMessage(message);
+      switch (request.type) {
+        case SIDECAR_MESSAGES.STATUS:
+          return { ...state };
+        case SIDECAR_MESSAGES.SHUTDOWN:
+          setImmediate(() => {
+            void stop().finally(() => process.exit(0));
+          });
+          return { accepted: true };
       }
-      throw new Error(`unknown web sidecar message: ${message?.type}`);
     },
   });
 

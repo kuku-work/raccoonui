@@ -1,90 +1,132 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  APP_KEYS,
-  normalizeNamespace,
-  normalizeSidecarStamp,
-  readSidecarStamp,
+  bootstrapSidecarRuntime,
+  createSidecarLaunchEnv,
   resolveAppIpcPath,
   resolveAppRuntimePath,
+  resolveNamespace,
   resolveNamespaceRoot,
+  resolveSidecarBase,
   resolveSourceRuntimeRoot,
-  SIDECAR_SOURCES,
-  STAMP_APP_FLAG,
-  STAMP_IPC_FLAG,
-  STAMP_MODE_FLAG,
-  STAMP_NAMESPACE_FLAG,
-  STAMP_SOURCE_FLAG,
+  type SidecarContractDescriptor,
+  type SidecarStampShape,
 } from "./index.js";
 
-const validStamp = {
-  app: APP_KEYS.WEB,
-  ipc: "/tmp/open-design/ipc/contract-check/web.sock",
-  mode: "dev" as const,
-  namespace: "contract-check",
-  source: SIDECAR_SOURCES.TOOLS_DEV,
+type FakeStamp = SidecarStampShape & {
+  app: "api" | "ui";
+  mode: "dev" | "prod";
+  source: "tool" | "pack";
 };
 
-describe("normalizeNamespace", () => {
-  it("accepts the explicit namespace contract", () => {
-    expect(normalizeNamespace("contract-check_1.alpha")).toBe("contract-check_1.alpha");
-  });
+const fakeContract: SidecarContractDescriptor<FakeStamp> = {
+  defaults: {
+    host: "127.0.0.1",
+    ipcBase: "/tmp/fake-product/ipc",
+    namespace: "default",
+    projectTmpDirName: ".fake-tmp",
+    windowsPipePrefix: "fake-product",
+  },
+  env: {
+    base: "FAKE_BASE",
+    ipcBase: "FAKE_IPC_BASE",
+    ipcPath: "FAKE_IPC_PATH",
+    namespace: "FAKE_NAMESPACE",
+    source: "FAKE_SOURCE",
+  },
+  normalizeApp(value) {
+    if (value === "api" || value === "ui") return value;
+    throw new Error(`unsupported fake app: ${String(value)}`);
+  },
+  normalizeNamespace(value) {
+    if (typeof value !== "string" || !/^[a-z0-9-]+$/.test(value)) {
+      throw new Error("invalid fake namespace");
+    }
+    return value;
+  },
+  normalizeSource(value) {
+    if (value === "tool" || value === "pack") return value;
+    throw new Error(`unsupported fake source: ${String(value)}`);
+  },
+  normalizeStamp(value) {
+    const stamp = value as Partial<FakeStamp>;
+    return {
+      app: this.normalizeApp(stamp.app),
+      ipc: String(stamp.ipc),
+      mode: stamp.mode === "prod" ? "prod" : "dev",
+      namespace: this.normalizeNamespace(stamp.namespace),
+      source: this.normalizeSource(stamp.source),
+    };
+  },
+};
 
-  it("rejects path-like or whitespace namespaces", () => {
-    expect(() => normalizeNamespace("../other")).toThrow();
-    expect(() => normalizeNamespace(" contract-check")).toThrow();
-    expect(() => normalizeNamespace("contract check")).toThrow();
-  });
-});
-
-describe("sidecar path boundary", () => {
-  it("resolves source and namespace runtime roots under project .tmp", () => {
+describe("generic sidecar path boundary", () => {
+  it("uses descriptor defaults instead of Open Design constants", () => {
     const sourceRoot = resolveSourceRuntimeRoot({
-      projectRoot: "/repo/open-design",
-      source: SIDECAR_SOURCES.TOOLS_DEV,
+      contract: fakeContract,
+      projectRoot: "/repo/product",
+      source: "tool",
     });
 
-    expect(sourceRoot).toBe("/repo/open-design/.tmp/tools-dev");
-    expect(resolveNamespaceRoot({ base: sourceRoot, namespace: "contract-check" })).toBe(
-      "/repo/open-design/.tmp/tools-dev/contract-check",
+    expect(sourceRoot).toBe("/repo/product/.fake-tmp/tool");
+    expect(resolveNamespaceRoot({ base: sourceRoot, contract: fakeContract, namespace: "alpha" })).toBe(
+      "/repo/product/.fake-tmp/tool/alpha",
     );
     expect(
       resolveAppRuntimePath({
-        app: APP_KEYS.WEB,
-        fileName: "next",
-        namespaceRoot: "/repo/open-design/.tmp/tools-dev/contract-check",
+        app: "ui",
+        contract: fakeContract,
+        fileName: "cache",
+        namespaceRoot: "/repo/product/.fake-tmp/tool/alpha",
       }),
-    ).toBe("/repo/open-design/.tmp/tools-dev/contract-check/web/next");
+    ).toBe("/repo/product/.fake-tmp/tool/alpha/ui/cache");
   });
 
-  it("resolves fixed namespace app singleton IPC paths", () => {
-    expect(resolveAppIpcPath({ app: APP_KEYS.WEB, namespace: "contract-check" })).toBe(
-      process.platform === "win32"
-        ? "\\\\.\\pipe\\open-design-contract-check-web"
-        : "/tmp/open-design/ipc/contract-check/web.sock",
+  it("resolves descriptor-specific IPC paths", () => {
+    expect(resolveAppIpcPath({ app: "ui", contract: fakeContract, namespace: "alpha" })).toBe(
+      process.platform === "win32" ? "\\\\.\\pipe\\fake-product-alpha-ui" : "/tmp/fake-product/ipc/alpha/ui.sock",
+    );
+  });
+
+  it("resolves namespace and base from descriptor env names", () => {
+    const env = {
+      FAKE_BASE: "/runtime/base",
+      FAKE_NAMESPACE: "selected",
+    };
+
+    expect(resolveNamespace({ contract: fakeContract, env })).toBe("selected");
+    expect(resolveSidecarBase({ contract: fakeContract, env, projectRoot: "/repo/product", source: "tool" })).toBe(
+      "/runtime/base",
     );
   });
 });
 
-describe("sidecar stamp contract", () => {
-  it("accepts exactly app, mode, namespace, ipc, and source", () => {
-    expect(normalizeSidecarStamp(validStamp)).toEqual(validStamp);
-  });
+describe("generic sidecar bootstrap", () => {
+  it("creates and validates launch env from descriptor env names", () => {
+    const stamp: FakeStamp = {
+      app: "api",
+      ipc: "/tmp/fake-product/ipc/alpha/api.sock",
+      mode: "dev",
+      namespace: "alpha",
+      source: "tool",
+    };
 
-  it("rejects legacy or extra stamp fields", () => {
-    expect(() => normalizeSidecarStamp({ ...validStamp, runtimeToken: "legacy" })).toThrow();
-    expect(() => normalizeSidecarStamp({ ...validStamp, role: "web-sidecar" })).toThrow();
-  });
+    expect(createSidecarLaunchEnv({ base: "/runtime/base", contract: fakeContract, extraEnv: {}, stamp })).toEqual({
+      FAKE_BASE: "/runtime/base",
+      FAKE_IPC_PATH: stamp.ipc,
+      FAKE_NAMESPACE: stamp.namespace,
+      FAKE_SOURCE: stamp.source,
+    });
 
-  it("reads the five-field stamp from args", () => {
     expect(
-      readSidecarStamp([
-        `${STAMP_APP_FLAG}=${validStamp.app}`,
-        `${STAMP_MODE_FLAG}=${validStamp.mode}`,
-        `${STAMP_NAMESPACE_FLAG}=${validStamp.namespace}`,
-        `${STAMP_IPC_FLAG}=${validStamp.ipc}`,
-        `${STAMP_SOURCE_FLAG}=${validStamp.source}`,
-      ]),
-    ).toEqual(validStamp);
+      bootstrapSidecarRuntime(stamp, { FAKE_BASE: "/runtime/base" }, { app: "api", contract: fakeContract }),
+    ).toEqual({
+      app: "api",
+      base: "/runtime/base",
+      ipc: stamp.ipc,
+      mode: "dev",
+      namespace: "alpha",
+      source: "tool",
+    });
   });
 });

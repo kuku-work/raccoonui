@@ -14,6 +14,12 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@open-design/contracts':
+        specifier: workspace:0.1.0
+        version: link:../../packages/contracts
+      '@open-design/platform':
+        specifier: workspace:0.1.0
+        version: link:../../packages/platform
       '@open-design/sidecar':
         specifier: workspace:0.1.0
         version: link:../../packages/sidecar
@@ -36,6 +42,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@open-design/contracts':
+        specifier: workspace:0.1.0
+        version: link:../../packages/contracts
+      '@open-design/platform':
+        specifier: workspace:0.1.0
+        version: link:../../packages/platform
       '@open-design/sidecar':
         specifier: workspace:0.1.0
         version: link:../../packages/sidecar
@@ -55,6 +67,12 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.32.1
         version: 0.32.1
+      '@open-design/contracts':
+        specifier: workspace:0.1.0
+        version: link:../../packages/contracts
+      '@open-design/platform':
+        specifier: workspace:0.1.0
+        version: link:../../packages/platform
       '@open-design/sidecar':
         specifier: workspace:0.1.0
         version: link:../../packages/sidecar
@@ -114,11 +132,22 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(jsdom@29.1.0)
 
+  packages/contracts:
+    devDependencies:
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
+      esbuild:
+        specifier: 0.27.7
+        version: 0.27.7
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.12.2)(jsdom@29.1.0)
+
   packages/platform:
-    dependencies:
-      '@open-design/sidecar':
-        specifier: workspace:0.1.0
-        version: link:../sidecar
     devDependencies:
       '@types/node':
         specifier: 24.12.2
@@ -150,6 +179,9 @@ importers:
 
   tools/dev:
     dependencies:
+      '@open-design/contracts':
+        specifier: workspace:0.1.0
+        version: link:../../packages/contracts
       '@open-design/platform':
         specifier: workspace:0.1.0
         version: link:../../packages/platform

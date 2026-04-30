@@ -1,41 +1,82 @@
 import { describe, expect, it } from "vitest";
 
-import { APP_KEYS, SIDECAR_SOURCES } from "@open-design/sidecar";
-
 import {
-  createSidecarStampArgs,
-  matchesSidecarProcess,
-  readSidecarStampFromCommand,
+  createProcessStampArgs,
+  matchesStampedProcess,
+  readProcessStampFromCommand,
+  type ProcessStampContract,
 } from "./index.js";
 
-const stamp = {
-  app: APP_KEYS.DESKTOP,
-  ipc: "/tmp/open-design/ipc/stamp-boundary-a/desktop.sock",
-  mode: "dev" as const,
-  namespace: "stamp-boundary-a",
-  source: SIDECAR_SOURCES.TOOLS_DEV,
+type FakeStamp = {
+  app: "api" | "ui";
+  ipc: string;
+  mode: "dev" | "runtime";
+  namespace: string;
+  source: "tool" | "pack";
 };
 
-describe("sidecar process stamp primitives", () => {
-  it("serializes only the five stamp flags", () => {
-    const args = createSidecarStampArgs(stamp);
+const fakeContract: ProcessStampContract<FakeStamp> = {
+  stampFields: ["app", "mode", "namespace", "ipc", "source"],
+  stampFlags: {
+    app: "--fake-app",
+    ipc: "--fake-ipc",
+    mode: "--fake-mode",
+    namespace: "--fake-namespace",
+    source: "--fake-source",
+  },
+  normalizeStamp(input) {
+    const value = input as Partial<FakeStamp>;
+    if (value.app !== "api" && value.app !== "ui") throw new Error("invalid app");
+    if (value.mode !== "dev" && value.mode !== "runtime") throw new Error("invalid mode");
+    if (typeof value.namespace !== "string" || value.namespace.length === 0) throw new Error("invalid namespace");
+    if (typeof value.ipc !== "string" || value.ipc.length === 0) throw new Error("invalid ipc");
+    if (value.source !== "tool" && value.source !== "pack") throw new Error("invalid source");
+    return {
+      app: value.app,
+      ipc: value.ipc,
+      mode: value.mode,
+      namespace: value.namespace,
+      source: value.source,
+    };
+  },
+  normalizeStampCriteria(input = {}) {
+    const value = input as Partial<FakeStamp>;
+    return {
+      ...(value.app == null ? {} : { app: value.app }),
+      ...(value.ipc == null ? {} : { ipc: value.ipc }),
+      ...(value.mode == null ? {} : { mode: value.mode }),
+      ...(value.namespace == null ? {} : { namespace: value.namespace }),
+      ...(value.source == null ? {} : { source: value.source }),
+    };
+  },
+};
+
+const stamp: FakeStamp = {
+  app: "ui",
+  ipc: "/tmp/fake-product/ipc/stamp-boundary-a/ui.sock",
+  mode: "dev",
+  namespace: "stamp-boundary-a",
+  source: "tool",
+};
+
+describe("generic process stamp primitives", () => {
+  it("serializes descriptor-defined stamp flags", () => {
+    const args = createProcessStampArgs(stamp, fakeContract);
 
     expect(args).toHaveLength(5);
-    expect(args.join(" ")).toContain("--od-stamp-app=desktop");
-    expect(args.join(" ")).toContain("--od-stamp-mode=dev");
-    expect(args.join(" ")).toContain("--od-stamp-namespace=stamp-boundary-a");
-    expect(args.join(" ")).toContain("--od-stamp-ipc=/tmp/open-design/ipc/stamp-boundary-a/desktop.sock");
-    expect(args.join(" ")).toContain("--od-stamp-source=tools-dev");
-    expect(args.join(" ")).not.toContain("runtime-token");
-    expect(args.join(" ")).not.toContain("od-proc-role");
+    expect(args.join(" ")).toContain("--fake-app=ui");
+    expect(args.join(" ")).toContain("--fake-mode=dev");
+    expect(args.join(" ")).toContain("--fake-namespace=stamp-boundary-a");
+    expect(args.join(" ")).toContain("--fake-ipc=/tmp/fake-product/ipc/stamp-boundary-a/ui.sock");
+    expect(args.join(" ")).toContain("--fake-source=tool");
   });
 
-  it("reads and matches stamped process commands", () => {
-    const command = ["node", "desktop.js", ...createSidecarStampArgs(stamp)].join(" ");
+  it("reads and matches stamped process commands using the descriptor", () => {
+    const command = ["node", "ui.js", ...createProcessStampArgs(stamp, fakeContract)].join(" ");
 
-    expect(readSidecarStampFromCommand(command)).toEqual(stamp);
-    expect(matchesSidecarProcess({ command }, { app: APP_KEYS.DESKTOP, namespace: stamp.namespace, source: SIDECAR_SOURCES.TOOLS_DEV })).toBe(true);
-    expect(matchesSidecarProcess({ command }, { namespace: "stamp-boundary-b" })).toBe(false);
-    expect(matchesSidecarProcess({ command }, { source: SIDECAR_SOURCES.TOOLS_PACK })).toBe(false);
+    expect(readProcessStampFromCommand(command, fakeContract)).toEqual(stamp);
+    expect(matchesStampedProcess({ command }, { app: "ui", namespace: stamp.namespace, source: "tool" }, fakeContract)).toBe(true);
+    expect(matchesStampedProcess({ command }, { namespace: "stamp-boundary-b" }, fakeContract)).toBe(false);
+    expect(matchesStampedProcess({ command }, { source: "pack" }, fakeContract)).toBe(false);
   });
 });

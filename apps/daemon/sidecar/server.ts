@@ -1,16 +1,22 @@
 import type { Server } from "node:http";
 
 import {
-  createJsonIpcServer,
+  SIDECAR_ENV,
+  SIDECAR_MESSAGES,
+  normalizeDaemonSidecarMessage,
   type DaemonStatusSnapshot,
+  type SidecarStamp,
+} from "@open-design/contracts/sidecar";
+import {
+  createJsonIpcServer,
   type JsonIpcServerHandle,
   type SidecarRuntimeContext,
 } from "@open-design/sidecar";
 
 import { startServer } from "../server.js";
 
-const DAEMON_PORT_ENV = "OD_PORT";
-const TOOLS_DEV_PARENT_PID_ENV = "OD_TOOLS_DEV_PARENT_PID";
+const DAEMON_PORT_ENV = SIDECAR_ENV.DAEMON_PORT;
+const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
 
 export type DaemonSidecarHandle = {
   status(): Promise<DaemonStatusSnapshot>;
@@ -55,7 +61,7 @@ function attachParentMonitor(stop: () => Promise<void>): void {
   timer.unref();
 }
 
-export async function startDaemonSidecar(_runtime: SidecarRuntimeContext): Promise<DaemonSidecarHandle> {
+export async function startDaemonSidecar(runtime: SidecarRuntimeContext<SidecarStamp>): Promise<DaemonSidecarHandle> {
   const started = await startServer({ port: parsePort(process.env[DAEMON_PORT_ENV]), returnServer: true });
   if (typeof started === "string") {
     throw new Error("daemon startServer did not return a server handle");
@@ -87,16 +93,18 @@ export async function startDaemonSidecar(_runtime: SidecarRuntimeContext): Promi
   attachParentMonitor(stop);
 
   ipcServer = await createJsonIpcServer({
-    socketPath: _runtime.ipc,
-    handler: async (message: { type?: string }) => {
-      if (message?.type === "status") return { ...state };
-      if (message?.type === "shutdown") {
-        setImmediate(() => {
-          void stop().finally(() => process.exit(0));
-        });
-        return { accepted: true };
+    socketPath: runtime.ipc,
+    handler: async (message: unknown) => {
+      const request = normalizeDaemonSidecarMessage(message);
+      switch (request.type) {
+        case SIDECAR_MESSAGES.STATUS:
+          return { ...state };
+        case SIDECAR_MESSAGES.SHUTDOWN:
+          setImmediate(() => {
+            void stop().finally(() => process.exit(0));
+          });
+          return { accepted: true };
       }
-      throw new Error(`unknown daemon sidecar message: ${message?.type}`);
     },
   });
 

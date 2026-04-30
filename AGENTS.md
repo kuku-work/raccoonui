@@ -39,8 +39,9 @@ Internally, `tools-dev` exports `OD_PORT` for the daemon/web proxy target and `O
 ## Sidecar stamp boundary
 
 - Sidecar process stamps have exactly five fields: `app`, `mode`, `namespace`, `ipc`, and `source`.
-- `@open-design/sidecar` owns the stamp contract, valid app/mode/source constants, namespace validation, and runtime bootstrap validation.
-- `@open-design/platform` owns OS process stamp serialization, command parsing, and process matching/search primitives.
+- `@open-design/contracts/sidecar` owns the Open Design sidecar business contract: valid app/mode/source constants, namespace validation, stamp fields/flags, IPC message schema, status shapes, and error semantics.
+- `@open-design/sidecar` owns generic sidecar runtime primitives such as bootstrap, IPC transport, path resolution, JSON runtime files, and launch env assembly. It must not hard-code Open Design app keys or IPC messages.
+- `@open-design/platform` owns generic OS process stamp serialization, command parsing, and process matching/search primitives. It must consume a descriptor from contracts instead of hard-coding `--od-stamp-*` details.
 - Orchestration layers such as `tools-dev`, future `tools-pack`, and packaged launchers must call the package primitives. Do not hand-build `--od-stamp-*` args or process-scan regexes in orchestration code.
 - Do not reintroduce runtime tokens, process roles, or duplicate process namespace/source args into the stamp boundary.
 
@@ -48,7 +49,7 @@ Internally, `tools-dev` exports `OD_PORT` for the daemon/web proxy target and `O
 
 - Default runtime files live under `<project-root>/.tmp/<source>/<namespace>/...` (for example `.tmp/tools-dev/default/logs/web/latest.log`).
 - IPC sockets are namespace/app singletons at `/tmp/open-design/ipc/<namespace>/<app>.sock` on POSIX. Do not add workspace hashes or hidden runtime tokens to IPC names.
-- Path and IPC resolvers belong in `@open-design/sidecar`; orchestration layers call them and app sidecar wrappers consume injected paths.
+- Open Design-specific path constants belong in `@open-design/contracts/sidecar`; generic path and IPC resolvers belong in `@open-design/sidecar` and consume the contract descriptor.
 - App business logic must not import sidecar packages or branch on `runtime.mode`, `namespace`, `ipc`, or `source`. Keep sidecar awareness in `apps/<app>/sidecar` or the desktop sidecar entry wrapper.
 
 ## Validation expectations

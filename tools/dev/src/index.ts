@@ -6,15 +6,10 @@ import { cac } from "cac";
 
 import {
   APP_KEYS,
-  createSidecarLaunchEnv,
-  inspectDaemonRuntime,
-  inspectDesktopRuntime,
-  inspectWebRuntime,
-  requestJsonIpc,
+  OPEN_DESIGN_SIDECAR_CONTRACT,
+  SIDECAR_ENV,
+  SIDECAR_MESSAGES,
   SIDECAR_SOURCES,
-  waitForDaemonRuntime,
-  waitForDesktopRuntime,
-  waitForWebRuntime,
   type DaemonStatusSnapshot,
   type DesktopClickResult,
   type DesktopConsoleResult,
@@ -22,13 +17,14 @@ import {
   type DesktopScreenshotResult,
   type DesktopStatusSnapshot,
   type WebStatusSnapshot,
-} from "@open-design/sidecar";
+} from "@open-design/contracts/sidecar";
+import { createSidecarLaunchEnv, requestJsonIpc } from "@open-design/sidecar";
 import {
   collectProcessTreePids,
   createPackageManagerInvocation,
-  createSidecarStampArgs,
+  createProcessStampArgs,
   listProcessSnapshots,
-  matchesSidecarProcess,
+  matchesStampedProcess,
   readLogTail,
   spawnBackgroundProcess,
   stopProcesses,
@@ -48,6 +44,14 @@ import {
   type ToolDevConfig,
   type ToolDevOptions,
 } from "./config.js";
+import {
+  inspectDaemonRuntime,
+  inspectDesktopRuntime,
+  inspectWebRuntime,
+  waitForDaemonRuntime,
+  waitForDesktopRuntime,
+  waitForWebRuntime,
+} from "./sidecar-client.js";
 
 type CliOptions = ToolDevOptions & {
   expr?: string;
@@ -57,7 +61,7 @@ type CliOptions = ToolDevOptions & {
   timeout?: string;
 };
 
-const TOOLS_DEV_PARENT_PID_ENV = "OD_TOOLS_DEV_PARENT_PID";
+const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -144,9 +148,10 @@ function createAppStamp(config: ToolDevConfig, appName: ToolDevAppName) {
   };
 
   return {
-    args: createSidecarStampArgs(stamp),
+    args: createProcessStampArgs(stamp, OPEN_DESIGN_SIDECAR_CONTRACT),
     env: createSidecarLaunchEnv({
       base: config.toolsDevRoot,
+      contract: OPEN_DESIGN_SIDECAR_CONTRACT,
       stamp,
     }),
     stamp,
@@ -157,12 +162,12 @@ async function findAppProcessTree(config: ToolDevConfig, appName: ToolDevAppName
   const processes = await listProcessSnapshots();
   const rootPids = processes
     .filter((processInfo) =>
-      matchesSidecarProcess(processInfo, {
+      matchesStampedProcess(processInfo, {
         app: appName,
         mode: "dev",
         namespace: config.namespace,
         source: SIDECAR_SOURCES.TOOLS_DEV,
-      }),
+      }, OPEN_DESIGN_SIDECAR_CONTRACT),
     )
     .map((processInfo) => processInfo.pid);
   const pids = collectProcessTreePids(processes, rootPids);
@@ -220,7 +225,7 @@ async function spawnDaemonRuntime(config: ToolDevConfig, options: CliOptions): P
       appName: APP_KEYS.DAEMON,
       config,
       env: {
-        OD_PORT: String(daemonPort ?? 0),
+        [SIDECAR_ENV.DAEMON_PORT]: String(daemonPort ?? 0),
         ...(options.parentPid == null ? {} : { [TOOLS_DEV_PARENT_PID_ENV]: String(options.parentPid) }),
       },
       logHandle,
@@ -246,10 +251,10 @@ async function spawnWebRuntime(config: ToolDevConfig, options: CliOptions): Prom
       appName: APP_KEYS.WEB,
       config,
       env: {
-        OD_PORT: daemonPort,
-        OD_WEB_DIST_DIR: config.apps.web.nextDistDir,
-        OD_WEB_TSCONFIG_PATH: config.apps.web.nextTsconfigPath,
-        OD_WEB_PORT: String(webPort ?? 0),
+        [SIDECAR_ENV.DAEMON_PORT]: daemonPort,
+        [SIDECAR_ENV.WEB_DIST_DIR]: config.apps.web.nextDistDir,
+        [SIDECAR_ENV.WEB_TSCONFIG_PATH]: config.apps.web.nextTsconfigPath,
+        [SIDECAR_ENV.WEB_PORT]: String(webPort ?? 0),
         PORT: String(webPort ?? 0),
         ...(options.parentPid == null ? {} : { [TOOLS_DEV_PARENT_PID_ENV]: String(options.parentPid) }),
       },
@@ -407,7 +412,7 @@ async function startApp(config: ToolDevConfig, appName: ToolDevAppName, options:
 
 async function requestAppShutdown(config: ToolDevConfig, appName: ToolDevAppName): Promise<boolean> {
   try {
-    await requestJsonIpc(appConfig(config, appName).ipcPath, { type: "shutdown" }, { timeoutMs: 1500 });
+    await requestJsonIpc(appConfig(config, appName).ipcPath, { type: SIDECAR_MESSAGES.SHUTDOWN }, { timeoutMs: 1500 });
     return true;
   } catch {
     return false;
@@ -537,23 +542,23 @@ async function inspectDesktop(config: ToolDevConfig, target: string | undefined,
       if (options.expr == null) throw new Error("--expr is required for desktop eval");
       return await requestJsonIpc<DesktopEvalResult>(
         config.apps.desktop.ipcPath,
-        { input: { expression: options.expr }, type: "eval" },
+        { input: { expression: options.expr }, type: SIDECAR_MESSAGES.EVAL },
         { timeoutMs },
       );
     case "screenshot":
       if (options.path == null) throw new Error("--path is required for desktop screenshot");
       return await requestJsonIpc<DesktopScreenshotResult>(
         config.apps.desktop.ipcPath,
-        { input: { path: options.path }, type: "screenshot" },
+        { input: { path: options.path }, type: SIDECAR_MESSAGES.SCREENSHOT },
         { timeoutMs },
       );
     case "console":
-      return await requestJsonIpc<DesktopConsoleResult>(config.apps.desktop.ipcPath, { type: "console" }, { timeoutMs });
+      return await requestJsonIpc<DesktopConsoleResult>(config.apps.desktop.ipcPath, { type: SIDECAR_MESSAGES.CONSOLE }, { timeoutMs });
     case "click":
       if (options.selector == null) throw new Error("--selector is required for desktop click");
       return await requestJsonIpc<DesktopClickResult>(
         config.apps.desktop.ipcPath,
-        { input: { selector: options.selector }, type: "click" },
+        { input: { selector: options.selector }, type: SIDECAR_MESSAGES.CLICK },
         { timeoutMs },
       );
     default:

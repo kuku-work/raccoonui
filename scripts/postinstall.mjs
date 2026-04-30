@@ -6,6 +6,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
 
 const buildTargets = [
+  "packages/contracts",
   "packages/sidecar",
   "packages/platform",
   "tools/dev",

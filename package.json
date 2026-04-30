@@ -14,7 +14,7 @@
     "tools-dev": "pnpm exec tools-dev",
     "build": "pnpm --filter @open-design/web build",
     "test:e2e:live": "pnpm --filter @open-design/e2e test:e2e:live",
-    "test": "pnpm --filter @open-design/sidecar test && pnpm --filter @open-design/platform test && pnpm --filter @open-design/web test && pnpm --filter @open-design/daemon test && pnpm --filter @open-design/e2e test",
+    "test": "pnpm --filter @open-design/contracts test && pnpm --filter @open-design/sidecar test && pnpm --filter @open-design/platform test && pnpm --filter @open-design/web test && pnpm --filter @open-design/daemon test && pnpm --filter @open-design/e2e test",
     "test:ui:clean": "pnpm --filter @open-design/e2e test:ui:clean",
     "test:ui": "pnpm --filter @open-design/e2e test:ui",
     "test:ui:headed": "pnpm --filter @open-design/e2e test:ui:headed",

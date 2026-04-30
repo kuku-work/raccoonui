@@ -2,22 +2,23 @@ import { execFile, spawn, type ChildProcess, type StdioOptions } from "node:chil
 import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import {
-  normalizeSidecarStamp,
-  normalizeSidecarStampCriteria,
-  readSidecarStamp,
-  STAMP_APP_FLAG,
-  STAMP_IPC_FLAG,
-  STAMP_MODE_FLAG,
-  STAMP_NAMESPACE_FLAG,
-  STAMP_SOURCE_FLAG,
-  type SidecarStamp,
-  type SidecarStampCriteria,
-} from "@open-design/sidecar";
-
 export type CommandInvocation = {
   args: string[];
   command: string;
+};
+
+export type ProcessStampShape = object;
+
+export type ProcessStampField<TStamp extends ProcessStampShape> = Extract<keyof TStamp, string>;
+
+export type ProcessStampContract<
+  TStamp extends ProcessStampShape,
+  TCriteria extends Partial<TStamp> = Partial<TStamp>,
+> = {
+  normalizeStamp(input: unknown): TStamp;
+  normalizeStampCriteria(input?: unknown): TCriteria;
+  stampFields: readonly ProcessStampField<TStamp>[];
+  stampFlags: { readonly [K in ProcessStampField<TStamp>]: string };
 };
 
 export type CommandInvocationRequest = {
@@ -38,7 +39,7 @@ export type ProcessSnapshot = {
   ppid: number;
 };
 
-export type SidecarProcessMatchCriteria = SidecarStampCriteria;
+export type StampedProcessMatchCriteria<TStamp extends ProcessStampShape> = Partial<TStamp>;
 
 export type StopProcessesResult = {
   alreadyStopped: boolean;
@@ -58,40 +59,77 @@ type WindowsProcessRecord = {
   ProcessId?: number | string | null;
 };
 
-export function createSidecarStampArgs(stamp: SidecarStamp): string[] {
-  const normalized = normalizeSidecarStamp(stamp);
-  return [
-    `${STAMP_APP_FLAG}=${normalized.app}`,
-    `${STAMP_MODE_FLAG}=${normalized.mode}`,
-    `${STAMP_NAMESPACE_FLAG}=${normalized.namespace}`,
-    `${STAMP_IPC_FLAG}=${normalized.ipc}`,
-    `${STAMP_SOURCE_FLAG}=${normalized.source}`,
-  ];
+export function createProcessStampArgs<TStamp extends ProcessStampShape>(
+  stamp: TStamp,
+  contract: ProcessStampContract<TStamp>,
+): string[] {
+  const normalized = contract.normalizeStamp(stamp);
+  return contract.stampFields.map((field) => {
+    const value = normalized[field];
+    if (typeof value !== "string") {
+      throw new Error(`process stamp field ${field} must normalize to a string`);
+    }
+    return `${contract.stampFlags[field]}=${value}`;
+  });
 }
 
 function commandArgs(command: string): string[] {
   return command.trim().split(/\s+/).filter((part) => part.length > 0);
 }
 
-export function readSidecarStampFromCommand(command: string): SidecarStamp | null {
-  return readSidecarStamp(commandArgs(command));
+export function readFlagValue(args: readonly string[], flagName: string): string | null {
+  const inlinePrefix = `${flagName}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === flagName) return args[index + 1] ?? null;
+    if (typeof argument === "string" && argument.startsWith(inlinePrefix)) {
+      return argument.slice(inlinePrefix.length);
+    }
+  }
+  return null;
 }
 
-export function matchesSidecarStamp(stamp: SidecarStamp, criteria: SidecarProcessMatchCriteria = {}): boolean {
-  const normalizedStamp = normalizeSidecarStamp(stamp);
-  const normalizedCriteria = normalizeSidecarStampCriteria(criteria);
-  return (
-    (normalizedCriteria.app == null || normalizedStamp.app === normalizedCriteria.app) &&
-    (normalizedCriteria.mode == null || normalizedStamp.mode === normalizedCriteria.mode) &&
-    (normalizedCriteria.namespace == null || normalizedStamp.namespace === normalizedCriteria.namespace) &&
-    (normalizedCriteria.ipc == null || normalizedStamp.ipc === normalizedCriteria.ipc) &&
-    (normalizedCriteria.source == null || normalizedStamp.source === normalizedCriteria.source)
-  );
+export function readProcessStamp<TStamp extends ProcessStampShape>(
+  args: readonly string[],
+  contract: ProcessStampContract<TStamp>,
+): TStamp | null {
+  try {
+    const input = Object.fromEntries(
+      contract.stampFields.map((field) => [field, readFlagValue(args, contract.stampFlags[field])]),
+    );
+    return contract.normalizeStamp(input);
+  } catch {
+    return null;
+  }
 }
 
-export function matchesSidecarProcess(processInfo: Pick<ProcessSnapshot, "command">, criteria: SidecarProcessMatchCriteria = {}): boolean {
-  const stamp = readSidecarStampFromCommand(processInfo.command);
-  return stamp != null && matchesSidecarStamp(stamp, criteria);
+export function readProcessStampFromCommand<TStamp extends ProcessStampShape>(
+  command: string,
+  contract: ProcessStampContract<TStamp>,
+): TStamp | null {
+  return readProcessStamp(commandArgs(command), contract);
+}
+
+export function matchesProcessStamp<TStamp extends ProcessStampShape, TCriteria extends Partial<TStamp> = Partial<TStamp>>(
+  stamp: TStamp,
+  criteria: TCriteria | undefined,
+  contract: ProcessStampContract<TStamp, TCriteria>,
+): boolean {
+  const normalizedStamp = contract.normalizeStamp(stamp);
+  const normalizedCriteria = contract.normalizeStampCriteria(criteria ?? {});
+  return contract.stampFields.every((field) => {
+    const expected = normalizedCriteria[field as keyof TCriteria];
+    return expected == null || normalizedStamp[field] === expected;
+  });
+}
+
+export function matchesStampedProcess<TStamp extends ProcessStampShape, TCriteria extends Partial<TStamp> = Partial<TStamp>>(
+  processInfo: Pick<ProcessSnapshot, "command">,
+  criteria: TCriteria | undefined,
+  contract: ProcessStampContract<TStamp, TCriteria>,
+): boolean {
+  const stamp = readProcessStampFromCommand(processInfo.command, contract);
+  return stamp != null && matchesProcessStamp(stamp, criteria, contract);
 }
 
 function errorCode(error: unknown): string | null {

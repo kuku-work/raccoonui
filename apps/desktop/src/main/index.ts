@@ -5,19 +5,29 @@ import { app } from "electron";
 
 import {
   APP_KEYS,
-  bootstrapSidecarRuntime,
-  createJsonIpcServer,
-  inspectWebRuntime,
+  OPEN_DESIGN_SIDECAR_CONTRACT,
+  SIDECAR_ENV,
+  SIDECAR_MESSAGES,
+  normalizeDesktopSidecarMessage,
   type DesktopClickInput,
   type DesktopEvalInput,
   type DesktopScreenshotInput,
+  type SidecarStamp,
+  type WebStatusSnapshot,
+} from "@open-design/contracts/sidecar";
+import {
+  bootstrapSidecarRuntime,
+  createJsonIpcServer,
+  requestJsonIpc,
+  resolveAppIpcPath,
   type JsonIpcServerHandle,
   type SidecarRuntimeContext,
 } from "@open-design/sidecar";
+import { readProcessStamp } from "@open-design/platform";
 
 import { createDesktopRuntime } from "./runtime.js";
 
-const TOOLS_DEV_PARENT_PID_ENV = "OD_TOOLS_DEV_PARENT_PID";
+const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
 
 export type DesktopMainOptions = {
   beforeShutdown?: () => Promise<void>;
@@ -56,15 +66,20 @@ function attachParentMonitor(stop: () => Promise<void>): void {
   timer.unref();
 }
 
-function createWebDiscovery(runtime: SidecarRuntimeContext): () => Promise<string | null> {
+function createWebDiscovery(runtime: SidecarRuntimeContext<SidecarStamp>): () => Promise<string | null> {
   return async () => {
-    const web = await inspectWebRuntime({ base: runtime.base, namespace: runtime.namespace }, 600);
+    const webIpc = resolveAppIpcPath({
+      app: APP_KEYS.WEB,
+      contract: OPEN_DESIGN_SIDECAR_CONTRACT,
+      namespace: runtime.namespace,
+    });
+    const web = await requestJsonIpc<WebStatusSnapshot>(webIpc, { type: SIDECAR_MESSAGES.STATUS }, { timeoutMs: 600 }).catch(() => null);
     return web?.url ?? null;
   };
 }
 
 export async function runDesktopMain(
-  runtime: SidecarRuntimeContext,
+  runtime: SidecarRuntimeContext<SidecarStamp>,
   options: DesktopMainOptions = {},
 ): Promise<void> {
   await app.whenReady();
@@ -90,25 +105,24 @@ export async function runDesktopMain(
 
   ipcServer = await createJsonIpcServer({
     socketPath: runtime.ipc,
-    handler: async (message: { input?: unknown; type?: string }) => {
-      switch (message?.type) {
-        case "status":
+    handler: async (message: unknown) => {
+      const request = normalizeDesktopSidecarMessage(message);
+      switch (request.type) {
+        case SIDECAR_MESSAGES.STATUS:
           return desktop.status();
-        case "eval":
-          return await desktop.eval(message.input as DesktopEvalInput);
-        case "screenshot":
-          return await desktop.screenshot(message.input as DesktopScreenshotInput);
-        case "console":
+        case SIDECAR_MESSAGES.EVAL:
+          return await desktop.eval(request.input as DesktopEvalInput);
+        case SIDECAR_MESSAGES.SCREENSHOT:
+          return await desktop.screenshot(request.input as DesktopScreenshotInput);
+        case SIDECAR_MESSAGES.CONSOLE:
           return desktop.console();
-        case "click":
-          return await desktop.click(message.input as DesktopClickInput);
-        case "shutdown":
+        case SIDECAR_MESSAGES.CLICK:
+          return await desktop.click(request.input as DesktopClickInput);
+        case SIDECAR_MESSAGES.SHUTDOWN:
           setImmediate(() => {
             void shutdown().finally(() => process.exit(0));
           });
           return { accepted: true };
-        default:
-          throw new Error(`unknown desktop sidecar message: ${message?.type}`);
       }
     },
   });
@@ -125,8 +139,12 @@ export async function runDesktopMain(
 }
 
 if (isDirectEntry()) {
-  const runtime = bootstrapSidecarRuntime(process.argv.slice(2), process.env, {
+  const stamp = readProcessStamp(process.argv.slice(2), OPEN_DESIGN_SIDECAR_CONTRACT);
+  if (stamp == null) throw new Error("sidecar stamp is required");
+
+  const runtime = bootstrapSidecarRuntime(stamp, process.env, {
     app: APP_KEYS.DESKTOP,
+    contract: OPEN_DESIGN_SIDECAR_CONTRACT,
   });
 
   void runDesktopMain(runtime).catch((error: unknown) => {
