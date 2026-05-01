@@ -91,7 +91,9 @@ export function App() {
             if (firstAvailable) next.agentId = firstAvailable.id;
           }
           if (!next.designSystemId && dsList.length > 0) {
-            next.designSystemId = dsList.find((d) => d.id === 'default')?.id
+            // RACCOONUI-PATCH: prefer raccoonai design system as default (internal fork) — 2026-05-02
+            next.designSystemId = dsList.find((d) => d.id === 'raccoonai')?.id
+              ?? dsList.find((d) => d.id === 'default')?.id
               ?? dsList[0]!.id;
           }
         } else {

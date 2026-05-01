@@ -28,6 +28,14 @@ e2e/reports/latest.md
 # clones don't accidentally stage stale runtime data.
 .ocd
 
+# RACCOONUI-PATCH: RaccoonUI runtime data — 2026-05-02
+# .raccoonui/      — user-writable resource root pointed to by OD_RESOURCE_ROOT
+#                    (seeded from bundled design-systems/ on first start)
+# audit-logs/      — daily upstream-sync audit reports
+# PATCHES.md       — auto-generated catalog of all RACCOONUI-PATCH locations
+.raccoonui/
+audit-logs/
+
 tsconfig.tsbuildinfo
 
 .claude-sessions/*
