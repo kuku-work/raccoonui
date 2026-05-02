@@ -29,22 +29,42 @@ RaccoonUI 是一個跑在你電腦上的網頁工具：
 
 ## 第一次安裝（一次性，工程同事 ~5 分鐘 / 非工程同事 ~15–20 分鐘含環境設定）
 
-### Step 1 — 拿到 RaccoonUI 程式碼
+### Option A — 一行 bootstrap（推薦，**省一個步驟**）
 
-開 PowerShell（Win） / Terminal（Mac），跑：
+只要先裝好 `git`（到 [git-scm.com](https://git-scm.com/) 下載安裝、5 分鐘），開 PowerShell（Win）/ Terminal（Mac/Linux）跑這一行：
+
+#### Windows (PowerShell)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.ps1 | iex
+```
+
+#### macOS / Linux
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.sh)
+```
+
+它會自動 clone fork 到 `~/RaccoonUI`（Win 是 `%USERPROFILE%\RaccoonUI`）然後跑 install 腳本。
+
+> 想換目標目錄？先設 `RACCOONUI_DIR` env：
+> - Mac/Linux: `RACCOONUI_DIR=/path/to/dir bash <(curl ...)`
+> - Win: `$env:RACCOONUI_DIR='D:\path\to\dir'; iwr ... | iex`
+
+### Option B — 手動 clone + install（如果你怕 `curl | bash` / 想看清楚每步）
+
+#### Step 1 — 拿到 RaccoonUI 程式碼
 
 ```bash
 git clone https://github.com/kuku-work/open-design.git
 cd open-design
 ```
 
-> 沒 `git` 的話：到 [git-scm.com](https://git-scm.com/) 下載安裝（Win/Mac 5 分鐘）。
+#### Step 2 — 跑安裝腳本
 
-### Step 2 — 跑安裝腳本
+##### Windows
 
-#### Windows
-
-**非工程同事（推薦）**：用「檔案總管」進入 `scripts\raccoonui\` 資料夾，**雙擊 `install.cmd`**。會跳一個黑底終端機視窗自動跑安裝。
+**非工程同事**：用「檔案總管」進入 `scripts\raccoonui\` 資料夾，**雙擊 `install.cmd`**。會跳一個黑底終端機視窗自動跑安裝。
 
 **工程同事**：在 PowerShell 跑
 
@@ -52,19 +72,19 @@ cd open-design
 pwsh -File scripts\raccoonui\install.ps1
 ```
 
-#### macOS
+##### macOS
 
 ```bash
 ./scripts/raccoonui/install.sh
 ```
 
-#### Linux（Ubuntu / Debian / Fedora）
+##### Linux（Ubuntu / Debian / Fedora）
 
 ```bash
 ./scripts/raccoonui/install.sh
 ```
 
-### Step 3 — 看到「✅ RaccoonUI 安裝完成」
+### Step 3（兩種 Option 都會走到）— 看到「✅ RaccoonUI 安裝完成」
 
 腳本會自動偵測你機器缺什麼 + **直接告訴你怎麼裝**。如果它說缺某個東西（Node / VS C++ tools / Xcode CLT），照它指示裝完，**再跑一次 install 腳本即可**。常見缺件：
 
