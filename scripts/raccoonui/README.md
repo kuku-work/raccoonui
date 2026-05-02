@@ -9,16 +9,23 @@ auto-update). RaccoonUI runs as a local web app — daemon listens on
 | `install.{ps1,sh}` | win / mac+linux | first-time setup — checks node 22+ / git / pnpm / native build toolchain (VS C++ on Win, Xcode CLT on mac, build-essential on Linux), installs deps, seeds `.raccoonui/`, builds daemon + web |
 | `start.{ps1,sh}`   | same | spawn daemon (`OD_RESOURCE_ROOT=.raccoonui`, port 17456) → wait listen → open browser → sit on daemon process |
 | `update.{ps1,sh}`  | same | `git fetch origin && git pull --ff-only` → reinstall → rebuild |
+| `install.cmd` / `start.cmd` / `update.cmd` | win | double-click wrappers around the `.ps1` scripts — for non-engineering coworkers who don't want to type `pwsh -File ...` |
+
+每個 script 開頭都有 OS guard — 跑錯 OS 會 print 引導訊息然後 exit 1，不會繼續炸。
 
 ## First-time install
 
 ### Windows
+
+工程同事（terminal）：
 
 ```powershell
 git clone https://github.com/kuku-work/open-design.git
 cd open-design
 pwsh -File scripts\raccoonui\install.ps1
 ```
+
+非工程同事（Zoe / Nancy 之類）：在 File Explorer 雙擊 `scripts\raccoonui\install.cmd`。
 
 If install reports missing VS C++ Build Tools, run (admin elevation may be
 required):

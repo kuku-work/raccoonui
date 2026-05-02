@@ -5,6 +5,16 @@
 
 set -euo pipefail
 
+# OS guard — reject Windows shells (msys / cygwin / git-bash on Windows)
+case "${OSTYPE:-}" in
+    msys*|cygwin*|win32)
+        printf "❌ 這個 script 是 macOS / Linux 用的。Windows 請跑：\n"
+        printf "    雙擊  scripts\\\\raccoonui\\\\install.cmd  (友善版)\n"
+        printf "    或    pwsh -File scripts\\\\raccoonui\\\\install.ps1\n"
+        exit 1
+        ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RACCOONUI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ERR_COUNT=0

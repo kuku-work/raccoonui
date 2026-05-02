@@ -18,6 +18,13 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
+# OS guard — PowerShell 7+ runs on macOS/Linux too. Bounce them to install.sh.
+if ($PSVersionTable.PSVersion.Major -ge 6 -and -not $IsWindows) {
+    Write-Host "❌ 這個 script 是 Windows 用的。macOS / Linux 請跑：" -ForegroundColor Red
+    Write-Host "    ./scripts/raccoonui/install.sh" -ForegroundColor Yellow
+    exit 1
+}
+
 $RaccoonUIDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 $ErrCount = 0
 
