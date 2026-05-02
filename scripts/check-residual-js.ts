@@ -40,6 +40,8 @@ const allowedExactPaths = new Set([
   "tools/pack/bin/tools-pack.mjs",
   "tools/pack/esbuild.config.mjs",
   "tools/pack/resources/mac/notarize.cjs",
+  // RACCOONUI-PATCH: fork-only daily upstream sync audit, run by slack-bot cron — 2026-05-02
+  "tools/raccoonui/upstream-audit.mjs",
 ]);
 
 const allowedPathPrefixes = [
