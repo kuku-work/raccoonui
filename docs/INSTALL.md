@@ -152,6 +152,35 @@ OD_PORT=17500 ./scripts/raccoonui/start.sh
 
 ---
 
+## ❓ 為什麼不用上游 Open Design binary？
+
+> **TL;DR — 我們 2026-05-03 在 Win 機器實測過了，上游 binary 對 RaccoonAI 用途不適合。**
+
+上游 Open Design 從 v0.2.0（2026-05-02）開始正式 ship Mac/Win 桌面 binary。聽起來很誘人 ——「下載 → 雙擊 → 用」，省掉裝 Node + VS BuildTools 的 30 分鐘。但實測結果（findings 完整紀錄在 `experiments/branch-a-upstream-binary-route.md`）：
+
+| 問題 | 實測結果 |
+|------|---------|
+| 1. 用 `OD_RESOURCE_ROOT` 環境變數注入 raccoonai | ❌ packaged Electron 強制覆寫這個 env、且只 allowlist `HOME/LANG/LC_ALL/LOGNAME/TMPDIR/USER` 給 daemon child（`apps/packaged/src/sidecars.ts:30,124-131`） |
+| 1b. 用更高層 escape hatch `OD_PACKAGED_CONFIG_PATH` 指向自定 JSON | ❌ Electron 接受 user config（namespace + resourceRoot 確認被讀），但 daemon 啟動時 `safeBases` check 拒絕 install dir 之外的路徑（`apps/daemon/src/server.ts:230-243`），直接 throw |
+| 2. 直接 copy raccoonai/ 進 install dir | 🟡 work，但**每次上游升版會被 wipe**，沒優雅 hook |
+| 3. Picker default 鎖 raccoonai | ❌ `App.tsx:94` 的 `'default'` 已 compile 進 `app.asar`，**改不掉** |
+| 4. Win auto-update | ❌ 上游 `app-update.yml` URL 是 `https://updates.invalid/open-design`（字面 invalid 域名），**Win binary 根本沒 working auto-update** |
+
+**結論**：上游 binary 適合「想試一下 Open Design 是什麼」的人。**不適合 RaccoonAI 內部品牌一致性需求** —— 同事打開後看到的是 "Open Design" + neutral default，不是 RaccoonUI + raccoonai。
+
+腳本路線（本文檔主體）仍是唯一可行方案。
+
+如果你 **真的真的** 不想裝 Node + VS BuildTools 而 OK 接受失去品牌一致性 + 每次升版手動補 raccoonai：
+
+1. 下載 [open-design-0.2.0-win-x64-setup.exe](https://github.com/nexu-io/open-design/releases/download/open-design-v0.2.0/open-design-0.2.0-win-x64-setup.exe) (218 MB) 或 [open-design-0.2.0-mac-arm64.dmg](https://github.com/nexu-io/open-design/releases/download/open-design-v0.2.0/open-design-0.2.0-mac-arm64.dmg) (233 MB)
+2. 雙擊安裝（Win SmartScreen / Mac Gatekeeper 第一次警告，按「仍要執行 / 開啟」）
+3. 想要 raccoonai design system：把 fork repo 的 `design-systems/raccoonai/` 整個 copy 進 `%LOCALAPPDATA%\Programs\Open Design\resources\open-design\design-systems\` (Win) 或 `/Applications/Open Design.app/Contents/Resources/open-design/design-systems/` (Mac)
+4. **每次升版重新做 step 3**（installer 會 wipe `resources/`）
+
+> **Mac Intel / Linux** 同事：上游連 binary 都沒，**只能走腳本路線**。
+
+---
+
 ## 常見問題 / Troubleshooting
 
 ### Q: 安裝時跳 `❌ Visual Studio C++ Desktop Workload 未安裝`
