@@ -66,8 +66,12 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
 }
 
 # ── 4. VS C++ Build Tools (better-sqlite3 native compile) ──
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vsInstallerDir = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+$vswhere = "$vsInstallerDir\vswhere.exe"
+$setup = "$vsInstallerDir\setup.exe"
 $hasVCTools = $false
+$existingVS = $null
+
 if (Test-Path $vswhere) {
     $vcPath = & $vswhere -latest -products '*' `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -75,16 +79,37 @@ if (Test-Path $vswhere) {
     if ($vcPath) {
         Ok "VS C++ Build Tools at $vcPath"
         $hasVCTools = $true
+    } else {
+        # vswhere works but VCTools workload missing — find any VS install to modify
+        $existingVS = & $vswhere -latest -products '*' -property installationPath 2>$null |
+            Select-Object -First 1
     }
 }
+
 if (-not $hasVCTools) {
     Write-Host "❌ Visual Studio C++ Desktop Workload 未安裝" -ForegroundColor Red
     Write-Host "   better-sqlite3 native binding 需要本地 compile，必須裝 VC++ tools" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "   選 1（推薦）— winget 自動裝（可能要 admin elevation）：" -ForegroundColor Yellow
-    Write-Host "     winget install Microsoft.VisualStudio.2022.BuildTools --override `"--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet`"" -ForegroundColor White
+    if ($existingVS) {
+        # VS exists, just missing the workload — use setup.exe modify
+        Write-Host "   你已有 VS at: $existingVS" -ForegroundColor Yellow
+        Write-Host "   執行（admin pwsh，~5–15min + 進度條）加 C++ workload：" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "     & `"$setup`" modify ``" -ForegroundColor White
+        Write-Host "         --installPath `"$existingVS`" ``" -ForegroundColor White
+        Write-Host "         --add Microsoft.VisualStudio.Workload.VCTools ``" -ForegroundColor White
+        Write-Host "         --includeRecommended --passive --norestart" -ForegroundColor White
+        Write-Host ""
+        Write-Host "   ⚠️  winget install 對「已存在的 VS」不會 auto-add workload，只能用 setup.exe modify" -ForegroundColor DarkYellow
+    } else {
+        # No VS at all — fresh install
+        Write-Host "   執行（admin pwsh，~10–30min）裝 BuildTools + C++ workload：" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "     winget install Microsoft.VisualStudio.2022.BuildTools --override `"--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet`"" -ForegroundColor White
+    }
     Write-Host ""
-    Write-Host "   選 2 — 開 VS Installer GUI 修改既有 VS 安裝，勾「Desktop development with C++」" -ForegroundColor Yellow
+    Write-Host "   或 GUI: 開 Visual Studio Installer → 修改 → 勾「Desktop development with C++」" -ForegroundColor Yellow
+    Write-Host "   裝完重新跑 install.ps1" -ForegroundColor Yellow
     Write-Host ""
     $script:ErrCount++
 }
