@@ -36,13 +36,13 @@ RaccoonUI 是一個跑在你電腦上的網頁工具：
 #### Windows (PowerShell)
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/kuku-work/raccoonui/main/scripts/raccoonui/bootstrap.ps1 | iex
 ```
 
 #### macOS / Linux
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/raccoonui/main/scripts/raccoonui/bootstrap.sh)
 ```
 
 它會自動 clone fork 到 `~/RaccoonUI`（Win 是 `%USERPROFILE%\RaccoonUI`）然後跑 install 腳本。
@@ -56,8 +56,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/open-design/main/s
 #### Step 1 — 拿到 RaccoonUI 程式碼
 
 ```bash
-git clone https://github.com/kuku-work/open-design.git
-cd open-design
+git clone https://github.com/kuku-work/raccoonui.git
+cd raccoonui
 ```
 
 #### Step 2 — 跑安裝腳本

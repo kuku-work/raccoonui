@@ -4,7 +4,7 @@
   RaccoonUI bootstrap — clone fork + run install in one step.
 .DESCRIPTION
   Usage:
-    iwr -useb https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.ps1 | iex
+    iwr -useb https://raw.githubusercontent.com/kuku-work/raccoonui/main/scripts/raccoonui/bootstrap.ps1 | iex
 
   Override target dir:
     $env:RACCOONUI_DIR = 'D:\path\to\dir'; iwr -useb ... | iex
@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$repo = "https://github.com/kuku-work/open-design.git"
+$repo = "https://github.com/kuku-work/raccoonui.git"
 $target = if ($env:RACCOONUI_DIR) { $env:RACCOONUI_DIR } else { "$env:USERPROFILE\RaccoonUI" }
 
 Write-Host "🦝 RaccoonUI bootstrap" -ForegroundColor Cyan

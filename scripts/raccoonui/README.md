@@ -20,8 +20,8 @@ auto-update). RaccoonUI runs as a local web app — daemon listens on
 工程同事（terminal）：
 
 ```powershell
-git clone https://github.com/kuku-work/open-design.git
-cd open-design
+git clone https://github.com/kuku-work/raccoonui.git
+cd raccoonui
 pwsh -File scripts\raccoonui\install.ps1
 ```
 
@@ -39,8 +39,8 @@ Then re-run `install.ps1`.
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/kuku-work/open-design.git
-cd open-design
+git clone https://github.com/kuku-work/raccoonui.git
+cd raccoonui
 ./scripts/raccoonui/install.sh
 ```
 

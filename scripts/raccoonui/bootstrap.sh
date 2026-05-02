@@ -2,14 +2,14 @@
 # RaccoonUI bootstrap — clone fork + run install in one step.
 #
 # Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/open-design/main/scripts/raccoonui/bootstrap.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/kuku-work/raccoonui/main/scripts/raccoonui/bootstrap.sh)
 #
 # Override target dir:
 #   RACCOONUI_DIR=/path/to/dir bash <(curl ...)
 
 set -euo pipefail
 
-REPO="https://github.com/kuku-work/open-design.git"
+REPO="https://github.com/kuku-work/raccoonui.git"
 TARGET="${RACCOONUI_DIR:-$HOME/RaccoonUI}"
 
 echo "🦝 RaccoonUI bootstrap"
