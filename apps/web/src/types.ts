@@ -56,6 +56,8 @@ export interface AppConfig {
   agentId: string | null;
   skillId: string | null;
   designSystemId: string | null;
+  // RACCOONUI-PATCH: raigc workflow id for direct-select (null = use built-in providers) — 2026-05-04
+  raigcWorkflowId?: string | null;
   theme?: AppTheme;
   // True once the user has been through the welcome onboarding modal at
   // least once (saved or skipped). Bootstrap skips the auto-popup when

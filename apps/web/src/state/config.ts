@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   agentId: null,
   skillId: null,
   designSystemId: null,
+  // RACCOONUI-PATCH: raigc workflow direct-select (null = use built-in providers) — 2026-05-04
+  raigcWorkflowId: null,
   onboardingCompleted: false,
   theme: 'system',
   mediaProviders: {},

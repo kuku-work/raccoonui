@@ -65,7 +65,7 @@ export function SettingsDialog({
   }, [initial.theme]);
   const [showApiKey, setShowApiKey] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState<'execution' | 'media' | 'language' | 'appearance' | 'about'>('execution');
+  const [activeSection, setActiveSection] = useState<'execution' | 'media' | 'raigc' | 'language' | 'appearance' | 'about'>('execution');
   const [languageMenuRect, setLanguageMenuRect] = useState<DOMRect | null>(null);
   const languageRef = useRef<HTMLDivElement | null>(null);
 
@@ -170,6 +170,18 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.mediaProviders')}</strong>
                 <small>Image / video / audio</small>
+              </span>
+            </button>
+            {/* RACCOONUI-PATCH: raigc workflow picker section — 2026-05-04 */}
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'raigc' ? ' active' : ''}`}
+              onClick={() => setActiveSection('raigc')}
+            >
+              <Icon name="sparkles" size={18} />
+              <span>
+                <strong>raigc Workflow</strong>
+                <small>Advanced ComfyUI flows</small>
               </span>
             </button>
             <button
@@ -513,6 +525,9 @@ export function SettingsDialog({
 
           {activeSection === 'media' ? <MediaProvidersSection cfg={cfg} setCfg={setCfg} /> : null}
 
+          {/* RACCOONUI-PATCH: raigc workflow picker — 2026-05-04 */}
+          {activeSection === 'raigc' ? <RaigcWorkflowSection cfg={cfg} setCfg={setCfg} locale={locale} /> : null}
+
           {activeSection === 'language' ? (
           <section className="settings-section">
             <div className="section-head">
@@ -654,6 +669,150 @@ export function SettingsDialog({
         </footer>
       </div>
     </div>
+  );
+}
+
+// RACCOONUI-PATCH: raigc workflow picker section — 2026-05-04
+// Fetches raigc registry via daemon `/api/raccoonui/workflows` and lets the
+// user pick one workflow id. Null = use built-in providers (default).
+interface RaigcWorkflow {
+  id: string;
+  media: 'image' | 'video';
+  intent: string;
+  display_name: string | null;
+  display_name_zh: string | null;
+  description: string | null;
+  tags: string[];
+  backend_modes: string[];
+  default: boolean;
+}
+
+interface RaigcWorkflowsResponse {
+  raigc_version: string;
+  workflows: RaigcWorkflow[];
+}
+
+function RaigcWorkflowSection({
+  cfg,
+  setCfg,
+  locale,
+}: {
+  cfg: AppConfig;
+  setCfg: Dispatch<SetStateAction<AppConfig>>;
+  locale: Locale;
+}) {
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'ready'; data: RaigcWorkflowsResponse }
+    | { kind: 'error'; message: string; code?: string }
+  >({ kind: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/raccoonui/workflows')
+      .then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ error: r.statusText }));
+          throw Object.assign(new Error(err.error || r.statusText), { code: err.code });
+        }
+        return r.json() as Promise<RaigcWorkflowsResponse>;
+      })
+      .then((data) => {
+        if (!cancelled) setState({ kind: 'ready', data });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setState({
+            kind: 'error',
+            message: err?.message ?? String(err),
+            code: err?.code,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const displayName = (wf: RaigcWorkflow) => {
+    const zh = locale.startsWith('zh') ? wf.display_name_zh : null;
+    return zh || wf.display_name || wf.id;
+  };
+
+  const selected = cfg.raigcWorkflowId ?? '';
+
+  const onPick = (id: string) => {
+    setCfg((c) => ({ ...c, raigcWorkflowId: id ? id : null }));
+  };
+
+  return (
+    <section className="settings-section">
+      <div className="section-head">
+        <div>
+          <h3>raigc Workflow</h3>
+          <p className="hint">
+            選擇進階 ComfyUI workflow（如品牌 Route A）。預設不選 = 走內建 OpenAI / Volcengine providers。
+          </p>
+        </div>
+      </div>
+
+      {state.kind === 'loading' ? (
+        <p className="hint">Loading workflows from raigc…</p>
+      ) : null}
+
+      {state.kind === 'error' ? (
+        <div className="notice notice-warning">
+          <strong>raigc unavailable</strong>
+          <p>{state.message}</p>
+          {state.code === 'RAIGC_NOT_INSTALLED' ? (
+            <p className="hint">
+              Run <code>uv tool install -e &lt;repo&gt;/product/dev/raigc</code> on the daemon host.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {state.kind === 'ready' ? (
+        <>
+          <div className="form-row">
+            <label>
+              <span>Active workflow</span>
+              <select value={selected} onChange={(e) => onPick(e.target.value)}>
+                <option value="">— None (use built-in providers) —</option>
+                {state.data.workflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {displayName(wf)} · {wf.media} · {wf.intent}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {selected ? (() => {
+            const wf = state.data.workflows.find((w) => w.id === selected);
+            if (!wf) return null;
+            return (
+              <div className="raigc-workflow-detail" style={{ marginTop: 12 }}>
+                <p>
+                  <strong>{displayName(wf)}</strong>{' '}
+                  <code style={{ marginLeft: 8 }}>{wf.id}</code>
+                </p>
+                {wf.description ? <p className="hint">{wf.description}</p> : null}
+                <p className="hint">
+                  Backends: {wf.backend_modes.join(', ')}
+                  {wf.tags.length > 0 ? ` · Tags: ${wf.tags.join(', ')}` : ''}
+                </p>
+              </div>
+            );
+          })() : null}
+
+          <p className="hint" style={{ marginTop: 16, fontSize: 12 }}>
+            raigc {state.data.raigc_version} · {state.data.workflows.length} workflow
+            {state.data.workflows.length === 1 ? '' : 's'} registered
+          </p>
+        </>
+      ) : null}
+    </section>
   );
 }
 
