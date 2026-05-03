@@ -7,7 +7,7 @@
 
 RaccoonAI's interface is a B2B operations console disguised as a calm reading room — quiet, precise, and deliberately un-flashy. Where most AI products lean into glow, frosted glass, and chromatic gradients, RaccoonAI strips all of that out and lets a fully opaque, white-page-on-card layout do the work. The product is a tool merchants live inside for hours at a time tuning AI agents, reviewing conversations, and wiring CRMs — so the visual language is designed for endurance, not first impressions.
 
-The signature move is the **layered blue stack** — three distinct blue tokens that each carry a specific job: `--brand-primary` (deep navy `hsl(231, 70%, 26%)`) is the brand voice for borders, marketing, and identity; `--button-dark-blue` (`hsl(228, 70%, 26%)`) is the actual primary CTA fill (3° hue shift bluer than brand-primary); `--primary` (`hsl(224, 76%, 67%)`) is the lighter "interactive blue" for focus rings, switches, and AI-message accents. The product also uses `--brand-light` (`hsl(220, 77%, 67%)`) for approachability moments — outlines, dashed borders, "add new" affordances. Together these four blues cover the entire brand surface; accents (yellow `--accent-yellow`, red `--accent-red`) are sparse and saturated colors are quarantined to avatars and tag categories.
+The signature move is the **layered blue stack** — three distinct blue tokens that each carry a specific job: `--brand-primary` (deep navy `hsl(230, 70%, 26%)`) is the brand voice for borders, marketing, and identity; `--button-dark-blue` (`hsl(228, 70%, 26%)`) is the actual primary CTA fill (2° hue shift bluer than brand-primary); `--primary` (`hsl(224, 76%, 67%)`) is the lighter "interactive blue" for focus rings, switches, and AI-message accents. The product also uses `--brand-light` (`hsl(220, 77%, 67%)`) for approachability moments — outlines, dashed borders, "add new" affordances. Together these four blues cover the entire brand surface; accents (yellow `--accent-yellow`, red `--accent-red`) are sparse and saturated colors are quarantined to avatars and tag categories.
 
 Typography pairs **Pontano Sans** (Latin) with **思源黑體 / Source Han Sans TW** (CJK) and falls back to Noto Sans TC / Microsoft JhengHei — this is the entire SSOT type stack. Neutrals are pure HSL 0% saturation; there are no tinted grays anywhere. Every product surface is fully opaque (no backdrop-blur, no frosted glass, no chromatic gradient washes) — with one sanctioned exception: the page body carries a subtle `--page-bg-gradient` (180deg, neutral grey at 0–70% transitioning to a pale brand-tinted blue `hsl(228, 68%, 93%)` at the bottom). It's the only gradient anywhere in the system.
 
@@ -26,7 +26,7 @@ Typography pairs **Pontano Sans** (Latin) with **思源黑體 / Source Han Sans 
 > **HSL channel tokens**: Every color that needs alpha has a `--xxx-hsl` channel variant. Use `hsla(var(--token-hsl), α)` — never `hsl(var(--token) / α)`. The two patterns are not interchangeable in this codebase.
 
 ### Primary Blue Stack (Four Distinct Roles)
-- **Brand Primary Navy** (`#142271`): Brand identity color — borders, marketing surfaces, brand wordmarks, dialogue tag fills. *Not* the CTA fill. CSS token `--brand-primary` (`hsl(231, 70%, 26%)`).
+- **Brand Primary Navy** (`#142572`): Brand identity color — borders, marketing surfaces, brand wordmarks, dialogue tag fills. *Not* the CTA fill. CSS token `--brand-primary` (`hsl(230, 70%, 26%)`).
 - **Button Dark Blue** (`#142671`): The actual primary-CTA fill. Visually almost identical to brand-primary but 3° bluer. Token `--button-dark-blue` (`hsl(228, 70%, 26%)`); pairs with `--button-dark-blue-hover` (`hsl(229, 72%, 21%)`), `--button-dark-blue-focus` (`hsl(230, 77%, 17%)`), `--button-dark-blue-disabled` (`hsl(229, 28%, 75%)`).
 - **Primary Interactive** (`#6B8FEB`): Focus rings (`--ring`), switch checked, AI message accent, sidebar Workspace shadow tint. Token `--primary` (`hsl(224, 76%, 67%)`); pairs with `--primary-hover` (`hsl(224, 69%, 62%)`) and `--primary-focus` (`hsl(222, 63%, 57%)`).
 - **Brand Light** (`#6B96EC`): Outline buttons, dashed "add new" borders, approachability accents. Token `--brand-light` (`hsl(220, 77%, 67%)`); pairs with `--brand-hover` (`hsl(220.8, 68.4%, 61.6%)`) and `--brand-disabled` (`hsl(218, 100%, 91%)`).
@@ -486,7 +486,7 @@ Page horizontal margin: 16 (mobile) / 24 (tablet) / 40 (desktop) — tokens `--p
 
 ### Do
 - Use `--button-dark-blue` (`hsl(228, 70%, 26%)`) for primary CTA fills — *not* `--brand-primary`
-- Use `--brand-primary` (`hsl(231, 70%, 26%)`) for brand identity, borders, marketing
+- Use `--brand-primary` (`hsl(230, 70%, 26%)`) for brand identity, borders, marketing
 - Use `--primary` (`hsl(224, 76%, 67%)`) for focus rings, switch checked, AI accents
 - Use `--brand-light` (`hsl(220, 77%, 67%)`) for outlines and "add new" dashed borders
 - Pair Pontano Sans with 思源黑體 via the single `--font-sans` stack on every text element
@@ -615,7 +615,7 @@ Page horizontal margin: 16 (mobile) / 24 (tablet) / 40 (desktop) — tokens `--p
 
 ### Quick Color Reference
 - **Primary CTA fill**: "Button Dark Blue (`--button-dark-blue`, `hsl(228, 70%, 26%)`)" — *not* brand-primary
-- **Brand identity**: "Brand Primary Navy (`--brand-primary`, `hsl(231, 70%, 26%)`)"
+- **Brand identity**: "Brand Primary Navy (`--brand-primary`, `hsl(230, 70%, 26%)`)"
 - **Interactive accent**: "Primary (`--primary`, `hsl(224, 76%, 67%)`)" — focus, switch, AI message
 - **Outline / dashed**: "Brand Light (`--brand-light`, `hsl(220, 77%, 67%)`)"
 - **Page background**: "Page BG Gradient (`--page-bg-gradient`, 180deg neutral grey → `hsl(228, 68%, 93%)`)"
@@ -663,7 +663,7 @@ AI 服務中' in Pontano Sans 12px / 500."
 
 The mark is a chat-bubble symbol fusing the letter **"R"** with a dialogue shape — deep navy over a light-blue stacked card. The wordmark uses a clean modern sans in the primary navy. Source SVG (`logo-source.svg`) is **2054 × 362** (≈ 5.67:1 aspect). All variants are recolored from this single source.
 
-The brand-asset navy is `#142572` (slight 1° hue offset from product CSS `--brand-primary` `hsl(231, 70%, 26%)` ≈ `#142271`). Treat the SVG as canonical for printed / external surfaces; in product code, reference `--brand-primary` and let the CSS token render.
+The brand-asset navy is `#142572` — aligned with product CSS `--brand-primary` (`hsl(230, 70%, 26%)`). Treat the SVG as canonical for printed / external surfaces; in product code, reference `--brand-primary` and let the CSS token render.
 
 ### Asset Inventory (`assets/`)
 
