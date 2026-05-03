@@ -151,6 +151,26 @@ try {
     pnpm -r --workspace-concurrency=1 build 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
+    # ── 7.5. Link Claude Code skills (claude-skills/ → ~/.claude/commands/) ──
+    $skillsSrc = Join-Path $RaccoonUIDir 'claude-skills'
+    if (Test-Path $skillsSrc) {
+        $cmdsDst = Join-Path $env:USERPROFILE '.claude\commands'
+        New-Item -ItemType Directory -Path $cmdsDst -Force | Out-Null
+        $linked = 0
+        foreach ($f in Get-ChildItem $skillsSrc -Filter '*.md') {
+            $dst = Join-Path $cmdsDst $f.Name
+            if (Test-Path $dst) { Remove-Item $dst -Force }
+            try {
+                # Symlink needs admin or Developer Mode (Win10 1703+); falls back to copy.
+                New-Item -ItemType SymbolicLink -Path $dst -Target $f.FullName -ErrorAction Stop | Out-Null
+            } catch {
+                Copy-Item -Path $f.FullName -Destination $dst -Force
+            }
+            $linked++
+        }
+        Ok "Linked $linked Claude Code skill(s) into $cmdsDst"
+    }
+
     # ── 8. Optional shortcut creator ──
     $shortcutScript = Join-Path $PSScriptRoot "make-shortcut.ps1"
     if (Test-Path $shortcutScript) {

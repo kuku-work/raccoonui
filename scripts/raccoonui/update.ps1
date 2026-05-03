@@ -38,6 +38,25 @@ try {
     pnpm -r --workspace-concurrency=1 build
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
+    # Re-link Claude Code skills (claude-skills/ → ~/.claude/commands/)
+    $skillsSrc = Join-Path $RaccoonUIDir 'claude-skills'
+    if (Test-Path $skillsSrc) {
+        $cmdsDst = Join-Path $env:USERPROFILE '.claude\commands'
+        New-Item -ItemType Directory -Path $cmdsDst -Force | Out-Null
+        $linked = 0
+        foreach ($f in Get-ChildItem $skillsSrc -Filter '*.md') {
+            $dst = Join-Path $cmdsDst $f.Name
+            if (Test-Path $dst) { Remove-Item $dst -Force }
+            try {
+                New-Item -ItemType SymbolicLink -Path $dst -Target $f.FullName -ErrorAction Stop | Out-Null
+            } catch {
+                Copy-Item -Path $f.FullName -Destination $dst -Force
+            }
+            $linked++
+        }
+        Write-Host "✅ Re-linked $linked Claude Code skill(s)" -ForegroundColor Green
+    }
+
     $newHead = git rev-parse --short HEAD
     Write-Host ""
     Write-Host "✅ RaccoonUI updated to $newHead" -ForegroundColor Green

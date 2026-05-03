@@ -114,6 +114,20 @@ fi
 step "Building daemon + web (this takes ~1-2 min)..."
 pnpm -r --workspace-concurrency=1 build
 
+# ── 7.5. Link Claude Code skills (claude-skills/ → ~/.claude/commands/) ──
+SKILLS_SRC="$RACCOONUI_DIR/claude-skills"
+if [ -d "$SKILLS_SRC" ]; then
+    CMDS_DST="$HOME/.claude/commands"
+    mkdir -p "$CMDS_DST"
+    linked=0
+    for f in "$SKILLS_SRC"/*.md; do
+        [ -f "$f" ] || continue
+        ln -sf "$f" "$CMDS_DST/$(basename "$f")"
+        linked=$((linked + 1))
+    done
+    ok "linked $linked Claude Code skill(s) into $CMDS_DST"
+fi
+
 # ── 8. Optional shortcut ──
 if [ -f "$SCRIPT_DIR/make-shortcut.sh" ]; then
     step "Creating desktop shortcut..."

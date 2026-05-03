@@ -30,6 +30,20 @@ pnpm install
 printf "🔨 Rebuilding...\n"
 pnpm -r --workspace-concurrency=1 build
 
+# Re-link Claude Code skills (claude-skills/ → ~/.claude/commands/)
+SKILLS_SRC="$RACCOONUI_DIR/claude-skills"
+if [ -d "$SKILLS_SRC" ]; then
+    CMDS_DST="$HOME/.claude/commands"
+    mkdir -p "$CMDS_DST"
+    linked=0
+    for f in "$SKILLS_SRC"/*.md; do
+        [ -f "$f" ] || continue
+        ln -sf "$f" "$CMDS_DST/$(basename "$f")"
+        linked=$((linked + 1))
+    done
+    printf "✅ re-linked %d Claude Code skill(s)\n" "$linked"
+fi
+
 NEW_HEAD=$(git rev-parse --short HEAD)
 printf "\n✅ RaccoonUI updated to %s\n" "$NEW_HEAD"
 printf "   重啟: %s/start.sh\n" "$SCRIPT_DIR"
