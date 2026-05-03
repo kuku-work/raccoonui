@@ -96,6 +96,14 @@ import {
   VERCEL_PROVIDER_ID,
   writeVercelConfig,
 } from './deploy.js';
+// RACCOONUI-PATCH: raigc CLI bridge for workflow-id direct select — 2026-05-04
+import {
+  listRaigcWorkflows,
+  runRaigcGenerate,
+  RaigcNotInstalledError,
+  RaigcBadRequestError,
+  RaigcRuntimeError,
+} from './raccoonui/raigc-bridge.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
 /** @typedef {import('@open-design/contracts').ApiError} ApiError */
@@ -1082,6 +1090,91 @@ export async function startServer({ port = 7456, returnServer = false } = {}) {
       res.json({ promptTemplate: tpl });
     } catch (err) {
       res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // RACCOONUI-PATCH: raigc workflow listing + generation bridge — 2026-05-04
+  // Spawns `raigc` CLI (installed via `uv tool install -e <repo>/product/dev/raigc`).
+  // Contract: raigc 0.3.0 (docs/api-contract.md, ADR-008).
+  app.get('/api/raccoonui/workflows', async (_req, res) => {
+    try {
+      const data = await listRaigcWorkflows();
+      res.json(data);
+    } catch (err) {
+      const status = err?.status ?? 500;
+      res.status(status).json({
+        error: err?.message ?? String(err),
+        code: err?.code ?? 'RAIGC_UNKNOWN',
+      });
+    }
+  });
+
+  app.post('/api/raccoonui/generate', async (req, res) => {
+    const {
+      workflowId,
+      prompt,
+      projectId,
+      output,
+      media = 'image',
+      ratio,
+      references = [],
+      characters = [],
+    } = req.body ?? {};
+
+    if (!workflowId || !prompt || !projectId) {
+      return res.status(400).json({
+        error: 'workflowId, prompt, projectId are required',
+        code: 'RAIGC_BAD_REQUEST',
+      });
+    }
+    if (media !== 'image' && media !== 'video') {
+      return res.status(400).json({
+        error: `media must be 'image' or 'video', got ${media}`,
+        code: 'RAIGC_BAD_REQUEST',
+      });
+    }
+
+    let projectDirAbs;
+    try {
+      projectDirAbs = await ensureProject(PROJECTS_DIR, projectId);
+    } catch (err) {
+      return res.status(400).json({
+        error: `invalid projectId: ${err?.message ?? err}`,
+        code: 'RAIGC_BAD_REQUEST',
+      });
+    }
+
+    const ext = media === 'video' ? 'mp4' : 'png';
+    const filename =
+      typeof output === 'string' && output.trim()
+        ? sanitizeName(output)
+        : `${sanitizeName(workflowId)}-${Date.now()}.${ext}`;
+    const outputAbsPath = path.join(projectDirAbs, filename);
+
+    const sse = createSseResponse(res);
+    sse.send('start', { workflowId, prompt, output: filename, projectId });
+
+    try {
+      for await (const ev of runRaigcGenerate({
+        workflowId,
+        prompt,
+        outputAbsPath,
+        media,
+        ratio,
+        references,
+        characters,
+      })) {
+        sse.send(ev.type, ev);
+      }
+      sse.send('done', { ok: true, output: filename });
+    } catch (err) {
+      sse.send('error', {
+        code: err?.code ?? 'RAIGC_UNKNOWN',
+        message: err?.message ?? String(err),
+        status: err?.status ?? 500,
+      });
+    } finally {
+      sse.end();
     }
   });
 
