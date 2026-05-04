@@ -1400,6 +1400,48 @@ code {
   background: var(--bg-subtle);
 }
 
+/* RACCOONUI-PATCH: per-project git section — 2026-05-04 */
+.project-git-section .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.project-git-feedback {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+.project-git-feedback.ok { background: var(--bg-subtle); color: var(--text-default); }
+.project-git-feedback.err { background: rgba(220, 50, 50, 0.08); color: var(--danger, #d33); border-color: var(--danger, #d33); }
+.project-git-uninit { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.project-git-status {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.project-git-status > div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); }
+.project-git-status dt { margin: 0; font-size: 10.5px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.project-git-status dd { margin: 0; font-size: 12.5px; color: var(--text-default); }
+.project-git-commit { display: flex; flex-direction: column; gap: 6px; }
+.project-git-commit label { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.project-git-commit textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.project-git-row-actions { display: flex; gap: 8px; }
+.project-git-history { display: flex; flex-direction: column; gap: 8px; }
+.project-git-history h4 { margin: 0; font-size: 12.5px; font-weight: 600; }
+.project-git-history ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.project-git-history li {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.project-git-history li .hash code { font-size: 11px; color: var(--text-muted); }
+.project-git-history li .msg { color: var(--text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-git-history li .meta { color: var(--text-muted); font-size: 10.5px; white-space: nowrap; }
+.project-git-history li button.small { padding: 4px 8px; font-size: 11px; }
+
 .agent-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1747,6 +1789,11 @@ code {
 }
 .newproj-title { margin: 0; font-size: 14px; font-weight: 600; }
 .newproj-name { width: 100%; }
+.newproj-slug-field { display: flex; flex-direction: column; gap: 4px; }
+.newproj-slug { width: 100%; font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.newproj-slug.invalid { border-color: var(--danger, #d33); }
+.newproj-slug-hint { margin: 0; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, monospace); }
+.newproj-slug-error { margin: 0; font-size: 11px; color: var(--danger, #d33); }
 .newproj-section { display: flex; flex-direction: column; gap: 6px; }
 .newproj-label {
   font-size: 11.5px;

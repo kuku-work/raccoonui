@@ -299,6 +299,7 @@ export function App() {
       // workspace default.
       const result = await createProject({
         name: input.name,
+        id: input.id,
         skillId: input.skillId,
         designSystemId: input.designSystemId,
         pendingPrompt: input.pendingPrompt,
@@ -532,6 +533,7 @@ export function App() {
           appVersionInfo={appVersionInfo}
           welcome={settingsWelcome}
           defaultSection={settingsSection}
+          currentProjectId={activeProject?.id ?? null}
           onSave={handleConfigSave}
           onClose={() => {
             // Dismissing the welcome modal (Skip for now / backdrop click)

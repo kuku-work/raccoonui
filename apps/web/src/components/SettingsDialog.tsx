@@ -19,6 +19,8 @@ import type { AgentInfo, ApiProtocol, AppConfig, AppTheme, AppVersionInfo, ExecM
 import { MEDIA_PROVIDERS } from '../media/models';
 import type { MediaProvider } from '../media/models';
 import { PetSettings } from './pet/PetSettings';
+// RACCOONUI-PATCH: per-project git workflow section — 2026-05-04
+import { ProjectGitSection } from './ProjectGitSection';
 import { DEFAULT_NOTIFICATIONS } from '../state/config';
 import {
   FAILURE_SOUNDS,
@@ -38,6 +40,8 @@ export type SettingsSection =
   | 'appearance'
   | 'notifications'
   | 'pet'
+  // RACCOONUI-PATCH: per-project git workflow section — 2026-05-04
+  | 'projectGit'
   | 'about';
 
 interface Props {
@@ -49,6 +53,10 @@ interface Props {
   // Optional deep-link target so callers (e.g. the entry-view "adopt a
   // pet" pill) can pop the dialog open straight on a specific section.
   defaultSection?: SettingsSection;
+  // RACCOONUI-PATCH: id of the project the user has open, if any. Lets
+  // the Project Git section operate on the active project instead of
+  // forcing the user to pick from a dropdown.
+  currentProjectId?: string | null;
   onSave: (cfg: AppConfig) => void;
   onClose: () => void;
   onRefreshAgents: () => void;
@@ -134,6 +142,7 @@ export function SettingsDialog({
   appVersionInfo,
   welcome,
   defaultSection,
+  currentProjectId,
   onSave,
   onClose,
   onRefreshAgents,
@@ -374,6 +383,18 @@ export function SettingsDialog({
               <span>
                 <strong>{t('pet.navTitle')}</strong>
                 <small>{t('pet.navHint')}</small>
+              </span>
+            </button>
+            {/* RACCOONUI-PATCH: per-project git workflow section — 2026-05-04 */}
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'projectGit' ? ' active' : ''}`}
+              onClick={() => setActiveSection('projectGit')}
+            >
+              <Icon name="history" size={18} />
+              <span>
+                <strong>{t('settings.projectGit')}</strong>
+                <small>{t('settings.projectGitHint')}</small>
               </span>
             </button>
             <button
@@ -809,6 +830,11 @@ export function SettingsDialog({
 
           {activeSection === 'pet' ? (
             <PetSettings cfg={cfg} setCfg={setCfg} />
+          ) : null}
+
+          {/* RACCOONUI-PATCH: per-project git workflow section — 2026-05-04 */}
+          {activeSection === 'projectGit' ? (
+            <ProjectGitSection currentProjectId={currentProjectId ?? null} />
           ) : null}
 
           {activeSection === 'about' ? (

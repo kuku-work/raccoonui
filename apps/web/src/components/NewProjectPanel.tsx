@@ -43,10 +43,16 @@ export type CreateTab = 'prototype' | 'deck' | 'template' | 'image' | 'video' | 
 
 export interface CreateInput {
   name: string;
+  // Optional explicit slug-style id (`^[A-Za-z0-9._-]{1,128}$`). When
+  // omitted, the daemon falls back to a generated random id. Used by the
+  // per-project git workflow so coworkers see a readable repo name.
+  id?: string;
   skillId: string | null;
   designSystemId: string | null;
   metadata: ProjectMetadata;
 }
+
+const SLUG_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 
 interface Props {
   skills: SkillSummary[];
@@ -88,6 +94,7 @@ export function NewProjectPanel({
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [tabScroll, setTabScroll] = useState({ left: false, right: false });
   const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
   // Design-system selection is now an *array* internally so the same
   // component can drive both single-select and multi-select modes without
   // duplicating state. Single-select coerces to length 0/1.
@@ -174,8 +181,13 @@ export function NewProjectPanel({
     return null;
   }, [tab, skills]);
 
+  // Slug validation — only when non-empty (empty = use auto-generated id).
+  const slugTrimmed = slug.trim();
+  const slugInvalid = slugTrimmed.length > 0 && !SLUG_REGEX.test(slugTrimmed);
+  const slugRepo = slugTrimmed ? `raccoonui-proj-${slugTrimmed}` : '';
+
   const canCreate =
-    !loading && (tab !== 'template' || templateId != null);
+    !loading && !slugInvalid && (tab !== 'template' || templateId != null);
 
   function updateTabScrollState() {
     const el = tabsRef.current;
@@ -253,6 +265,7 @@ export function NewProjectPanel({
     });
     onCreate({
       name: name.trim() || autoName(tab, t),
+      id: slugTrimmed || undefined,
       skillId: skillIdForTab,
       designSystemId: primaryDs,
       metadata,
@@ -317,6 +330,27 @@ export function NewProjectPanel({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        <div className="newproj-slug-field">
+          <input
+            className={`newproj-slug${slugInvalid ? ' invalid' : ''}`}
+            data-testid="new-project-slug"
+            placeholder={t('newproj.slugPlaceholder')}
+            aria-label={t('newproj.slugLabel')}
+            aria-invalid={slugInvalid}
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+          />
+          {slugInvalid ? (
+            <p className="newproj-slug-error" data-testid="new-project-slug-error">
+              {t('newproj.slugInvalid')}
+            </p>
+          ) : slugTrimmed ? (
+            <p className="newproj-slug-hint">
+              {t('newproj.slugHint', { repo: slugRepo })}
+            </p>
+          ) : null}
+        </div>
 
         {showDesignSystemPicker ? (
           <DesignSystemPicker
