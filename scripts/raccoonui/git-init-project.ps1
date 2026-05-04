@@ -44,6 +44,10 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ gh CLI not authenticated — run: gh auth login" -ForegroundColor Red
     exit 1
 }
+# Ensure git uses gh CLI as credential helper. Without this, `git push` to
+# a private repo returns 404 Not Found (GitHub hides existence of private
+# repos from unauthenticated requests). Idempotent — safe to re-run.
+& gh auth setup-git 2>&1 | Out-Null
 try {
     Invoke-WebRequest -Uri "$Base/api/design-systems" -UseBasicParsing -TimeoutSec 3 | Out-Null
 } catch {
@@ -91,6 +95,18 @@ if ($LASTEXITCODE -eq 0) {
     }
 } else {
     & gh repo create $repoName --private --source=$projectDir --remote=origin --push=$false 2>&1 | Select-Object -Last 1
+    # Verify repo actually exists on GitHub — gh has been observed to
+    # print a URL even when the API call silently failed.
+    Start-Sleep -Seconds 1
+    & gh repo view "$ghUser/$repoName" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ gh repo create reported success but repo not found on GitHub" -ForegroundColor Red
+        Write-Host "   diagnostics:"
+        Write-Host "     gh login: $((& gh api user --jq .login 2>$null))"
+        Write-Host "     gh version: $((& gh --version 2>$null | Select-Object -First 1))"
+        Write-Host "   try manual: gh repo create $repoName --private --source=$projectDir"
+        exit 1
+    }
 }
 
 # --- 4. push via daemon ----------------------------------------------------

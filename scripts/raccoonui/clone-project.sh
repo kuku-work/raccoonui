@@ -40,6 +40,12 @@ if ! command -v curl >/dev/null 2>&1; then
     printf "❌ curl required\n"
     exit 1
 fi
+# If gh CLI is around, ensure git uses it as credential helper — required
+# for cloning private repos via https. Skipped silently if gh isn't
+# installed (user may be using SSH or has another credential helper).
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh auth setup-git 2>/dev/null || true
+fi
 if ! curl -sS "$BASE/api/design-systems" >/dev/null 2>&1; then
     printf "❌ daemon not running on port %s — start it first: ./scripts/raccoonui/start.sh\n" "$PORT"
     exit 1

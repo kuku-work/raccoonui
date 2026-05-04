@@ -242,6 +242,16 @@ curl -X POST http://localhost:17456/api/raccoonui/projects/$PROJECT/git/init
 
 只跳過 `gh repo create` + push。
 
+### Q: push 失敗顯示 "Repository not found",但 repo 在 GitHub 上真的存在?
+
+GitHub 對 private repo + 沒 auth 的請求**故意回 404**(不洩漏 repo 存在性,security feature)。意味:
+
+- repo 真存在 ✓
+- gh CLI 認得 repo (`gh repo view <user>/<repo>` 看得到) ✓
+- 但 `git push` 用的不是 gh token → GitHub 看你像沒登入 → 回 404 → 看起來像 repo 不存在
+
+**修法**: 跑 `gh auth setup-git`(把 gh 設為 git credential helper,一次性)。raccoonui helper script (`git-init-project` / `clone-project`) v0.4.0+ 已 preflight 自動跑這行,如果你打 daemon endpoint 直接 push 仍可能踩到這雷。
+
 ### Q: 為什麼 git/init 後 git/commit 回 "nothing to commit"?
 
 git/init 已經把當下 fs 全 add + commit 一次當 initial snapshot 了。第二次 commit 要先有檔案改動才行。這是預期行為。

@@ -29,6 +29,14 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "❌ git not installed" -ForegroundColor Red
     exit 1
 }
+# If gh CLI is around, ensure git uses it as credential helper — required
+# for cloning private repos via https.
+if (Get-Command gh -ErrorAction SilentlyContinue) {
+    & gh auth status 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        & gh auth setup-git 2>&1 | Out-Null
+    }
+}
 try {
     Invoke-WebRequest -Uri "$Base/api/design-systems" -UseBasicParsing -TimeoutSec 3 | Out-Null
 } catch {

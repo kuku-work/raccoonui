@@ -51,6 +51,11 @@ if ! gh auth status >/dev/null 2>&1; then
     printf "❌ gh CLI not authenticated — run: gh auth login\n"
     exit 1
 fi
+# Ensure git uses gh CLI as credential helper. Without this, `git push` to
+# a private repo returns 404 Not Found (GitHub deliberately hides the
+# existence of private repos from unauthenticated requests). Idempotent —
+# safe to re-run.
+gh auth setup-git 2>/dev/null || true
 if ! command -v curl >/dev/null 2>&1; then
     printf "❌ curl required\n"
     exit 1
@@ -91,6 +96,18 @@ if gh repo view "$GH_USER/$REPO_NAME" >/dev/null 2>&1; then
     fi
 else
     gh repo create "$REPO_NAME" --private --source="$PROJECT_DIR" --remote="origin" --push=false 2>&1 | tail -1
+    # Verify the repo really exists on GitHub. gh CLI has been observed to
+    # print a URL even when the underlying API call silently failed — this
+    # check turns silent fail into actionable error before push tries.
+    sleep 1
+    if ! gh repo view "$GH_USER/$REPO_NAME" >/dev/null 2>&1; then
+        printf "❌ gh repo create reported success but repo not found on GitHub\n"
+        printf "   diagnostics:\n"
+        printf "     gh login: %s\n" "$(gh api user --jq .login 2>/dev/null || echo 'unknown')"
+        printf "     gh version: %s\n" "$(gh --version 2>/dev/null | head -1)"
+        printf "   try manual: gh repo create %s --private --source=%s\n" "$REPO_NAME" "$PROJECT_DIR"
+        exit 1
+    fi
 fi
 
 # --- 4. push via daemon ----------------------------------------------------
