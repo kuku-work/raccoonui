@@ -57,6 +57,22 @@ try {
         Write-Host "✅ Re-linked $linked Claude Code skill(s)" -ForegroundColor Green
     }
 
+    # Re-stamp desktop shortcut so existing users pick up icon / target changes.
+    # Only refresh if the user already has the shortcut on Desktop — never
+    # create a new one if they removed/relocated it.
+    $existingShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'RaccoonUI.lnk'
+    if (Test-Path $existingShortcut) {
+        $makeShortcut = Join-Path $RaccoonUIDir 'scripts\raccoonui\make-shortcut.ps1'
+        if (Test-Path $makeShortcut) {
+            try {
+                & pwsh -File $makeShortcut | Out-Null
+                Write-Host "✅ Refreshed desktop shortcut (icon/target)" -ForegroundColor Green
+            } catch {
+                Write-Host "⚠️  shortcut refresh failed (non-fatal): $_" -ForegroundColor Yellow
+            }
+        }
+    }
+
     $newHead = git rev-parse --short HEAD
     Write-Host ""
     Write-Host "✅ RaccoonUI updated to $newHead" -ForegroundColor Green

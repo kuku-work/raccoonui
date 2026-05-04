@@ -16,6 +16,33 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $RaccoonUIDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 $Port = if ($env:OD_PORT) { [int]$env:OD_PORT } else { 17456 }
 
+# Brand the console window: replace cmd.exe icon in taskbar / Alt-Tab / window
+# corner with raccoonui.ico. Best-effort — failure is non-fatal (e.g. when
+# stdout is redirected and there is no console handle).
+$IconPath = Join-Path $RaccoonUIDir 'assets\raccoonui.ico'
+if (Test-Path $IconPath) {
+    try {
+        Add-Type -Namespace RaccoonUI -Name Win32 -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern System.IntPtr GetConsoleWindow();
+[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+public static extern System.IntPtr LoadImage(System.IntPtr hInst, string name, uint type, int cx, int cy, uint fuLoad);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern System.IntPtr SendMessage(System.IntPtr hWnd, uint msg, System.IntPtr wParam, System.IntPtr lParam);
+'@ -ErrorAction SilentlyContinue
+        $hWnd = [RaccoonUI.Win32]::GetConsoleWindow()
+        if ($hWnd -ne [System.IntPtr]::Zero) {
+            # IMAGE_ICON=1, LR_LOADFROMFILE=0x10, WM_SETICON=0x80, ICON_SMALL=0, ICON_BIG=1
+            $hIconSmall = [RaccoonUI.Win32]::LoadImage([System.IntPtr]::Zero, $IconPath, 1, 16, 16, 0x10)
+            $hIconBig   = [RaccoonUI.Win32]::LoadImage([System.IntPtr]::Zero, $IconPath, 1, 32, 32, 0x10)
+            [void][RaccoonUI.Win32]::SendMessage($hWnd, 0x80, [System.IntPtr]0, $hIconSmall)
+            [void][RaccoonUI.Win32]::SendMessage($hWnd, 0x80, [System.IntPtr]1, $hIconBig)
+        }
+    } catch {
+        # silently ignore — console branding is decorative, never block startup
+    }
+}
+
 Push-Location $RaccoonUIDir
 try {
     if (-not (Test-Path "apps\daemon\dist\cli.js")) {

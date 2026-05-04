@@ -44,6 +44,18 @@ if [ -d "$SKILLS_SRC" ]; then
     printf "✅ re-linked %d Claude Code skill(s)\n" "$linked"
 fi
 
+# Re-stamp desktop shortcut so existing users pick up icon / target changes.
+# Only refresh if the user already has the shortcut on Desktop.
+if [[ "$OSTYPE" == "darwin"* ]] && [ -f "$HOME/Desktop/RaccoonUI.command" ]; then
+    "$SCRIPT_DIR/make-shortcut.sh" >/dev/null 2>&1 \
+        && printf "✅ refreshed desktop shortcut (icon/target)\n" \
+        || printf "⚠️  shortcut refresh failed (non-fatal)\n"
+elif [[ "$OSTYPE" == "linux-gnu"* ]] && [ -f "$HOME/Desktop/RaccoonUI.desktop" ]; then
+    "$SCRIPT_DIR/make-shortcut.sh" >/dev/null 2>&1 \
+        && printf "✅ refreshed desktop shortcut (icon/target)\n" \
+        || printf "⚠️  shortcut refresh failed (non-fatal)\n"
+fi
+
 NEW_HEAD=$(git rev-parse --short HEAD)
 printf "\n✅ RaccoonUI updated to %s\n" "$NEW_HEAD"
 printf "   重啟: %s/start.sh\n" "$SCRIPT_DIR"

@@ -4,9 +4,10 @@
   Create RaccoonUI desktop shortcut on Windows.
 .DESCRIPTION
   Drops a "RaccoonUI.lnk" on the user's Desktop pointing to start.cmd.
-  Idempotent — overwrites any existing shortcut. Custom icon picked up
-  from .raccoonui/icon.ico if present (user can convert raccoonai logo
-  with any SVG-to-ICO tool); otherwise uses the default shortcut icon.
+  Idempotent — overwrites any existing shortcut. Icon resolution order:
+    1. .raccoonui/icon.ico   (per-user override, gitignored)
+    2. assets/raccoonui.ico  (repo default, generated from assets/logo.svg)
+    3. fallback to default Windows shortcut chevron
 .NOTES
   Invoked automatically by install.ps1; can also be run standalone.
 #>
@@ -32,9 +33,12 @@ if (-not (Test-Path $TargetCmd)) {
     exit 1
 }
 
-# Custom icon — user-provided .raccoonui/icon.ico takes priority, falls back
-# to no custom icon (default Windows shortcut chevron).
-$CustomIcon = Join-Path $RaccoonUIDir '.raccoonui\icon.ico'
+# Icon resolution: per-user override → repo default → none
+$UserIcon = Join-Path $RaccoonUIDir '.raccoonui\icon.ico'
+$RepoIcon = Join-Path $RaccoonUIDir 'assets\raccoonui.ico'
+$IconPath = if (Test-Path $UserIcon) { $UserIcon }
+            elseif (Test-Path $RepoIcon) { $RepoIcon }
+            else { $null }
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($ShortcutPath)
@@ -42,15 +46,16 @@ $shortcut.TargetPath = $TargetCmd
 $shortcut.WorkingDirectory = $RaccoonUIDir
 $shortcut.WindowStyle = 1   # 1 = normal, 7 = minimized
 $shortcut.Description = "RaccoonUI — RaccoonAI internal design tool"
-if (Test-Path $CustomIcon) {
-    $shortcut.IconLocation = $CustomIcon
+if ($IconPath) {
+    $shortcut.IconLocation = $IconPath
 }
 $shortcut.Save()
 
 Write-Host "✅ Desktop shortcut: $ShortcutPath" -ForegroundColor Green
 Write-Host "   雙擊「RaccoonUI」啟動 daemon + 開瀏覽器" -ForegroundColor Cyan
-if (-not (Test-Path $CustomIcon)) {
+if ($IconPath) {
+    Write-Host ("   icon: {0}" -f $IconPath) -ForegroundColor DarkGray
+} else {
     Write-Host ""
-    Write-Host "   tip: 把 raccoonai logo 轉成 .ico 放在 .raccoonui\icon.ico 即可換捷徑 icon" -ForegroundColor DarkGray
-    Write-Host "        (e.g. https://convertio.co/svg-ico/ 把 design-systems\raccoonai\assets\logo-mark-darkblue-bg.svg 轉成 256x256 .ico)" -ForegroundColor DarkGray
+    Write-Host "   tip: 自訂 icon 放 .raccoonui\icon.ico 即會 override repo default" -ForegroundColor DarkGray
 }

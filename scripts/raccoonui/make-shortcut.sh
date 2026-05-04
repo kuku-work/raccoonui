@@ -41,12 +41,12 @@ EOF
     printf "   首次雙擊 macOS Gatekeeper 可能擋下 — 改右鍵 → 開啟 → 系統設定允許\n"
     printf "   之後直接雙擊就行\n"
     printf "\n"
-    printf "   tip: 換 icon 可用 design-systems/raccoonai/assets/logo-mark.png 透過\n"
+    printf "   tip: 換 icon 用 assets/logo.svg(raccoonui 工具自家 logo)透過\n"
     printf "        Cmd+I → 拖圖到左上角小圖示替換\n"
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     SHORTCUT="$DESKTOP/RaccoonUI.desktop"
-    ICON="$RACCOONUI_DIR/design-systems/raccoonai/assets/logo-mark.png"
+    ICON="$RACCOONUI_DIR/assets/logo.svg"
 
     cat > "$SHORTCUT" <<EOF
 [Desktop Entry]

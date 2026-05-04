@@ -251,10 +251,11 @@ pwsh -File scripts\raccoonui\make-shortcut.ps1
 ./scripts/raccoonui/make-shortcut.sh
 ```
 
-### Q: 我想換捷徑 icon 成 RaccoonAI logo
+### Q: 我想換捷徑 icon
 
-A:
-- **Windows**: 把 `design-systems\raccoonai\assets\logo-mark-darkblue-bg.svg` 用 [convertio.co/svg-ico/](https://convertio.co/svg-ico/) 轉成 256×256 .ico，存成 `.raccoonui\icon.ico`，然後重跑 `make-shortcut.ps1`
+A: 桌面捷徑跟 daemon console 視窗預設都套 `assets/raccoonui.ico`(raccoonui 工具自家 logo)。要自訂：
+
+- **Windows**: 自訂 .ico 放 `.raccoonui\icon.ico` → 重跑 `make-shortcut.ps1` 即 override repo default
 - **macOS**: Cmd+I 看捷徑資訊 → 拖 PNG 圖到左上角小圖示替換
 - **Linux**: 編輯 `~/Desktop/RaccoonUI.desktop` 的 `Icon=` 路徑
 
