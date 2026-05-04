@@ -87,12 +87,23 @@ echo "  $INIT_RES"
 
 # --- 3. gh repo create -----------------------------------------------------
 printf "🚀 gh repo create %s/%s (private)...\n" "$GH_USER" "$REPO_NAME"
+SKIP_PUSH=
 if gh repo view "$GH_USER/$REPO_NAME" >/dev/null 2>&1; then
     printf "  ⚠️  repo already exists on GitHub — skipping create\n"
     if ! git -C "$PROJECT_DIR" remote get-url origin >/dev/null 2>&1; then
         REPO_URL=$(gh repo view "$GH_USER/$REPO_NAME" --json sshUrl --jq .sshUrl)
         git -C "$PROJECT_DIR" remote add origin "$REPO_URL"
         printf "  added existing repo as origin: %s\n" "$REPO_URL"
+    fi
+    # If local HEAD already matches origin/main, the previous run completed
+    # successfully — skip step 4 push. If origin/main is missing (empty repo,
+    # never pushed) or HEADs diverge (retry / new local commits), fall
+    # through to push so retry stays functional.
+    git -C "$PROJECT_DIR" fetch origin --quiet 2>/dev/null || true
+    LOCAL_HEAD=$(git -C "$PROJECT_DIR" rev-parse --verify HEAD 2>/dev/null || echo "")
+    REMOTE_HEAD=$(git -C "$PROJECT_DIR" rev-parse --verify origin/main 2>/dev/null || echo "")
+    if [ -n "$LOCAL_HEAD" ] && [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ]; then
+        SKIP_PUSH=1
     fi
 else
     gh repo create "$REPO_NAME" --private --source="$PROJECT_DIR" --remote="origin" --push=false 2>&1 | tail -1
@@ -111,12 +122,16 @@ else
 fi
 
 # --- 4. push via daemon ----------------------------------------------------
-printf "📤 git push...\n"
-PUSH_RES=$(curl -sS -X POST "$BASE/api/raccoonui/projects/$SLUG/git/push")
-if echo "$PUSH_RES" | grep -q '"pushed":true'; then
-    printf "  ✅ pushed\n"
+if [ -n "$SKIP_PUSH" ]; then
+    printf "📤 git push... ✅ already up-to-date — skipping\n"
 else
-    printf "  ⚠️  push response: %s\n" "$PUSH_RES"
+    printf "📤 git push...\n"
+    PUSH_RES=$(curl -sS -X POST "$BASE/api/raccoonui/projects/$SLUG/git/push")
+    if echo "$PUSH_RES" | grep -q '"pushed":true'; then
+        printf "  ✅ pushed\n"
+    else
+        printf "  ⚠️  push response: %s\n" "$PUSH_RES"
+    fi
 fi
 
 # --- 5. summary ------------------------------------------------------------

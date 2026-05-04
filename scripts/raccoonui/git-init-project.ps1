@@ -77,6 +77,7 @@ Write-Host "  $($initRes | ConvertTo-Json -Compress)"
 
 # --- 3. gh repo create -----------------------------------------------------
 Write-Host "🚀 gh repo create $ghUser/$repoName (private)..." -ForegroundColor Cyan
+$skipPush = $false
 & gh repo view "$ghUser/$repoName" 2>&1 | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ⚠️  repo already exists on GitHub — skipping create"
@@ -92,6 +93,18 @@ if ($LASTEXITCODE -eq 0) {
         $repoUrl = (& gh repo view "$ghUser/$repoName" --json sshUrl --jq .sshUrl).Trim()
         & git -C $projectDir remote add origin $repoUrl
         Write-Host "  added existing repo as origin: $repoUrl"
+    }
+    # If local HEAD already matches origin/main, the previous run completed
+    # successfully — skip step 4 push. If origin/main is missing (empty repo,
+    # never pushed) or HEADs diverge (retry / new local commits), fall
+    # through to push so retry stays functional.
+    & git -C $projectDir fetch origin --quiet 2>&1 | Out-Null
+    $localHead = (& git -C $projectDir rev-parse --verify HEAD 2>$null)
+    $localOk = ($LASTEXITCODE -eq 0)
+    $remoteHead = (& git -C $projectDir rev-parse --verify origin/main 2>$null)
+    $remoteOk = ($LASTEXITCODE -eq 0)
+    if ($localOk -and $remoteOk -and $localHead -and $remoteHead -and $localHead.Trim() -eq $remoteHead.Trim()) {
+        $skipPush = $true
     }
 } else {
     & gh repo create $repoName --private --source=$projectDir --remote=origin --push=$false 2>&1 | Select-Object -Last 1
@@ -110,16 +123,20 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # --- 4. push via daemon ----------------------------------------------------
-Write-Host "📤 git push..." -ForegroundColor Cyan
-try {
-    $pushRes = Invoke-RestMethod -Uri "$Base/api/raccoonui/projects/$Slug/git/push" -Method Post
-    if ($pushRes.pushed) {
-        Write-Host "  ✅ pushed" -ForegroundColor Green
-    } else {
-        Write-Host "  ⚠️  push response: $($pushRes | ConvertTo-Json -Compress)"
+if ($skipPush) {
+    Write-Host "📤 git push... ✅ already up-to-date — skipping" -ForegroundColor Green
+} else {
+    Write-Host "📤 git push..." -ForegroundColor Cyan
+    try {
+        $pushRes = Invoke-RestMethod -Uri "$Base/api/raccoonui/projects/$Slug/git/push" -Method Post
+        if ($pushRes.pushed) {
+            Write-Host "  ✅ pushed" -ForegroundColor Green
+        } else {
+            Write-Host "  ⚠️  push response: $($pushRes | ConvertTo-Json -Compress)"
+        }
+    } catch {
+        Write-Host "  ⚠️  push failed: $_" -ForegroundColor Yellow
     }
-} catch {
-    Write-Host "  ⚠️  push failed: $_" -ForegroundColor Yellow
 }
 
 # --- 5. summary ------------------------------------------------------------
