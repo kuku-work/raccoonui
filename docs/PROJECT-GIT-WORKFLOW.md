@@ -16,6 +16,15 @@ raccoonui project 的「檔案」(HTML / SVG / sketches 等) 自然存 filesyste
 
 對 user 來說: 創 project + push 後,別人 clone + import,他的 picker 就有同樣 project。
 
+### 設計決策(為什麼這樣切)
+
+| 決策 | 選擇 | 為什麼不選反面 |
+|---|---|---|
+| Sync 範圍 | **只 sync filesystem(+ sidecar metadata),不 sync conversations** | conversations 是個人 context(我跟 agent 怎麼來回試錯),push 上 GitHub 有 privacy + 雜訊問題,且每個人會用不同的 prompt 路徑達到同一個檔案輸出 |
+| Project 拓樸 | **每個 project = 1 個 GitHub repo** | monorepo 的多人協作要管 collaborator 細粒度權限 + history 雜混,小團隊 ROI 低 |
+| 砍 GitHub repo | **daemon 不主動砍 remote**,走 user 自己 `gh repo delete` 或 web UI | 防誤殺別人共用的 repo |
+| Auth 模式 | **走 user 自己的 `gh` CLI 帳號**(不是中央 service account) | 沒有中心化 cost,history attribution 直接是 user 本人 GitHub identity |
+
 ---
 
 ## 系統需求
@@ -278,7 +287,7 @@ curl -X POST http://localhost:17456/api/raccoonui/projects/<slug>/git/push
 
 ## 限制(現階段)
 
-- **conversations 不 sync**: 對話歷史只在本地 SQLite,git 不帶。同事 clone 後對話從零開始。理由: 對話是 personal context,push 上 GitHub 有 privacy 顧慮
+- **conversations 不 sync**: 對話歷史只在本地 SQLite,git 不帶 — 細節見上方「設計決策」表。同事 clone 後對話從零開始,但他能讀到所有 artifact / sidecar 描述的「最終狀態」。如果要參考你怎麼 prompt 出某個結果,推薦的 channel 是 commit message 或 PR description,不是 conversation export。**未來** 若有真實需求(例如 onboarding 教學要重播一段對話),會考慮做 opt-in 的 `.raccoonui-conversation-snapshot.json` export 而非默認全 sync — 但目前沒這需求,不做
 - **artifacts 部分 sync**: `.artifact.json` 是 dotfile 會進 git;但對應的真實 artifact PNG/SVG 會被 git 看到 → push 上 GitHub。binary 大檔需要 git LFS
 - **conflict 處理走 git CLI**: 沒做 UI 整合,衝突要懂 `git rebase` / `git mergetool`
 - **沒做 daemon 端 `git pull` endpoint**: 同事拉新版要在 terminal `git -C <project-dir> pull`,daemon 不主動拉(避免 race)
