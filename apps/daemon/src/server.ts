@@ -15,6 +15,7 @@ import {
   isKnownModel,
   resolveAgentBin,
   sanitizeCustomModel,
+  spawnEnvForAgent,
 } from './agents.js';
 import { listSkills } from './skills.js';
 import { listCodexPets, readCodexPetSpritesheet } from './codex-pets.js';
@@ -320,9 +321,26 @@ const PROMPT_TEMPLATES_DIR = resolveDaemonResourceDir(
   'prompt-templates',
   path.join(PROJECT_ROOT, 'prompt-templates'),
 );
-const RUNTIME_DATA_DIR = process.env.OD_DATA_DIR
-  ? path.resolve(PROJECT_ROOT, process.env.OD_DATA_DIR)
-  : path.join(PROJECT_ROOT, '.od');
+export function resolveDataDir(raw, projectRoot) {
+  if (!raw) return path.join(projectRoot, '.od');
+  const expanded = raw.startsWith('~/')
+    ? path.join(os.homedir(), raw.slice(2))
+    : raw;
+  const resolved = path.isAbsolute(expanded)
+    ? expanded
+    : path.resolve(projectRoot, expanded);
+  try {
+    fs.mkdirSync(resolved, { recursive: true });
+    fs.accessSync(resolved, fs.constants.W_OK);
+  } catch (err) {
+    const e = err;
+    throw new Error(
+      `OD_DATA_DIR "${resolved}" is not writable: ${e.message}`,
+    );
+  }
+  return resolved;
+}
+const RUNTIME_DATA_DIR = resolveDataDir(process.env.OD_DATA_DIR, PROJECT_ROOT);
 const ARTIFACTS_DIR = path.join(RUNTIME_DATA_DIR, 'artifacts');
 const PROJECTS_DIR = path.join(RUNTIME_DATA_DIR, 'projects');
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -1857,12 +1875,12 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     }
   });
 
-  app.get('/api/projects/:id/files/:name', async (req, res) => {
+  app.get('/api/projects/:id/files/*', async (req, res) => {
     try {
       const file = await readProjectFile(
         PROJECTS_DIR,
         req.params.id,
-        req.params.name,
+        req.params[0],
       );
       res.type(file.mime).send(file.buffer);
     } catch (err) {
@@ -2531,7 +2549,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         def.promptViaStdin || def.streamFormat === 'acp-json-rpc'
           ? 'pipe'
           : 'ignore';
-      const env = { ...process.env, ...odMediaEnv };
+      const env = spawnEnvForAgent(def.id, { ...process.env, ...odMediaEnv });
       const invocation = createCommandInvocation({
         command: resolvedBin,
         args,
@@ -2714,6 +2732,133 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     return { parsed };
   };
 
+  const proxyErrorCode = (status) => {
+    if (status === 401) return 'UNAUTHORIZED';
+    if (status === 403) return 'FORBIDDEN';
+    if (status === 404) return 'NOT_FOUND';
+    if (status === 429) return 'RATE_LIMITED';
+    return 'UPSTREAM_UNAVAILABLE';
+  };
+
+  const sendProxyError = (sse, message, init = {}) => {
+    sse.send('error', {
+      message,
+      error: {
+        code: init.code || 'UPSTREAM_UNAVAILABLE',
+        message,
+        ...(init.details === undefined ? {} : { details: init.details }),
+        ...(init.retryable === undefined ? {} : { retryable: init.retryable }),
+      },
+    });
+  };
+
+  const appendVersionedApiPath = (baseUrl, path) => {
+    const url = new URL(baseUrl);
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    url.pathname = /\/v\d+$/.test(url.pathname)
+      ? `${url.pathname}${path}`
+      : `${url.pathname}/v1${path}`;
+    return url.toString();
+  };
+
+  const collectSseFrame = (frame) => {
+    const lines = frame.replace(/\r/g, '').split('\n');
+    const dataLines = [];
+    let event = 'message';
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim();
+        continue;
+      }
+      if (!line.startsWith('data:')) continue;
+      let value = line.slice(5);
+      if (value.startsWith(' ')) value = value.slice(1);
+      dataLines.push(value);
+    }
+    const payload = dataLines.join('\n');
+    if (!payload) return { event, payload: '', data: null };
+    if (payload === '[DONE]') return { event, payload, data: null };
+    try {
+      return { event, payload, data: JSON.parse(payload) };
+    } catch {
+      return { event, payload, data: null };
+    }
+  };
+
+  const streamUpstreamSse = async (response, onFrame) => {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      while (true) {
+        const match = buffer.match(/\r?\n\r?\n/);
+        if (!match || match.index === undefined) break;
+        const frame = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        if (await onFrame(collectSseFrame(frame))) return;
+      }
+    }
+
+    const tail = buffer.trim();
+    if (tail) await onFrame(collectSseFrame(tail));
+  };
+
+  const extractOpenAIText = (data) => {
+    const choices = data?.choices;
+    if (!Array.isArray(choices) || choices.length === 0) return '';
+    const first = choices[0];
+    if (typeof first?.delta?.content === 'string') return first.delta.content;
+    if (typeof first?.text === 'string') return first.text;
+    return '';
+  };
+
+  const extractStreamErrorMessage = (data) => {
+    const err = data?.error;
+    if (!err) return '';
+    if (typeof err === 'string') return err;
+    if (typeof err?.message === 'string') return err.message;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return 'unspecified provider error';
+    }
+  };
+
+  const extractGeminiText = (data) => {
+    const candidates = data?.candidates;
+    if (!Array.isArray(candidates) || candidates.length === 0) return '';
+    const parts = candidates[0]?.content?.parts;
+    if (!Array.isArray(parts)) return '';
+    return parts.map((part) => part?.text).filter((text) => typeof text === 'string').join('');
+  };
+
+  const benignGeminiFinishReasons = new Set(['', 'STOP', 'MAX_TOKENS', 'FINISH_REASON_UNSPECIFIED']);
+  const extractGeminiBlockMessage = (data) => {
+    const feedback = data?.promptFeedback;
+    if (typeof feedback?.blockReason === 'string' && feedback.blockReason) {
+      const tail = typeof feedback.blockReasonMessage === 'string' && feedback.blockReasonMessage
+        ? ` — ${feedback.blockReasonMessage}`
+        : '';
+      return `Gemini blocked the prompt (${feedback.blockReason})${tail}.`;
+    }
+    const candidates = data?.candidates;
+    if (!Array.isArray(candidates)) return '';
+    for (const candidate of candidates) {
+      const reason = candidate?.finishReason;
+      if (typeof reason !== 'string' || benignGeminiFinishReasons.has(reason)) continue;
+      const tail = typeof candidate?.finishMessage === 'string' && candidate.finishMessage
+        ? ` — ${candidate.finishMessage}`
+        : '';
+      return `Gemini stopped the response (${reason})${tail}.`;
+    }
+    return '';
+  };
+
   app.post('/api/proxy/anthropic/stream', async (req, res) => {
     /** @type {Partial<ProxyStreamRequest>} */
     const proxyBody = req.body || {};
@@ -2738,10 +2883,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       );
     }
 
-    const clean = baseUrl.replace(/\/+$/, '');
-    const url = /\/v\d+$/.test(clean)
-      ? `${clean}/messages`
-      : `${clean}/v1/messages`;
+    const url = appendVersionedApiPath(baseUrl, '/messages');
     console.log(
       `[proxy:anthropic] ${req.method} ${validated.parsed.hostname} model=${model}`,
     );
@@ -2758,6 +2900,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     }
 
     const sse = createSseResponse(res);
+    sse.send('start', { model });
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -2774,43 +2917,38 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         console.error(
           `[proxy:anthropic] upstream error: ${response.status} ${redactAuthTokens(errorText)}`,
         );
-        sse.send('error', {
-          message: `Upstream error: ${response.status}`,
+        sendProxyError(sse, `Upstream error: ${response.status}`, {
+          code: proxyErrorCode(response.status),
           details: errorText,
+          retryable: response.status === 429 || response.status >= 500,
         });
         return sse.end();
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            const event = line.slice(7).trim();
-            const dataLine = lines[lines.indexOf(line) + 1];
-            if (dataLine && dataLine.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(dataLine.slice(6));
-                sse.send(event, data);
-              } catch (e) {
-                // ignore parse errors for partial chunks
-              }
-            }
-          }
+      let ended = false;
+      await streamUpstreamSse(response, ({ event, data }) => {
+        if (!data) return false;
+        if (event === 'error' || data.type === 'error') {
+          const message = data.error?.message || data.message || 'Anthropic upstream error';
+          sendProxyError(sse, message, { details: data });
+          ended = true;
+          return true;
         }
-      }
+        if (event === 'content_block_delta' && typeof data.delta?.text === 'string') {
+          sse.send('delta', { delta: data.delta.text });
+        }
+        if (event === 'message_stop') {
+          sse.send('end', {});
+          ended = true;
+          return true;
+        }
+        return false;
+      });
+      if (!ended) sse.send('end', {});
       sse.end();
     } catch (err) {
       console.error(`[proxy:anthropic] internal error: ${err.message}`);
-      sse.send('error', { message: err.message });
+      sendProxyError(sse, err.message, { code: 'INTERNAL_ERROR' });
       sse.end();
     }
   });
@@ -2839,10 +2977,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       );
     }
 
-    const clean = baseUrl.replace(/\/+$/, '');
-    const url = /\/v\d+$/.test(clean)
-      ? `${clean}/chat/completions`
-      : `${clean}/v1/chat/completions`;
+    const url = appendVersionedApiPath(baseUrl, '/chat/completions');
     console.log(
       `[proxy:openai] ${req.method} ${validated.parsed.hostname} model=${model}`,
     );
@@ -2861,6 +2996,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     };
 
     const sse = createSseResponse(res);
+    sse.send('start', { model });
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -2876,41 +3012,234 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         console.error(
           `[proxy:openai] upstream error: ${response.status} ${redactAuthTokens(errorText)}`,
         );
-        sse.send('error', {
-          message: `Upstream error: ${response.status}`,
+        sendProxyError(sse, `Upstream error: ${response.status}`, {
+          code: proxyErrorCode(response.status),
           details: errorText,
+          retryable: response.status === 429 || response.status >= 500,
         });
         return sse.end();
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6).trim();
-            if (dataStr === '[DONE]') break;
-            try {
-              const data = JSON.parse(dataStr);
-              sse.send('message', data);
-            } catch (e) {
-              // ignore parse errors for partial chunks
-            }
-          }
+      let ended = false;
+      await streamUpstreamSse(response, ({ payload, data }) => {
+        if (payload === '[DONE]') {
+          sse.send('end', {});
+          ended = true;
+          return true;
         }
-      }
+        if (!data) return false;
+        const streamError = extractStreamErrorMessage(data);
+        if (streamError) {
+          sendProxyError(sse, `Provider error: ${streamError}`, { details: data });
+          ended = true;
+          return true;
+        }
+        const delta = extractOpenAIText(data);
+        if (delta) sse.send('delta', { delta });
+        return false;
+      });
+      if (!ended) sse.send('end', {});
       sse.end();
     } catch (err) {
       console.error(`[proxy:openai] internal error: ${err.message}`);
-      sse.send('error', { message: err.message });
+      sendProxyError(sse, err.message, { code: 'INTERNAL_ERROR' });
+      sse.end();
+    }
+  });
+
+  app.post('/api/proxy/azure/stream', async (req, res) => {
+    /** @type {Partial<ProxyStreamRequest>} */
+    const proxyBody = req.body || {};
+    const { baseUrl, apiKey, model, systemPrompt, messages, maxTokens, apiVersion } =
+      proxyBody;
+    if (!baseUrl || !apiKey || !model) {
+      return sendApiError(
+        res,
+        400,
+        'BAD_REQUEST',
+        'baseUrl, apiKey, and model are required',
+      );
+    }
+
+    const validated = validateExternalApiBaseUrl(baseUrl);
+    if (validated.error) {
+      return sendApiError(
+        res,
+        validated.forbidden ? 403 : 400,
+        validated.forbidden ? 'FORBIDDEN' : 'BAD_REQUEST',
+        validated.error,
+      );
+    }
+
+    const version =
+      typeof apiVersion === 'string' && apiVersion.trim()
+        ? apiVersion.trim()
+        : '2024-10-21';
+    const url = new URL(baseUrl);
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/openai/deployments/${encodeURIComponent(model)}/chat/completions`;
+    url.searchParams.set('api-version', version);
+    console.log(
+      `[proxy:azure] ${req.method} ${validated.parsed.hostname} deployment=${model} api-version=${version}`,
+    );
+
+    const payloadMessages = Array.isArray(messages) ? [...messages] : [];
+    if (typeof systemPrompt === 'string' && systemPrompt) {
+      payloadMessages.unshift({ role: 'system', content: systemPrompt });
+    }
+
+    const payload = {
+      messages: payloadMessages,
+      max_tokens:
+        typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : 8192,
+      stream: true,
+    };
+
+    const sse = createSseResponse(res);
+    sse.send('start', { model });
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(
+          `[proxy:azure] upstream error: ${response.status} ${redactAuthTokens(errorText)}`,
+        );
+        sendProxyError(sse, `Upstream error: ${response.status}`, {
+          code: proxyErrorCode(response.status),
+          details: errorText,
+          retryable: response.status === 429 || response.status >= 500,
+        });
+        return sse.end();
+      }
+
+      let ended = false;
+      await streamUpstreamSse(response, ({ payload: ssePayload, data }) => {
+        if (ssePayload === '[DONE]') {
+          sse.send('end', {});
+          ended = true;
+          return true;
+        }
+        if (!data) return false;
+        const streamError = extractStreamErrorMessage(data);
+        if (streamError) {
+          sendProxyError(sse, `Azure error: ${streamError}`, { details: data });
+          ended = true;
+          return true;
+        }
+        const delta = extractOpenAIText(data);
+        if (delta) sse.send('delta', { delta });
+        return false;
+      });
+      if (!ended) sse.send('end', {});
+      sse.end();
+    } catch (err) {
+      console.error(`[proxy:azure] internal error: ${err.message}`);
+      sendProxyError(sse, err.message, { code: 'INTERNAL_ERROR' });
+      sse.end();
+    }
+  });
+
+  app.post('/api/proxy/google/stream', async (req, res) => {
+    /** @type {Partial<ProxyStreamRequest>} */
+    const proxyBody = req.body || {};
+    const { baseUrl, apiKey, model, systemPrompt, messages, maxTokens } = proxyBody;
+    if (!apiKey || !model) {
+      return sendApiError(
+        res,
+        400,
+        'BAD_REQUEST',
+        'apiKey and model are required',
+      );
+    }
+
+    const effectiveBaseUrl = baseUrl || 'https://generativelanguage.googleapis.com';
+    const validated = validateExternalApiBaseUrl(effectiveBaseUrl);
+    if (validated.error) {
+      return sendApiError(
+        res,
+        validated.forbidden ? 403 : 400,
+        validated.forbidden ? 'FORBIDDEN' : 'BAD_REQUEST',
+        validated.error,
+      );
+    }
+
+    const clean = effectiveBaseUrl.replace(/\/+$/, '');
+    const url = `${clean}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
+    console.log(
+      `[proxy:google] ${req.method} ${validated.parsed.hostname} model=${model}`,
+    );
+
+    const contents = (Array.isArray(messages) ? messages : []).map((message) => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content }],
+    }));
+    const payload = {
+      contents,
+      generationConfig: {
+        maxOutputTokens:
+          typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : 8192,
+      },
+    };
+    if (typeof systemPrompt === 'string' && systemPrompt) {
+      payload.systemInstruction = { parts: [{ text: systemPrompt }] };
+    }
+
+    const sse = createSseResponse(res);
+    sse.send('start', { model });
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(
+          `[proxy:google] upstream error: ${response.status} ${redactAuthTokens(errorText)}`,
+        );
+        sendProxyError(sse, `Upstream error: ${response.status}`, {
+          code: proxyErrorCode(response.status),
+          details: errorText,
+          retryable: response.status === 429 || response.status >= 500,
+        });
+        return sse.end();
+      }
+
+      let ended = false;
+      await streamUpstreamSse(response, ({ data }) => {
+        if (!data) return false;
+        const streamError = extractStreamErrorMessage(data);
+        if (streamError) {
+          sendProxyError(sse, `Gemini error: ${streamError}`, { details: data });
+          ended = true;
+          return true;
+        }
+        const delta = extractGeminiText(data);
+        if (delta) sse.send('delta', { delta });
+        const blockMessage = extractGeminiBlockMessage(data);
+        if (blockMessage) {
+          sendProxyError(sse, blockMessage, { details: data });
+          ended = true;
+          return true;
+        }
+        return false;
+      });
+      if (!ended) sse.send('end', {});
+      sse.end();
+    } catch (err) {
+      console.error(`[proxy:google] internal error: ${err.message}`);
+      sendProxyError(sse, err.message, { code: 'INTERNAL_ERROR' });
       sse.end();
     }
   });
