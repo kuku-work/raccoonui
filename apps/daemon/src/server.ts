@@ -114,6 +114,12 @@ import {
 import {
   writeProjectMetadata,
   scanProjectsForImport,
+  gitInit,
+  gitStatus,
+  gitCommit,
+  gitPush,
+  gitHistory,
+  gitRollback,
 } from './raccoonui/git-project-bridge.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
@@ -1406,6 +1412,88 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       res.json({ imported, failed });
     } catch (err) {
       sendApiError(res, 500, 'IMPORT_FAILED', String(err));
+    }
+  });
+
+  // RACCOONUI-PATCH: per-project git operations (commit / push / rollback)
+  // — 2026-05-04. Auth model is the user's own gh CLI / git credential
+  // helper / SSH keys; daemon never stores secrets.
+  app.post('/api/raccoonui/projects/:id/git/init', async (req, res) => {
+    try {
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const result = await gitInit(projectDir);
+      res.json(result);
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_INIT_FAILED', String(err));
+    }
+  });
+
+  app.get('/api/raccoonui/projects/:id/git/status', async (req, res) => {
+    try {
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const status = await gitStatus(projectDir);
+      res.json(status);
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_STATUS_FAILED', String(err));
+    }
+  });
+
+  app.post('/api/raccoonui/projects/:id/git/commit', async (req, res) => {
+    try {
+      const message =
+        typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      if (!message) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'commit message required');
+      }
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const result = await gitCommit(projectDir, message);
+      res.json(result);
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_COMMIT_FAILED', String(err));
+    }
+  });
+
+  app.post('/api/raccoonui/projects/:id/git/push', async (req, res) => {
+    try {
+      const { remote, branch } = req.body ?? {};
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const result = await gitPush(projectDir, {
+        remote: typeof remote === 'string' ? remote : undefined,
+        branch: typeof branch === 'string' ? branch : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_PUSH_FAILED', String(err));
+    }
+  });
+
+  app.get('/api/raccoonui/projects/:id/git/history', async (req, res) => {
+    try {
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const limitRaw = req.query.limit;
+      const parsedLimit =
+        typeof limitRaw === 'string' ? Number.parseInt(limitRaw, 10) : NaN;
+      const limit =
+        Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 20;
+      const history = await gitHistory(projectDir, limit);
+      res.json({ history });
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_HISTORY_FAILED', String(err));
+    }
+  });
+
+  app.post('/api/raccoonui/projects/:id/git/rollback', async (req, res) => {
+    try {
+      const { commit, mode } = req.body ?? {};
+      if (typeof commit !== 'string' || !commit.trim()) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'commit reference required');
+      }
+      const safeMode: 'revert' | 'reset' = mode === 'reset' ? 'reset' : 'revert';
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const result = await gitRollback(projectDir, commit.trim(), safeMode);
+      res.json(result);
+    } catch (err) {
+      sendApiError(res, 400, 'GIT_ROLLBACK_FAILED', String(err));
     }
   });
 
