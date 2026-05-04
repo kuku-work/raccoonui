@@ -58,6 +58,24 @@ try {
 $ghUser = (& gh api user --jq .login).Trim()
 $repoName = "raccoonui-proj-$Slug"
 $projectDir = Join-Path $RaccoonUIDir ".od\projects\$Slug"
+$repoUrlHttps = "https://github.com/$ghUser/$repoName.git"
+
+# --- 0.5 detect prior state ------------------------------------------------
+# Catch the "fresh local + existing remote" trap early. If the local project
+# dir has no .git but the GitHub repo exists, a `git init` here would create
+# a divergent history that can't be pushed (non-fast-forward). User wants
+# clone-project.ps1, not init.
+$hadLocalGit = Test-Path (Join-Path $projectDir ".git")
+& gh repo view "$ghUser/$repoName" 2>&1 | Out-Null
+$remoteExists = ($LASTEXITCODE -eq 0)
+
+if (-not $hadLocalGit -and $remoteExists) {
+    Write-Host "⚠️  remote repo '$ghUser/$repoName' exists but local has no .git." -ForegroundColor Yellow
+    Write-Host "   running git init here would create a divergent history that"
+    Write-Host "   can't be pushed (non-fast-forward). use clone instead:"
+    Write-Host "     pwsh -File scripts\raccoonui\clone-project.ps1 $repoUrlHttps"
+    exit 1
+}
 
 # --- 1. create project -----------------------------------------------------
 Write-Host "📝 creating project '$Name' (slug=$Slug)..." -ForegroundColor Cyan
@@ -66,8 +84,14 @@ try {
     $createRes = Invoke-RestMethod -Uri "$Base/api/projects" -Method Post `
         -ContentType 'application/json' -Body $createBody
 } catch {
-    Write-Host "❌ POST /api/projects failed: $_" -ForegroundColor Red
-    exit 1
+    # Tolerate UNIQUE constraint on retry — DB row already exists, that's fine.
+    $errMsg = "$_"
+    if ($errMsg -match 'UNIQUE constraint failed') {
+        Write-Host "  ⚠️  project '$Slug' already in DB — continuing (idempotent)"
+    } else {
+        Write-Host "❌ POST /api/projects failed: $_" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # --- 2. git/init via daemon ------------------------------------------------
@@ -78,22 +102,22 @@ Write-Host "  $($initRes | ConvertTo-Json -Compress)"
 # --- 3. gh repo create -----------------------------------------------------
 Write-Host "🚀 gh repo create $ghUser/$repoName (private)..." -ForegroundColor Cyan
 $skipPush = $false
-& gh repo view "$ghUser/$repoName" 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) {
+if ($remoteExists) {
     Write-Host "  ⚠️  repo already exists on GitHub — skipping create"
+    # Always pin origin to HTTPS. preflight ran `gh auth setup-git` so HTTPS
+    # auth is guaranteed. SSH would require the user's own SSH key + first-
+    # connect host trust prompt, which can hang the script on a fresh mac.
+    # `remote set-url` is idempotent and overwrites any leftover SSH URL
+    # from a prior run.
     $hasOrigin = $false
-    Push-Location $projectDir
-    try {
-        & git remote get-url origin 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { $hasOrigin = $true }
-    } finally {
-        Pop-Location
+    & git -C $projectDir remote get-url origin 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { $hasOrigin = $true }
+    if ($hasOrigin) {
+        & git -C $projectDir remote set-url origin $repoUrlHttps
+    } else {
+        & git -C $projectDir remote add origin $repoUrlHttps
     }
-    if (-not $hasOrigin) {
-        $repoUrl = (& gh repo view "$ghUser/$repoName" --json sshUrl --jq .sshUrl).Trim()
-        & git -C $projectDir remote add origin $repoUrl
-        Write-Host "  added existing repo as origin: $repoUrl"
-    }
+    Write-Host "  origin pinned to: $repoUrlHttps"
     # If local HEAD already matches origin/main, the previous run completed
     # successfully — skip step 4 push. If origin/main is missing (empty repo,
     # never pushed) or HEADs diverge (retry / new local commits), fall
@@ -119,6 +143,11 @@ if ($LASTEXITCODE -eq 0) {
         Write-Host "     gh version: $((& gh --version 2>$null | Select-Object -First 1))"
         Write-Host "   try manual: gh repo create $repoName --private --source=$projectDir"
         exit 1
+    }
+    # Pin to HTTPS in case gh user's git_protocol was ssh.
+    & git -C $projectDir remote set-url origin $repoUrlHttps 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        & git -C $projectDir remote add origin $repoUrlHttps 2>&1 | Out-Null
     }
 }
 

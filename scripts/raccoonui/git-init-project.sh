@@ -68,6 +68,25 @@ fi
 GH_USER=$(gh api user --jq .login)
 REPO_NAME="raccoonui-proj-$SLUG"
 PROJECT_DIR="$RACCOONUI_DIR/.od/projects/$SLUG"
+REPO_URL_HTTPS="https://github.com/$GH_USER/$REPO_NAME.git"
+
+# --- 0.5 detect prior state ------------------------------------------------
+# Catch the "fresh local + existing remote" trap early. If the local project
+# dir has no .git but the GitHub repo exists, a `git init` here would create
+# a divergent history that can't be pushed (non-fast-forward). User wants
+# clone-project.sh, not init.
+HAD_LOCAL_GIT=0
+[ -d "$PROJECT_DIR/.git" ] && HAD_LOCAL_GIT=1
+REMOTE_EXISTS=0
+gh repo view "$GH_USER/$REPO_NAME" >/dev/null 2>&1 && REMOTE_EXISTS=1
+
+if [ "$HAD_LOCAL_GIT" = "0" ] && [ "$REMOTE_EXISTS" = "1" ]; then
+    printf "⚠️  remote repo '%s/%s' exists but local has no .git.\n" "$GH_USER" "$REPO_NAME"
+    printf "   running git init here would create a divergent history that\n"
+    printf "   can't be pushed (non-fast-forward). use clone instead:\n"
+    printf "     ./scripts/raccoonui/clone-project.sh %s\n" "$REPO_URL_HTTPS"
+    exit 1
+fi
 
 # --- 1. create project -----------------------------------------------------
 printf "📝 creating project '%s' (slug=%s)...\n" "$NAME" "$SLUG"
@@ -76,8 +95,12 @@ CREATE_RES=$(curl -sS -X POST "$BASE/api/projects" \
     -H 'Content-Type: application/json' \
     -d "{\"id\":\"$SLUG\",\"name\":$NAME_JSON}")
 if echo "$CREATE_RES" | grep -q '"code"'; then
-    printf "❌ POST /api/projects failed:\n  %s\n" "$CREATE_RES"
-    exit 1
+    if echo "$CREATE_RES" | grep -q "UNIQUE constraint failed"; then
+        printf "  ⚠️  project '%s' already in DB — continuing (idempotent)\n" "$SLUG"
+    else
+        printf "❌ POST /api/projects failed:\n  %s\n" "$CREATE_RES"
+        exit 1
+    fi
 fi
 
 # --- 2. git/init via daemon ------------------------------------------------
@@ -88,13 +111,19 @@ echo "  $INIT_RES"
 # --- 3. gh repo create -----------------------------------------------------
 printf "🚀 gh repo create %s/%s (private)...\n" "$GH_USER" "$REPO_NAME"
 SKIP_PUSH=
-if gh repo view "$GH_USER/$REPO_NAME" >/dev/null 2>&1; then
+if [ "$REMOTE_EXISTS" = "1" ]; then
     printf "  ⚠️  repo already exists on GitHub — skipping create\n"
-    if ! git -C "$PROJECT_DIR" remote get-url origin >/dev/null 2>&1; then
-        REPO_URL=$(gh repo view "$GH_USER/$REPO_NAME" --json sshUrl --jq .sshUrl)
-        git -C "$PROJECT_DIR" remote add origin "$REPO_URL"
-        printf "  added existing repo as origin: %s\n" "$REPO_URL"
+    # Always pin origin to HTTPS. preflight ran `gh auth setup-git` so HTTPS
+    # auth is guaranteed. SSH would require the user's own SSH key + first-
+    # connect host trust prompt, which can hang the script on a fresh mac.
+    # `remote set-url` is idempotent and overwrites any leftover SSH URL
+    # from a prior run.
+    if git -C "$PROJECT_DIR" remote get-url origin >/dev/null 2>&1; then
+        git -C "$PROJECT_DIR" remote set-url origin "$REPO_URL_HTTPS"
+    else
+        git -C "$PROJECT_DIR" remote add origin "$REPO_URL_HTTPS"
     fi
+    printf "  origin pinned to: %s\n" "$REPO_URL_HTTPS"
     # If local HEAD already matches origin/main, the previous run completed
     # successfully — skip step 4 push. If origin/main is missing (empty repo,
     # never pushed) or HEADs diverge (retry / new local commits), fall
@@ -119,6 +148,10 @@ else
         printf "   try manual: gh repo create %s --private --source=%s\n" "$REPO_NAME" "$PROJECT_DIR"
         exit 1
     fi
+    # gh repo create may have set origin to SSH if user's git_protocol=ssh.
+    # Pin to HTTPS for the same reason as above.
+    git -C "$PROJECT_DIR" remote set-url origin "$REPO_URL_HTTPS" 2>/dev/null || \
+        git -C "$PROJECT_DIR" remote add origin "$REPO_URL_HTTPS"
 fi
 
 # --- 4. push via daemon ----------------------------------------------------
