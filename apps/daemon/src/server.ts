@@ -1365,6 +1365,50 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     }
   });
 
+  // RACCOONUI-PATCH: scan filesystem for project sidecars not in DB and
+  // import them. Used at daemon startup and manually after `git pull` brings
+  // in projects from coworkers — see scripts/raccoonui/clone-project.{sh,ps1}.
+  app.post('/api/raccoonui/projects/import-fs', async (_req, res) => {
+    try {
+      const allProjects = listProjects(db);
+      const existingIds = new Set(allProjects.map((p) => p.id));
+      const found = await scanProjectsForImport(PROJECTS_DIR, existingIds);
+      const imported: string[] = [];
+      const failed: { id: string; error: string }[] = [];
+      for (const sidecar of found) {
+        try {
+          const now = Date.now();
+          insertProject(db, {
+            id: sidecar.id,
+            name: sidecar.name,
+            skillId: sidecar.skillId,
+            designSystemId: sidecar.designSystemId,
+            pendingPrompt: sidecar.pendingPrompt,
+            metadata: sidecar.metadata,
+            createdAt: sidecar.createdAt || now,
+            updatedAt: sidecar.updatedAt || now,
+          });
+          // Seed a default conversation so picker rendering matches the
+          // shape POST /api/projects produces — the UI assumes every
+          // project has at least one conversation.
+          insertConversation(db, {
+            id: randomId(),
+            projectId: sidecar.id,
+            title: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+          imported.push(sidecar.id);
+        } catch (err) {
+          failed.push({ id: sidecar.id, error: String(err) });
+        }
+      }
+      res.json({ imported, failed });
+    } catch (err) {
+      sendApiError(res, 500, 'IMPORT_FAILED', String(err));
+    }
+  });
+
   app.post('/api/raccoonui/generate', async (req, res) => {
     const {
       workflowId,
@@ -3257,6 +3301,52 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       sse.end();
     }
   });
+
+  // RACCOONUI-PATCH: at startup, scan filesystem for project sidecars
+  // pulled in via git but not yet in DB, and import them. Fire-and-forget
+  // so a slow filesystem doesn't delay daemon listen — coworkers can also
+  // trigger this manually via POST /api/raccoonui/projects/import-fs.
+  void (async () => {
+    try {
+      const allProjects = listProjects(db);
+      const existingIds = new Set(allProjects.map((p) => p.id));
+      const found = await scanProjectsForImport(PROJECTS_DIR, existingIds);
+      let imported = 0;
+      for (const sidecar of found) {
+        try {
+          const now = Date.now();
+          insertProject(db, {
+            id: sidecar.id,
+            name: sidecar.name,
+            skillId: sidecar.skillId,
+            designSystemId: sidecar.designSystemId,
+            pendingPrompt: sidecar.pendingPrompt,
+            metadata: sidecar.metadata,
+            createdAt: sidecar.createdAt || now,
+            updatedAt: sidecar.updatedAt || now,
+          });
+          insertConversation(db, {
+            id: randomId(),
+            projectId: sidecar.id,
+            title: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+          imported++;
+        } catch (err) {
+          console.warn(
+            `[raccoonui] startup auto-import failed for ${sidecar.id}:`,
+            err,
+          );
+        }
+      }
+      if (imported > 0) {
+        console.log(`[raccoonui] startup auto-imported ${imported} project(s) from filesystem sidecars`);
+      }
+    } catch (err) {
+      console.warn('[raccoonui] startup project scan failed:', err);
+    }
+  })();
 
   // Wait for `listen` to bind so callers always see the resolved URL —
   // critical when port=0 (ephemeral port) and when the embedding sidecar
