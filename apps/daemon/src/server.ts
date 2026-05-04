@@ -110,6 +110,11 @@ import {
   RaigcBadRequestError,
   RaigcRuntimeError,
 } from './raccoonui/raigc-bridge.js';
+// RACCOONUI-PATCH: git-friendly project metadata bridge — 2026-05-04
+import {
+  writeProjectMetadata,
+  scanProjectsForImport,
+} from './raccoonui/git-project-bridge.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
 /** @typedef {import('@open-design/contracts').ApiError} ApiError */
@@ -789,6 +794,11 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         createdAt: now,
         updatedAt: now,
       });
+      // RACCOONUI-PATCH: mirror project row to .raccoonui-project.json so
+      // git syncs metadata alongside files — 2026-05-04
+      writeProjectMetadata(PROJECTS_DIR, project).catch((err) => {
+        console.warn('[raccoonui] writeProjectMetadata (POST) failed:', err);
+      });
       // Seed a default conversation so the UI always has somewhere to write.
       const cid = randomId();
       insertConversation(db, {
@@ -916,6 +926,10 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       const project = updateProject(db, req.params.id, patch);
       if (!project)
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
+      // RACCOONUI-PATCH: mirror updated row to .raccoonui-project.json — 2026-05-04
+      writeProjectMetadata(PROJECTS_DIR, project).catch((err) => {
+        console.warn('[raccoonui] writeProjectMetadata (PATCH) failed:', err);
+      });
       /** @type {import('@open-design/contracts').ProjectResponse} */
       const body = { project };
       res.json(body);
