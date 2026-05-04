@@ -68,13 +68,17 @@ export async function writeProjectMetadata(
 ): Promise<void> {
   const projectDir = path.join(projectsDir, project.id);
   await fs.promises.mkdir(projectDir, { recursive: true });
+  // Coerce undefined → null for nullable fields so the JSON output is
+  // schema-stable (JSON.stringify drops undefined values, which would
+  // make the sidecar shape non-deterministic across DB columns that
+  // happen to be null vs missing).
   const sidecar: ProjectMetadataSidecar = {
     schemaVersion: SCHEMA_VERSION,
     id: project.id,
     name: project.name,
-    skillId: project.skillId,
-    designSystemId: project.designSystemId,
-    pendingPrompt: project.pendingPrompt,
+    skillId: project.skillId ?? null,
+    designSystemId: project.designSystemId ?? null,
+    pendingPrompt: project.pendingPrompt ?? null,
     metadata: project.metadata ?? {},
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
