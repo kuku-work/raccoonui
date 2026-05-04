@@ -235,9 +235,15 @@ rm -rf node_modules
 
 A: 點「**其他資訊**」→「**仍要執行**」。RaccoonUI 內部使用沒簽 cert，是預期警告。同事間互信即可。
 
-### Q: macOS Gatekeeper 不讓 .command 跑
+### Q: macOS 第一次雙擊 RaccoonUI.app 出現警告
 
-A: 第一次右鍵 `RaccoonUI.command` → 開啟 → 系統設定 → 隱私權與安全性 → 「仍要打開」。之後雙擊就行。
+A: 兩個對話框，分別處理:
+
+1. **Gatekeeper**「無法打開,因為來自未識別的開發者」  
+   → 右鍵 `RaccoonUI.app` → 開啟 → 系統設定 → 隱私權與安全性 → 「仍要打開」。之後雙擊就行。
+
+2. **「RaccoonUI 想要控制 Terminal」**  
+   → 點「**好**/**允許**」。這是 launcher 用 `osascript` 開 Terminal.app 跑 daemon — macOS 自動化權限,一次性。要撤銷:系統設定 → 隱私權與安全性 → 自動化 → RaccoonUI。
 
 ### Q: 桌面捷徑看不到 / 沒生成
 
@@ -253,10 +259,10 @@ pwsh -File scripts\raccoonui\make-shortcut.ps1
 
 ### Q: 我想換捷徑 icon
 
-A: 桌面捷徑跟 daemon console 視窗預設都套 `assets/raccoonui.ico`(raccoonui 工具自家 logo)。要自訂：
+A: 桌面捷徑跟 daemon console 視窗預設都套 raccoonui 工具自家 logo (`assets/raccoonui.{ico,icns}`)。要自訂：
 
 - **Windows**: 自訂 .ico 放 `.raccoonui\icon.ico` → 重跑 `make-shortcut.ps1` 即 override repo default
-- **macOS**: Cmd+I 看捷徑資訊 → 拖 PNG 圖到左上角小圖示替換
+- **macOS**: 替換 `assets/raccoonui.icns` → 重跑 `./scripts/raccoonui/make-shortcut.sh` (整個 .app re-stamp 進 Spotlight/Launchpad/Finder)
 - **Linux**: 編輯 `~/Desktop/RaccoonUI.desktop` 的 `Icon=` 路徑
 
 ### Q: 我想停用 daemon 但桌面捷徑沒退出

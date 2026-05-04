@@ -45,8 +45,11 @@ if [ -d "$SKILLS_SRC" ]; then
 fi
 
 # Re-stamp desktop shortcut so existing users pick up icon / target changes.
-# Only refresh if the user already has the shortcut on Desktop.
-if [[ "$OSTYPE" == "darwin"* ]] && [ -f "$HOME/Desktop/RaccoonUI.command" ]; then
+# Only refresh if the user already has the shortcut on Desktop. Mac path
+# accepts both .app (current) and .command (legacy) so users on the old
+# entry get migrated to the .app bundle automatically on next update.
+if [[ "$OSTYPE" == "darwin"* ]] && \
+   ([ -d "$HOME/Desktop/RaccoonUI.app" ] || [ -f "$HOME/Desktop/RaccoonUI.command" ]); then
     "$SCRIPT_DIR/make-shortcut.sh" >/dev/null 2>&1 \
         && printf "✅ refreshed desktop shortcut (icon/target)\n" \
         || printf "⚠️  shortcut refresh failed (non-fatal)\n"
