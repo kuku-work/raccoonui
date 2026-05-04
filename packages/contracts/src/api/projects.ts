@@ -111,10 +111,82 @@ export interface Conversation {
 
 export interface CreateProjectRequest {
   name: string;
+  // Optional explicit slug-style id (regex `^[A-Za-z0-9._-]{1,128}$`).
+  // When omitted, the daemon falls back to a generated random id. Used by
+  // the per-project git workflow so coworkers see a readable repo name
+  // (e.g. raccoonui-proj-marketing-q3).
+  id?: string;
   skillId?: string | null;
   designSystemId?: string | null;
   pendingPrompt?: string;
   metadata?: ProjectMetadata;
+}
+
+// Per-project git operations exposed by the daemon under
+// `/api/raccoonui/projects/:id/git/*`. UI mirrors the shape of the
+// daemon's `git-project-bridge.ts` return types.
+export interface GitInitResponse {
+  alreadyInitialized: boolean;
+  initialCommit: string | null;
+}
+
+export interface GitStatusEntry {
+  path: string;
+  index: string;
+  worktree: string;
+}
+
+export interface GitStatusResponse {
+  initialized: boolean;
+  branch: string | null;
+  entries: GitStatusEntry[];
+  hasRemote: boolean;
+}
+
+export interface GitCommitRequest {
+  message: string;
+}
+
+export interface GitCommitResponse {
+  committed: boolean;
+  reason?: string;
+  commitHash?: string;
+}
+
+export interface GitPushRequest {
+  remote?: string;
+  branch?: string;
+}
+
+export interface GitPushResponse {
+  pushed: boolean;
+  remote: string;
+  branch: string;
+  output: string;
+}
+
+export interface GitLogEntry {
+  hash: string;
+  shortHash: string;
+  date: string;
+  author: string;
+  message: string;
+}
+
+export interface GitHistoryResponse {
+  history: GitLogEntry[];
+}
+
+export type GitRollbackMode = 'revert' | 'reset';
+
+export interface GitRollbackRequest {
+  commit: string;
+  mode?: GitRollbackMode;
+}
+
+export interface GitRollbackResponse {
+  mode: GitRollbackMode;
+  output: string;
 }
 
 export interface UpdateProjectRequest {

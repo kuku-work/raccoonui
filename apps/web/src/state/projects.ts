@@ -13,6 +13,16 @@ import type {
   ProjectMetadata,
   ProjectTemplate,
 } from '../types';
+import type {
+  GitCommitResponse,
+  GitHistoryResponse,
+  GitInitResponse,
+  GitLogEntry,
+  GitPushResponse,
+  GitRollbackMode,
+  GitRollbackResponse,
+  GitStatusResponse,
+} from '@open-design/contracts';
 
 export async function listProjects(): Promise<Project[]> {
   try {
@@ -38,17 +48,22 @@ export async function getProject(id: string): Promise<Project | null> {
 
 export async function createProject(input: {
   name: string;
+  // Optional explicit slug-style id (`^[A-Za-z0-9._-]{1,128}$`). When
+  // omitted, falls back to crypto.randomUUID() for backwards compat with
+  // the upstream UI flow that auto-generates ids.
+  id?: string;
   skillId: string | null;
   designSystemId: string | null;
   pendingPrompt?: string;
   metadata?: ProjectMetadata;
 }): Promise<{ project: Project; conversationId: string } | null> {
   try {
-    const id = crypto.randomUUID();
+    const id = input.id?.trim() ? input.id.trim() : crypto.randomUUID();
+    const { id: _ignored, ...rest } = input;
     const resp = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...input }),
+      body: JSON.stringify({ id, ...rest }),
     });
     if (!resp.ok) return null;
     return (await resp.json()) as { project: Project; conversationId: string };
@@ -299,5 +314,118 @@ export async function saveTabs(
     });
   } catch {
     // best-effort
+  }
+}
+
+// ---------- per-project git ops ----------
+//
+// Mirror of the daemon's `/api/raccoonui/projects/:id/git/*` endpoints.
+// All wrappers follow the same fail-soft contract as the rest of this
+// module — null on transport error, daemon-shaped JSON on success.
+
+const gitUrl = (projectId: string, op: string) =>
+  `/api/raccoonui/projects/${encodeURIComponent(projectId)}/git/${op}`;
+
+export async function gitInit(
+  projectId: string,
+): Promise<GitInitResponse | null> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'init'), { method: 'POST' });
+    if (!resp.ok) return null;
+    return (await resp.json()) as GitInitResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function gitStatus(
+  projectId: string,
+): Promise<GitStatusResponse | null> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'status'));
+    if (!resp.ok) return null;
+    return (await resp.json()) as GitStatusResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function gitCommit(
+  projectId: string,
+  message: string,
+): Promise<GitCommitResponse | null> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'commit'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as GitCommitResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function gitPush(
+  projectId: string,
+  opts: { remote?: string; branch?: string } = {},
+): Promise<GitPushResponse | null> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'push'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as GitPushResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function gitHistory(
+  projectId: string,
+  limit = 20,
+): Promise<GitLogEntry[]> {
+  try {
+    const resp = await fetch(
+      `${gitUrl(projectId, 'history')}?limit=${encodeURIComponent(String(limit))}`,
+    );
+    if (!resp.ok) return [];
+    const json = (await resp.json()) as GitHistoryResponse;
+    return json.history ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function gitRollback(
+  projectId: string,
+  commit: string,
+  mode: GitRollbackMode = 'revert',
+): Promise<GitRollbackResponse | null> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'rollback'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commit, mode }),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as GitRollbackResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function gitImportFs(): Promise<{ imported: number } | null> {
+  try {
+    const resp = await fetch('/api/raccoonui/projects/import-fs', {
+      method: 'POST',
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as { imported: number };
+  } catch {
+    return null;
   }
 }
