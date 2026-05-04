@@ -22,6 +22,7 @@ import type {
   GitRollbackMode,
   GitRollbackResponse,
   GitStatusResponse,
+  ImportFsResponse,
 } from '@open-design/contracts';
 
 export async function listProjects(): Promise<Project[]> {
@@ -418,13 +419,13 @@ export async function gitRollback(
   }
 }
 
-export async function gitImportFs(): Promise<{ imported: number } | null> {
+export async function gitImportFs(): Promise<ImportFsResponse | null> {
   try {
     const resp = await fetch('/api/raccoonui/projects/import-fs', {
       method: 'POST',
     });
     if (!resp.ok) return null;
-    return (await resp.json()) as { imported: number };
+    return (await resp.json()) as ImportFsResponse;
   } catch {
     return null;
   }

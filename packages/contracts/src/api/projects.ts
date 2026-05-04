@@ -189,6 +189,14 @@ export interface GitRollbackResponse {
   output: string;
 }
 
+// Bulk import of project sidecars dropped on disk via git pull. Daemon
+// scans projects dir and inserts any rows missing from SQLite. Returns
+// per-row outcomes so the UI can show a count and surface failures.
+export interface ImportFsResponse {
+  imported: string[];
+  failed: { id: string; error: string }[];
+}
+
 export interface UpdateProjectRequest {
   name?: string;
   skillId?: string | null;

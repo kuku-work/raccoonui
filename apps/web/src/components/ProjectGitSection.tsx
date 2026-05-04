@@ -153,9 +153,15 @@ export function ProjectGitSection({ currentProjectId }: Props) {
     if (!r) {
       setFeedback({ kind: 'err', text: t('projectGit.errImportFs') });
     } else {
+      const importedCount = r.imported.length;
+      // Failures aren't fatal — log so devs can see what skipped, but
+      // don't block the OK feedback for the rows that did import.
+      if (r.failed.length > 0) {
+        console.warn('import-fs partial failures:', r.failed);
+      }
       setFeedback({
         kind: 'ok',
-        text: t('projectGit.importFsDone', { count: r.imported }),
+        text: t('projectGit.importFsDone', { count: importedCount }),
       });
     }
     setBusy(null);
