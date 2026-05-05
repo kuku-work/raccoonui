@@ -1490,8 +1490,11 @@ async function renderHyperFramesViaCli(ctx, projectDir, onProgress) {
  */
 function runHyperFramesRender(compAbs, tmpOutput, onProgress) {
   return new Promise((resolve, reject) => {
+    // On Windows `npx` is `npx.cmd`; child_process.spawn without shell:true
+    // won't resolve the .cmd extension and throws ENOENT.
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     const child = spawn(
-      'npx',
+      npxCmd,
       [
         '-y',
         'hyperframes',
