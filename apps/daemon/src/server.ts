@@ -10,6 +10,9 @@ import os from 'node:os';
 import { composeSystemPrompt } from './prompts/system.js';
 import { createCommandInvocation } from '@open-design/platform';
 import {
+  checkPromptArgvBudget,
+  checkWindowsCmdShimCommandLineBudget,
+  checkWindowsDirectExeCommandLineBudget,
   detectAgents,
   getAgentDef,
   isKnownModel,
@@ -17,7 +20,7 @@ import {
   sanitizeCustomModel,
   spawnEnvForAgent,
 } from './agents.js';
-import { listSkills } from './skills.js';
+import { findSkillById, listSkills } from './skills.js';
 import { listCodexPets, readCodexPetSpritesheet } from './codex-pets.js';
 import { syncCommunityPets } from './community-pets-sync.js';
 import { listDesignSystems, readDesignSystem } from './design-systems.js';
@@ -26,6 +29,7 @@ import { attachPiRpcSession } from './pi-rpc.js';
 import { createClaudeStreamHandler } from './claude-stream.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './json-event-stream.js';
+import { subscribe as subscribeFileEvents } from './project-watchers.js';
 import { renderDesignSystemPreview } from './design-system-preview.js';
 import { renderDesignSystemShowcase } from './design-system-showcase.js';
 import { createChatRunService } from './runs.js';
@@ -34,6 +38,7 @@ import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
+import { stageActiveSkill } from './cwd-aliases.js';
 import { generateMedia } from './media.js';
 import {
   AUDIO_DURATIONS_SEC,
@@ -48,14 +53,17 @@ import { readMaskedConfig, writeConfig } from './media-config.js';
 import { readAppConfig, writeAppConfig } from './app-config.js';
 import {
   buildProjectArchive,
+  buildBatchArchive,
   decodeMultipartFilename,
   deleteProjectFile,
   ensureProject,
   listFiles,
+  mimeFor,
   projectDir,
   readProjectFile,
   removeProjectDir,
   sanitizeName,
+  searchProjectFiles,
   writeProjectFile,
 } from './projects.js';
 import { validateArtifactManifestInput } from './artifact-manifest.js';
@@ -733,6 +741,133 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
   // ---- Projects (DB-backed) -------------------------------------------------
 
+  // Soft "what is the user looking at right now in Open Design?" channel. The
+  // web UI POSTs the current project + file on every route change;
+  // the MCP surface reads it so a coding agent in another repo can
+  // resolve "the design I have open" without the user typing the
+  // project id. In-memory only - daemon restart clears it.
+  /** @type {{ projectId: string; fileName: string | null; ts: number } | null} */
+  let activeContext = null;
+  const ACTIVE_CONTEXT_TTL_MS = 5 * 60 * 1000;
+
+  // Active context is private to the local machine. The daemon binds
+  // 0.0.0.0 by default, so without an origin check a peer on the LAN
+  // could read what the user is currently looking at (GET) or spoof
+  // it to redirect MCP fallbacks (POST). The web proxies same-origin
+  // and the MCP runs in-process via 127.0.0.1, so both legitimate
+  // callers pass the check.
+  app.post('/api/active', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    try {
+      const body = req.body || {};
+      if (body.active === false) {
+        activeContext = null;
+        res.json({ active: false });
+        return;
+      }
+      const projectId = typeof body.projectId === 'string' ? body.projectId : '';
+      if (!projectId) {
+        sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required');
+        return;
+      }
+      const fileName =
+        typeof body.fileName === 'string' && body.fileName.length > 0
+          ? body.fileName
+          : null;
+      activeContext = { projectId, fileName, ts: Date.now() };
+      res.json({ active: true, ...activeContext });
+    } catch (err) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  app.get('/api/active', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    if (!activeContext || Date.now() - activeContext.ts > ACTIVE_CONTEXT_TTL_MS) {
+      activeContext = null;
+      res.json({ active: false });
+      return;
+    }
+    const project = getProject(db, activeContext.projectId);
+    res.json({
+      active: true,
+      projectId: activeContext.projectId,
+      projectName: project?.name ?? null,
+      fileName: activeContext.fileName,
+      ts: activeContext.ts,
+      ageMs: Date.now() - activeContext.ts,
+    });
+  });
+
+  // Surfaces the absolute paths to `node` + `apps/daemon/dist/cli.js`
+  // so the Settings → MCP server panel can render snippets that work
+  // even when `od` isn't on the user's PATH (the common case for
+  // source clones - and macOS/Linux ship a /usr/bin/od octal-dump
+  // tool that shadows ours anyway). Computed from import.meta.url so
+  // both src/ (tsx dev) and dist/ (built) launches resolve to the
+  // same dist/cli.js path. Cached for 5s because the panel pings on
+  // every open and the path lookup + two existsSync calls are cheap
+  // but not free, and these paths cannot change without a daemon
+  // restart anyway.
+  const INSTALL_INFO_TTL_MS = 5000;
+  let installInfoCache: { t: number; payload: object } | null = null;
+
+  app.get('/api/mcp/install-info', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const now = Date.now();
+    if (installInfoCache && now - installInfoCache.t < INSTALL_INFO_TTL_MS) {
+      return res.json(installInfoCache.payload);
+    }
+    let cliPath;
+    try {
+      cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+    } catch (err) {
+      return sendApiError(res, 500, 'CLI_RESOLVE_FAILED', String(err));
+    }
+    const cliExists = fs.existsSync(cliPath);
+    // process.execPath is the absolute path to the node binary that
+    // is running the daemon RIGHT NOW. We prefer it over bare `node`
+    // because IDE-spawned MCP clients inherit a minimal PATH from the
+    // OS launcher (Spotlight, Dock, etc.) that often does not see
+    // user-level node installs (nvm, fnm, asdf). On rare occasions
+    // (uninstall mid-session, exotic embeds) the path may not exist
+    // by the time the user copies the snippet; catch that and warn.
+    const nodeExists = fs.existsSync(process.execPath);
+    const hints: string[] = [];
+    if (!cliExists) {
+      hints.push(
+        'apps/daemon/dist/cli.js is missing. Run `pnpm --filter @open-design/daemon build` (or just `pnpm build`) and refresh.',
+      );
+    }
+    if (!nodeExists) {
+      hints.push(
+        `Node binary at ${process.execPath} no longer exists. Reinstall Node and restart the daemon.`,
+      );
+    }
+    const payload = {
+      command: process.execPath,
+      args: [cliPath, 'mcp', '--daemon-url', `http://127.0.0.1:${resolvedPort}`],
+      daemonUrl: `http://127.0.0.1:${resolvedPort}`,
+      // Surface platform so the install panel can localize path hints
+      // (~/.cursor vs %USERPROFILE%\.cursor) and keyboard shortcuts
+      // (Cmd vs Ctrl). One of 'darwin' | 'linux' | 'win32' in
+      // practice; the panel falls back to POSIX wording for anything
+      // else.
+      platform: process.platform,
+      cliExists,
+      nodeExists,
+      buildHint: hints.length ? hints.join(' ') : null,
+    };
+    installInfoCache = { t: now, payload };
+    res.json(payload);
+  });
+
   app.get('/api/projects', (_req, res) => {
     try {
       const latestRunStatuses = listLatestProjectRunStatuses(db);
@@ -953,6 +1088,39 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       res.json(body);
     } catch (err) {
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  // SSE stream of file-changed events for a project. Drives preview live-reload.
+  // Receipt of a `file-changed` event triggers a file-list refresh, which
+  // propagates new mtimes through to FileViewer iframes (the URL-load
+  // `?v=${mtime}` cache-bust from PR #384 then reloads the iframe automatically).
+  // Subscribers come and go as users open/close project tabs; the underlying
+  // chokidar watcher is refcounted in project-watchers.ts so we never hold
+  // descriptors for projects no UI is looking at.
+  app.get('/api/projects/:id/events', (req, res) => {
+    if (!getProject(db, req.params.id)) {
+      return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
+    }
+    let sub;
+    try {
+      const sse = createSseResponse(res);
+      sub = subscribeFileEvents(PROJECTS_DIR, req.params.id, (evt) => {
+        sse.send('file-changed', evt);
+      });
+      sub.ready.then(() => sse.send('ready', { projectId: req.params.id })).catch(() => {});
+      const cleanup = () => {
+        if (sub) {
+          const { unsubscribe } = sub;
+          sub = null;
+          Promise.resolve(unsubscribe()).catch(() => {});
+        }
+      };
+      res.on('close', cleanup);
+      res.on('finish', cleanup);
+    } catch (err) {
+      if (sub) Promise.resolve(sub.unsubscribe()).catch(() => {});
+      if (!res.headersSent) sendApiError(res, 400, 'BAD_REQUEST', String(err?.message || err));
     }
   });
 
@@ -1224,7 +1392,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   app.get('/api/skills/:id', async (req, res) => {
     try {
       const skills = await listSkills(SKILLS_DIR);
-      const skill = skills.find((s) => s.id === req.params.id);
+      const skill = findSkillById(skills, req.params.id);
       if (!skill) return res.status(404).json({ error: 'skill not found' });
       const { dir: _dir, ...serializable } = skill;
       res.json(serializable);
@@ -1617,14 +1785,17 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   app.get('/api/skills/:id/example', async (req, res) => {
     try {
       const skills = await listSkills(SKILLS_DIR);
-      const skill = skills.find((s) => s.id === req.params.id);
+      const skill = findSkillById(skills, req.params.id);
       if (!skill) {
         return res.status(404).type('text/plain').send('skill not found');
       }
 
       const baked = path.join(skill.dir, 'example.html');
       if (fs.existsSync(baked)) {
-        return res.type('text/html').sendFile(baked);
+        const html = await fs.promises.readFile(baked, 'utf8');
+        return res
+          .type('text/html')
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
 
       const tpl = path.join(skill.dir, 'assets', 'template.html');
@@ -1634,17 +1805,25 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
           const tplHtml = await fs.promises.readFile(tpl, 'utf8');
           const slidesHtml = await fs.promises.readFile(slides, 'utf8');
           const assembled = assembleExample(tplHtml, slidesHtml, skill.name);
-          return res.type('text/html').send(assembled);
+          return res
+            .type('text/html')
+            .send(rewriteSkillAssetUrls(assembled, skill.id));
         } catch {
           // Fall through to raw template on read failure.
         }
       }
       if (fs.existsSync(tpl)) {
-        return res.type('text/html').sendFile(tpl);
+        const html = await fs.promises.readFile(tpl, 'utf8');
+        return res
+          .type('text/html')
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
       const idx = path.join(skill.dir, 'assets', 'index.html');
       if (fs.existsSync(idx)) {
-        return res.type('text/html').sendFile(idx);
+        const html = await fs.promises.readFile(idx, 'utf8');
+        return res
+          .type('text/html')
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
       res
         .status(404)
@@ -1652,6 +1831,41 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         .send(
           'no example.html, assets/template.html, or assets/index.html for this skill',
         );
+    } catch (err) {
+      res.status(500).type('text/plain').send(String(err));
+    }
+  });
+
+  // Static assets shipped beside a skill's example/template HTML. Lets the
+  // example HTML reference `./assets/foo.png`-style paths that resolve
+  // correctly when the response is loaded into a sandboxed `srcdoc` iframe
+  // (where relative URLs would otherwise resolve against `about:srcdoc`).
+  // The example response above rewrites `./assets/<file>` into a request
+  // against this route; we still keep the on-disk paths human-friendly so
+  // contributors can preview `example.html` straight from disk.
+  app.get('/api/skills/:id/assets/*', async (req, res) => {
+    try {
+      const skills = await listSkills(SKILLS_DIR);
+      const skill = findSkillById(skills, req.params.id);
+      if (!skill) {
+        return res.status(404).type('text/plain').send('skill not found');
+      }
+      const relPath = String(req.params[0] || '');
+      const assetsRoot = path.resolve(skill.dir, 'assets');
+      const target = path.resolve(assetsRoot, relPath);
+      if (target !== assetsRoot && !target.startsWith(assetsRoot + path.sep)) {
+        return res.status(400).type('text/plain').send('invalid asset path');
+      }
+      if (!fs.existsSync(target)) {
+        return res.status(404).type('text/plain').send('asset not found');
+      }
+      // The example HTML is rendered inside a sandboxed iframe (Origin: null).
+      // Mirror the project /raw route's allowance so the iframe can fetch the
+      // image bytes; same-origin web callers do not need this header.
+      if (req.headers.origin === 'null') {
+        res.header('Access-Control-Allow-Origin', '*');
+      }
+      res.type(mimeFor(target)).sendFile(target);
     } catch (err) {
       res.status(500).type('text/plain').send(String(err));
     }
@@ -1895,10 +2109,32 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   // project's own folder (see apps/daemon/src/projects.ts).
   app.get('/api/projects/:id/files', async (req, res) => {
     try {
-      const files = await listFiles(PROJECTS_DIR, req.params.id);
+      const since = Number(req.query?.since);
+      const files = await listFiles(PROJECTS_DIR, req.params.id, {
+        since: Number.isFinite(since) ? since : undefined,
+      });
       /** @type {import('@open-design/contracts').ProjectFilesResponse} */
       const body = { files };
       res.json(body);
+    } catch (err) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  app.get('/api/projects/:id/search', async (req, res) => {
+    try {
+      const query = String(req.query.q ?? '');
+      if (!query) {
+        sendApiError(res, 400, 'BAD_REQUEST', 'q query parameter is required');
+        return;
+      }
+      const pattern = req.query.pattern ? String(req.query.pattern) : null;
+      const max = Math.min(Number(req.query.max) || 200, 1000);
+      const matches = await searchProjectFiles(PROJECTS_DIR, req.params.id, query, {
+        pattern,
+        max,
+      });
+      res.json({ query, matches });
     } catch (err) {
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
@@ -1935,6 +2171,43 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     } catch (err) {
       const code = err && err.code;
       const status = code === 'ENOENT' || code === 'ENOTDIR' ? 404 : 400;
+      sendApiError(
+        res,
+        status,
+        status === 404 ? 'FILE_NOT_FOUND' : 'BAD_REQUEST',
+        String(err?.message || err),
+      );
+    }
+  });
+
+  // Batch archive: accepts a list of file names and returns a ZIP of just
+  // those files. Used by the Design Files panel multi-select download.
+  app.post('/api/projects/:id/archive/batch', async (req, res) => {
+    try {
+      const { files } = req.body || {};
+      if (!Array.isArray(files) || files.length === 0) {
+        sendApiError(res, 400, 'BAD_REQUEST', 'files must be a non-empty array');
+        return;
+      }
+      const { buffer } = await buildBatchArchive(
+        PROJECTS_DIR,
+        req.params.id,
+        files,
+      );
+      const project = getProject(db, req.params.id);
+      const fileSlug = sanitizeArchiveFilename(project?.name || req.params.id) || 'project';
+      const filename = `${fileSlug}.zip`;
+      const asciiFallback =
+        filename.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_') || 'project.zip';
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      );
+      res.send(buffer);
+    } catch (err) {
+      const code = err && err.code;
+      const status = code === 'ENOENT' ? 404 : 400;
       sendApiError(
         res,
         status,
@@ -2420,14 +2693,17 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     let skillName;
     let skillMode;
     let skillCraftRequires = [];
+    let activeSkillDir = null;
     if (effectiveSkillId) {
-      const skill = (await listSkills(SKILLS_DIR)).find(
-        (s) => s.id === effectiveSkillId,
+      const skill = findSkillById(
+        await listSkills(SKILLS_DIR),
+        effectiveSkillId,
       );
       if (skill) {
         skillBody = skill.body;
         skillName = skill.name;
         skillMode = skill.mode;
+        activeSkillDir = skill.dir;
         if (Array.isArray(skill.craftRequires))
           skillCraftRequires = skill.craftRequires;
       }
@@ -2459,7 +2735,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         ? (getTemplate(db, metadata.templateId) ?? undefined)
         : undefined;
 
-    return composeSystemPrompt({
+    const prompt = composeSystemPrompt({
       skillBody,
       skillName,
       skillMode,
@@ -2470,6 +2746,11 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       metadata,
       template,
     });
+    // The chat handler also needs to know where the active skill lives
+    // on disk so it can stage a per-project copy of its side files
+    // before spawning the agent. Returning that here avoids a second
+    // `listSkills()` scan in `startChatRun`.
+    return { prompt, activeSkillDir };
   };
 
   const startChatRun = async (chatBody, run) => {
@@ -2583,11 +2864,12 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       ? `\n\nAttached project files: ${safeAttachments.map((p) => `\`${p}\``).join(', ')}`
       : '';
     const commentHint = renderCommentAttachmentHint(safeCommentAttachments);
-    const daemonSystemPrompt = await composeDaemonSystemPrompt({
-      projectId,
-      skillId,
-      designSystemId,
-    });
+    const { prompt: daemonSystemPrompt, activeSkillDir } =
+      await composeDaemonSystemPrompt({
+        projectId,
+        skillId,
+        designSystemId,
+      });
     const instructionPrompt = [daemonSystemPrompt, systemPrompt]
       .map((part) => (typeof part === 'string' ? part.trim() : ''))
       .filter(Boolean)
@@ -2604,13 +2886,51 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         : '',
     ].join('');
 
-    // Skill seeds (`skills/<id>/assets/template.html`) and design-system
-    // specs (`design-systems/<id>/DESIGN.md`) live outside the project cwd.
-    // The composed system prompt asks the agent to Read them via absolute
-    // paths in the skill-root preamble — without an explicit allowlist,
-    // Claude Code blocks those reads (issue #6: "no permission to read
-    // skills template"). We surface both roots so any agent that honours
-    // `--add-dir` can resolve those side files.
+    // Make skill side files reachable through three layers, in order of
+    // preference. The skill preamble emitted by `withSkillRootPreamble()`
+    // advertises both the cwd-relative path (1) and the absolute path
+    // (2/3) so the agent can pick whichever works.
+    //
+    //   1. CWD-relative copy. Stage the *active* skill into
+    //      `<cwd>/.od-skills/<folder>/` so any agent CLI — not just the
+    //      ones that honour `--add-dir` — can reach those files via a
+    //      path inside its working directory. We copy (not symlink) so
+    //      the staged directory is a true write barrier — agents cannot
+    //      mutate the shipped repo resource through their cwd.
+    //   2. `--add-dir` allowlist. Pass `SKILLS_DIR` and
+    //      `DESIGN_SYSTEMS_DIR` to Claude/Copilot so the absolute fallback
+    //      path in the preamble is reachable when staging fails (e.g. the
+    //      project has no on-disk cwd, or fs.cp errored).
+    //   3. PROJECT_ROOT cwd. When `cwd` is null, the agent runs with
+    //      `cwd: PROJECT_ROOT` — there the absolute path is already an
+    //      in-cwd path, so neither (1) nor (2) is required for it to
+    //      resolve.
+    //
+    // Design systems are *not* staged here. Their bodies are read by the
+    // daemon and folded into the system prompt directly (see
+    // `readDesignSystem`), so an agent never has to open them via the
+    // filesystem.
+    if (cwd && activeSkillDir) {
+      const result = await stageActiveSkill(
+        cwd,
+        path.basename(activeSkillDir),
+        activeSkillDir,
+        (msg) => console.warn(msg),
+      );
+      if (!result.staged) {
+        console.warn(
+          `[od] skill-stage skipped: ${result.reason ?? 'unknown reason'}; falling back to absolute paths`,
+        );
+      }
+    }
+    // Resolve the agent's effective working directory once and use it
+    // everywhere the agent could read it (buildArgs runtimeContext, spawn
+    // cwd, ACP session new). Falling back to PROJECT_ROOT — rather than
+    // letting `spawn` inherit the daemon process cwd — is what makes the
+    // absolute-path fallback in the skill preamble actually in-cwd for
+    // no-project runs (packaged daemons / service launches do not start
+    // their working directory from the workspace root).
+    const effectiveCwd = cwd ?? PROJECT_ROOT;
     const extraAllowedDirs = [SKILLS_DIR, DESIGN_SYSTEMS_DIR].filter((d) =>
       fs.existsSync(d),
     );
@@ -2630,6 +2950,27 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         ? (def.reasoningOptions.find((r) => r.id === reasoning)?.id ?? null)
         : null;
     const agentOptions = { model: safeModel, reasoning: safeReasoning };
+
+    // Pre-flight the composed prompt against any argv-byte budget the
+    // adapter declared (only DeepSeek TUI today — its CLI doesn't accept
+    // a `-` stdin sentinel, so the prompt has to ride argv). Doing this
+    // before bin resolution means the test harness pins the guard
+    // independently of whether the adapter binary happens to be on PATH
+    // in the CI environment, and the user gets the actionable
+    // adapter-named error even if /api/agents hadn't refreshed yet.
+    const promptBudgetError = checkPromptArgvBudget(def, composed);
+    if (promptBudgetError) {
+      design.runs.emit(
+        run,
+        'error',
+        createSseErrorPayload(
+          promptBudgetError.code,
+          promptBudgetError.message,
+          { retryable: false },
+        ),
+      );
+      return design.runs.finish(run, 'failed', 1, null);
+    }
 
     const resolvedBin = resolveAgentBin(agentId);
 
@@ -2656,8 +2997,64 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       safeImages,
       extraAllowedDirs,
       agentOptions,
-      { cwd },
+      { cwd: effectiveCwd },
     );
+
+    // Second-pass budget check that knows about the Windows `.cmd` shim
+    // wrap. The pre-buildArgs `checkPromptArgvBudget` only looks at the
+    // raw composed prompt; on Windows an npm-installed adapter resolves
+    // to e.g. `deepseek.cmd`, the spawn path goes through `cmd.exe /d /s
+    // /c "<inner>"`, and `quoteForWindowsCmdShim` doubles every embedded
+    // `"` plus wraps any whitespace/special-char arg in outer quotes —
+    // so a quote-heavy prompt that fit under `maxPromptArgBytes` can
+    // still expand past CreateProcess's 32_767-char cap. Fail fast with
+    // the same `AGENT_PROMPT_TOO_LARGE` shape so the SSE error path
+    // doesn't have to special-case it.
+    const cmdShimBudgetError = checkWindowsCmdShimCommandLineBudget(
+      def,
+      resolvedBin,
+      args,
+    );
+    if (cmdShimBudgetError) {
+      design.runs.emit(
+        run,
+        'error',
+        createSseErrorPayload(
+          cmdShimBudgetError.code,
+          cmdShimBudgetError.message,
+          { retryable: false },
+        ),
+      );
+      return design.runs.finish(run, 'failed', 1, null);
+    }
+
+    // Companion guard for non-shim Windows installs (e.g. a cargo-built
+    // `deepseek.exe` rather than the npm `.cmd` shim). Direct `.exe`
+    // spawns skip the cmd.exe wrap above, but Node/libuv still composes
+    // a CreateProcess `lpCommandLine` by walking each argv element
+    // through `quote_cmd_arg`, which escapes every embedded `"` as `\"`
+    // and doubles backslashes adjacent to quotes. A quote-heavy prompt
+    // under `maxPromptArgBytes` can expand past the 32_767-char kernel
+    // cap there too, so the cmd-shim early-return alone would let those
+    // users hit a generic `spawn ENAMETOOLONG`.
+    const directExeBudgetError = checkWindowsDirectExeCommandLineBudget(
+      def,
+      resolvedBin,
+      args,
+    );
+    if (directExeBudgetError) {
+      design.runs.emit(
+        run,
+        'error',
+        createSseErrorPayload(
+          directExeBudgetError.code,
+          directExeBudgetError.message,
+          { retryable: false },
+        ),
+      );
+      return design.runs.finish(run, 'failed', 1, null);
+    }
+
     const send = (event, data) => design.runs.emit(run, event, data);
 
     const odMediaEnv = {
@@ -2695,7 +3092,11 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         def.promptViaStdin || def.streamFormat === 'acp-json-rpc'
           ? 'pipe'
           : 'ignore';
-      const env = spawnEnvForAgent(def.id, { ...process.env, ...odMediaEnv });
+      const env = spawnEnvForAgent(def.id, {
+        ...process.env,
+        ...(def.env || {}),
+        ...odMediaEnv,
+      });
       const invocation = createCommandInvocation({
         command: resolvedBin,
         args,
@@ -2704,7 +3105,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       child = spawn(invocation.command, invocation.args, {
         env,
         stdio: [stdinMode, 'pipe', 'pipe'],
-        cwd: cwd || undefined,
+        cwd: effectiveCwd,
         shell: false,
         // Required when invocation wraps a Windows .cmd/.bat shim through
         // cmd.exe; without this, Node re-escapes the inner command line and
@@ -2761,7 +3162,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       acpSession = attachPiRpcSession({
         child,
         prompt: composed,
-        cwd: cwd || PROJECT_ROOT,
+        cwd: effectiveCwd,
         model: safeModel,
         send,
       });
@@ -2769,7 +3170,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       acpSession = attachAcpSession({
         child,
         prompt: composed,
-        cwd: cwd || PROJECT_ROOT,
+        cwd: effectiveCwd,
         model: safeModel,
         send,
       });
@@ -2866,12 +3267,15 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return { error: 'Only http/https allowed' };
     }
+    const hostname = parsed.hostname.toLowerCase();
+    const isLoopback =
+      ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
     if (
-      ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname) ||
-      parsed.hostname.startsWith('169.254.') ||
-      parsed.hostname.startsWith('10.') ||
-      /^192\.168\./.test(parsed.hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(parsed.hostname)
+      !isLoopback &&
+      (hostname.startsWith('169.254.') ||
+        hostname.startsWith('10.') ||
+        /^192\.168\./.test(hostname) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname))
     ) {
       return { error: 'Internal IPs blocked', forbidden: true };
     }
@@ -2900,10 +3304,10 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
   const appendVersionedApiPath = (baseUrl, path) => {
     const url = new URL(baseUrl);
-    url.pathname = url.pathname.replace(/\/+$/, '');
-    url.pathname = /\/v\d+$/.test(url.pathname)
-      ? `${url.pathname}${path}`
-      : `${url.pathname}/v1${path}`;
+    const pathname = url.pathname.replace(/\/+$/, '');
+    url.pathname = /\/v\d+$/.test(pathname)
+      ? `${pathname}${path}`
+      : `${pathname}/v1${path}`;
     return url.toString();
   };
 
@@ -3499,6 +3903,30 @@ function assembleExample(templateHtml, slidesHtml, title) {
       /<title>.*?<\/title>/,
       `<title>${title} | Open Design Example</title>`,
     );
+}
+
+// Skill example HTML often references shipped images via relative paths
+// like `./assets/hero.png`. Those resolve correctly when the file is
+// opened from disk, but the web app loads the example into a sandboxed
+// iframe via `srcdoc`, where the document URL is `about:srcdoc` and
+// relative URLs cannot find the assets. Rewriting them to an absolute
+// `/api/skills/<id>/assets/...` URL lets the same HTML render in both
+// places — the disk preview keeps working, and the in-app preview now
+// fetches assets through the matching route below.
+export function rewriteSkillAssetUrls(html: string, skillId: string): string {
+  if (typeof html !== 'string' || html.length === 0) return html;
+  // Match src/href attributes whose values point at the current skill's
+  // assets (`./assets/...` or `assets/...`) or a sibling skill's assets
+  // (`../other-skill/assets/...`). Quote style is preserved so we do not
+  // disturb the surrounding markup.
+  return html.replace(
+    /(\s(?:src|href)\s*=\s*)(['"])((?:\.\.\/([^/'"#?]+)\/)?(?:\.\/)?assets\/([^'"#?]+))(\2)/gi,
+    (_match, attr, openQuote, _fullPath, siblingSkillId, relPath, closeQuote) => {
+      const resolvedSkillId = siblingSkillId || skillId;
+      const prefix = `/api/skills/${encodeURIComponent(resolvedSkillId)}/assets/`;
+      return `${attr}${openQuote}${prefix}${relPath}${closeQuote}`;
+    },
+  );
 }
 
 export function isLocalSameOrigin(req, port) {
