@@ -160,6 +160,8 @@ import {
   gitPush,
   gitHistory,
   gitRollback,
+  gitCreateRemote,
+  GhCliError,
 } from './raccoonui/git-project-bridge.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
@@ -2401,6 +2403,29 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       res.json({ history });
     } catch (err) {
       sendApiError(res, 400, 'GIT_HISTORY_FAILED', String(err));
+    }
+  });
+
+  // RACCOONUI-PATCH: gh-driven create + push so non-engineering users
+  // (Zoe / Nancy) can publish a project from the Settings dialog without
+  // dropping to a terminal — 2026-05-06
+  app.post('/api/raccoonui/projects/:id/git/create-remote', async (req, res) => {
+    try {
+      const { visibility } = req.body ?? {};
+      const safeVisibility: 'private' | 'public' =
+        visibility === 'public' ? 'public' : 'private';
+      const projectDir = await ensureProject(PROJECTS_DIR, req.params.id);
+      const result = await gitCreateRemote(projectDir, req.params.id, {
+        visibility: safeVisibility,
+      });
+      res.json(result);
+    } catch (err) {
+      if (err instanceof GhCliError) {
+        // Map gh preflight errors to a 503 with a stable code so the UI
+        // can render the right install / auth instructions.
+        return sendApiError(res, 503, err.code, err.detail);
+      }
+      sendApiError(res, 400, 'GIT_CREATE_REMOTE_FAILED', String(err));
     }
   });
 

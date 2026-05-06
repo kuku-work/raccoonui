@@ -394,6 +394,179 @@ export async function gitHistory(
   return entries;
 }
 
+// ----- gh CLI helpers -----------------------------------------------------
+//
+// `createRemote` mirrors the core flow of scripts/raccoonui/git-init-project.sh
+// so non-engineering coworkers (Zoe / Nancy) don't need to drop to a terminal
+// just to publish a project. Assumes gh is installed + authenticated; surfaces
+// a structured error code otherwise so the UI can render the right install
+// or auth instructions.
+
+async function runGhBare(
+  args: string[],
+  opts: { cwd?: string } = {},
+): Promise<GitResult> {
+  try {
+    const { stdout, stderr } = await execFileP('gh', args, {
+      cwd: opts.cwd,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err: any) {
+    return {
+      stdout: err.stdout ?? '',
+      stderr: err.stderr ?? err.message ?? '',
+      exitCode: typeof err.code === 'number' ? err.code : 1,
+    };
+  }
+}
+
+export class GhCliError extends Error {
+  code: 'GH_NOT_INSTALLED' | 'GH_NOT_AUTHENTICATED' | 'GH_API_FAILED';
+  detail: string;
+  constructor(
+    code: 'GH_NOT_INSTALLED' | 'GH_NOT_AUTHENTICATED' | 'GH_API_FAILED',
+    detail: string,
+  ) {
+    super(detail);
+    this.name = 'GhCliError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export interface CreateRemoteResult {
+  ok: true;
+  owner: string;
+  name: string;
+  repoUrl: string;
+  visibility: 'private' | 'public';
+  alreadyExisted: boolean;
+  pushed: boolean;
+  pushOutput: string;
+}
+
+/**
+ * Create the user's GitHub repo + push the local project to it. Idempotent:
+ * if the remote already exists, just rewires origin to HTTPS and pushes.
+ *
+ * Auth model: relies entirely on the user's own gh CLI (no daemon-side
+ * tokens). HTTPS is pinned for the same reason as the helper script — SSH
+ * needs a key + first-connect host trust prompt, which can hang on a fresh
+ * mac (see fact_74365eeb).
+ */
+export async function gitCreateRemote(
+  projectDir: string,
+  slug: string,
+  opts: { visibility?: 'private' | 'public' } = {},
+): Promise<CreateRemoteResult> {
+  if (!(await gitIsInitialized(projectDir))) {
+    throw new Error('git not initialized — call git/init first');
+  }
+  const visibility: 'private' | 'public' = opts.visibility === 'public'
+    ? 'public'
+    : 'private';
+
+  // Preflight 1: gh installed?
+  const version = await runGhBare(['--version']);
+  if (version.exitCode !== 0) {
+    if (/ENOENT/.test(version.stderr) || /not.*recognized|not found/i.test(version.stderr)) {
+      throw new GhCliError('GH_NOT_INSTALLED', 'gh CLI not installed');
+    }
+    throw new GhCliError('GH_NOT_INSTALLED', version.stderr || 'gh --version failed');
+  }
+
+  // Preflight 2: authenticated?
+  const auth = await runGhBare(['auth', 'status']);
+  if (auth.exitCode !== 0) {
+    throw new GhCliError(
+      'GH_NOT_AUTHENTICATED',
+      auth.stderr || 'gh auth status failed',
+    );
+  }
+
+  // Idempotent: ensure git uses gh as HTTPS credential helper. Without this
+  // `git push` against a private repo returns 404 (GitHub hides private
+  // repos from unauthenticated requests).
+  await runGhBare(['auth', 'setup-git']);
+
+  // Resolve the active gh user — that's the repo owner.
+  const userRes = await runGhBare(['api', 'user', '--jq', '.login']);
+  if (userRes.exitCode !== 0) {
+    throw new GhCliError(
+      'GH_API_FAILED',
+      userRes.stderr || 'gh api user failed',
+    );
+  }
+  const owner = userRes.stdout.trim();
+  if (!owner) {
+    throw new GhCliError('GH_API_FAILED', 'gh api user returned empty login');
+  }
+  const name = slug;
+  const repoUrl = `https://github.com/${owner}/${name}.git`;
+
+  // Detect prior remote state.
+  const exists = await runGhBare(['repo', 'view', `${owner}/${name}`]);
+  const alreadyExisted = exists.exitCode === 0;
+
+  if (!alreadyExisted) {
+    const create = await runGhBare([
+      'repo',
+      'create',
+      name,
+      `--${visibility}`,
+      '--source',
+      projectDir,
+      '--remote',
+      'origin',
+      '--push=false',
+    ]);
+    if (create.exitCode !== 0) {
+      throw new GhCliError(
+        'GH_API_FAILED',
+        create.stderr || `gh repo create exited ${create.exitCode}`,
+      );
+    }
+    // gh occasionally prints a URL even when the API call silently failed —
+    // verify the repo really exists before pushing into it.
+    const verify = await runGhBare(['repo', 'view', `${owner}/${name}`]);
+    if (verify.exitCode !== 0) {
+      throw new GhCliError(
+        'GH_API_FAILED',
+        `gh repo create reported success but ${owner}/${name} not found on GitHub`,
+      );
+    }
+  }
+
+  // Always pin origin to HTTPS — handles SSH leftover from a prior
+  // ssh-protocol gh config or from `gh repo create` itself.
+  const setUrl = await runGit(projectDir, ['remote', 'set-url', 'origin', repoUrl]);
+  if (setUrl.exitCode !== 0) {
+    const add = await runGit(projectDir, ['remote', 'add', 'origin', repoUrl]);
+    if (add.exitCode !== 0) {
+      throw new Error(`failed to set origin: ${setUrl.stderr || add.stderr}`);
+    }
+  }
+
+  // Push. Idempotent across "already pushed" — git no-ops with exit 0.
+  const push = await runGit(projectDir, ['push', '-u', 'origin', 'main']);
+  if (push.exitCode !== 0) {
+    throw new Error(`git push failed: ${push.stderr || push.stdout}`);
+  }
+
+  return {
+    ok: true,
+    owner,
+    name,
+    repoUrl: `https://github.com/${owner}/${name}`,
+    visibility,
+    alreadyExisted,
+    pushed: true,
+    pushOutput: (push.stdout || '') + (push.stderr || ''),
+  };
+}
+
 /**
  * Roll back to a previous commit. Two modes:
  *   - 'revert' (default, safe): adds a new commit that inverses the target.

@@ -200,6 +200,27 @@ export interface ImportFsResponse {
   failed: { id: string; error: string }[];
 }
 
+// Create the user's GitHub repo and push the local project to it. Owner
+// is whatever account `gh auth status` resolves to — daemon never stores
+// tokens. Repo name is the project slug. Idempotent: if the remote
+// already exists, just rewires origin to HTTPS and pushes.
+export type GitRemoteVisibility = 'private' | 'public';
+
+export interface GitCreateRemoteRequest {
+  visibility?: GitRemoteVisibility;
+}
+
+export interface GitCreateRemoteResponse {
+  ok: true;
+  owner: string;
+  name: string;
+  repoUrl: string;
+  visibility: GitRemoteVisibility;
+  alreadyExisted: boolean;
+  pushed: boolean;
+  pushOutput: string;
+}
+
 export interface UpdateProjectRequest {
   name?: string;
   skillId?: string | null;

@@ -226,6 +226,32 @@ test('B6 git/rollback rejects malformed commit reference', async () => {
   assert.equal(body.error?.code, 'GIT_ROLLBACK_FAILED');
 });
 
+test('B7b git/create-remote rejects pre-init project (no gh side effects)', async () => {
+  // Spin up a fresh project we deliberately don't `git init`. The create-
+  // remote endpoint must reject before reaching gh — that's the safety
+  // contract that keeps this test from touching a real GitHub account.
+  const slug = `raccoonui-noinit-${Date.now().toString(36)}`;
+  const create = await fetch(`${baseUrl}/api/projects`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: slug, name: 'no-init smoke' }),
+  });
+  assert.equal(create.status, 200, await create.text());
+
+  const res = await fetch(
+    `${baseUrl}/api/raccoonui/projects/${slug}/git/create-remote`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ visibility: 'private' }),
+    },
+  );
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as { error?: { code?: string; message?: string } };
+  assert.equal(body.error?.code, 'GIT_CREATE_REMOTE_FAILED');
+  assert.match(body.error?.message ?? '', /not initialized/);
+});
+
 test('B7 import-fs scan returns expected shape', async () => {
   const res = await fetch(`${baseUrl}/api/raccoonui/projects/import-fs`, {
     method: 'POST',

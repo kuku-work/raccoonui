@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import {
   gitCommit,
+  gitCreateRemote,
   gitHistory,
   gitImportFs,
   gitInit,
@@ -18,6 +19,7 @@ import {
 } from '../state/projects';
 import type {
   GitLogEntry,
+  GitRemoteVisibility,
   GitStatusResponse,
 } from '@open-design/contracts';
 
@@ -29,11 +31,16 @@ type Busy =
   | 'init'
   | 'commit'
   | 'push'
+  | 'create-remote'
   | 'rollback'
   | 'import-fs'
   | null;
 
-type Feedback = { kind: 'ok' | 'err'; text: string };
+type Feedback =
+  | { kind: 'ok'; text: string }
+  | { kind: 'err'; text: string }
+  | { kind: 'install-gh'; text: string }
+  | { kind: 'auth-gh'; text: string };
 
 export function ProjectGitSection({ currentProjectId }: Props) {
   const t = useT();
@@ -42,6 +49,7 @@ export function ProjectGitSection({ currentProjectId }: Props) {
   const [commitMsg, setCommitMsg] = useState('');
   const [busy, setBusy] = useState<Busy>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [visibility, setVisibility] = useState<GitRemoteVisibility>('private');
 
   useEffect(() => {
     if (!currentProjectId) {
@@ -106,6 +114,36 @@ export function ProjectGitSection({ currentProjectId }: Props) {
         }),
       });
       setCommitMsg('');
+      await refresh(currentProjectId);
+    }
+    setBusy(null);
+  }
+
+  async function onCreateRemote() {
+    if (!currentProjectId || busy) return;
+    setBusy('create-remote');
+    setFeedback(null);
+    const r = await gitCreateRemote(currentProjectId, visibility);
+    if ('error' in r) {
+      // Render gh-specific guidance so the user knows the next concrete
+      // step (install / re-login) instead of staring at a generic error.
+      if (r.error.kind === 'GH_NOT_INSTALLED') {
+        setFeedback({ kind: 'install-gh', text: t('projectGit.errGhNotInstalled') });
+      } else if (r.error.kind === 'GH_NOT_AUTHENTICATED') {
+        setFeedback({ kind: 'auth-gh', text: t('projectGit.errGhNotAuthed') });
+      } else {
+        setFeedback({
+          kind: 'err',
+          text: t('projectGit.errCreateRemote', { detail: r.error.message }),
+        });
+      }
+    } else {
+      setFeedback({
+        kind: 'ok',
+        text: r.alreadyExisted
+          ? t('projectGit.createRemoteExisted', { url: r.repoUrl })
+          : t('projectGit.createRemoteDone', { url: r.repoUrl }),
+      });
       await refresh(currentProjectId);
     }
     setBusy(null);
@@ -189,10 +227,23 @@ export function ProjectGitSection({ currentProjectId }: Props) {
 
       {feedback ? (
         <div
-          className={`project-git-feedback ${feedback.kind}`}
+          className={`project-git-feedback ${feedback.kind === 'install-gh' || feedback.kind === 'auth-gh' ? 'err' : feedback.kind}`}
           data-testid="project-git-feedback"
         >
-          {feedback.text}
+          <span>{feedback.text}</span>
+          {feedback.kind === 'install-gh' ? (
+            <a
+              href="https://cli.github.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="project-git-help-link"
+            >
+              cli.github.com
+            </a>
+          ) : null}
+          {feedback.kind === 'auth-gh' ? (
+            <code className="project-git-help-cmd">gh auth login</code>
+          ) : null}
         </div>
       ) : null}
 
@@ -240,6 +291,52 @@ export function ProjectGitSection({ currentProjectId }: Props) {
               </dd>
             </div>
           </dl>
+
+          {!status.hasRemote ? (
+            <div className="project-git-create-remote">
+              <h4>{t('projectGit.createRemoteTitle')}</h4>
+              <p className="hint">
+                {t('projectGit.createRemoteSubtitle', {
+                  slug: currentProjectId,
+                })}
+              </p>
+              <fieldset className="project-git-visibility">
+                <legend>{t('projectGit.visibilityLabel')}</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="raccoonui-git-visibility"
+                    value="private"
+                    checked={visibility === 'private'}
+                    onChange={() => setVisibility('private')}
+                    disabled={busy !== null}
+                  />
+                  <span>{t('projectGit.visibilityPrivate')}</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="raccoonui-git-visibility"
+                    value="public"
+                    checked={visibility === 'public'}
+                    onChange={() => setVisibility('public')}
+                    disabled={busy !== null}
+                  />
+                  <span>{t('projectGit.visibilityPublic')}</span>
+                </label>
+              </fieldset>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy !== null}
+                onClick={onCreateRemote}
+              >
+                {busy === 'create-remote'
+                  ? t('projectGit.busyCreateRemote')
+                  : t('projectGit.createRemoteBtn')}
+              </button>
+            </div>
+          ) : null}
 
           <div className="project-git-commit">
             <label>{t('projectGit.commitLabel')}</label>

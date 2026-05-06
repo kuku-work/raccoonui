@@ -15,10 +15,12 @@ import type {
 } from '../types';
 import type {
   GitCommitResponse,
+  GitCreateRemoteResponse,
   GitHistoryResponse,
   GitInitResponse,
   GitLogEntry,
   GitPushResponse,
+  GitRemoteVisibility,
   GitRollbackMode,
   GitRollbackResponse,
   GitStatusResponse,
@@ -416,6 +418,42 @@ export async function gitRollback(
     return (await resp.json()) as GitRollbackResponse;
   } catch {
     return null;
+  }
+}
+
+// Distinct error shape so the UI can branch on missing-gh vs missing-auth
+// vs everything-else and render the right install / `gh auth login`
+// instructions instead of a generic "something went wrong".
+export type GitCreateRemoteError =
+  | { kind: 'GH_NOT_INSTALLED'; message: string }
+  | { kind: 'GH_NOT_AUTHENTICATED'; message: string }
+  | { kind: 'GH_API_FAILED'; message: string }
+  | { kind: 'OTHER'; message: string };
+
+export async function gitCreateRemote(
+  projectId: string,
+  visibility: GitRemoteVisibility,
+): Promise<GitCreateRemoteResponse | { error: GitCreateRemoteError }> {
+  try {
+    const resp = await fetch(gitUrl(projectId, 'create-remote'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    });
+    if (resp.ok) {
+      return (await resp.json()) as GitCreateRemoteResponse;
+    }
+    const body = (await resp.json().catch(() => ({}))) as {
+      error?: { code?: string; message?: string };
+    };
+    const code = body.error?.code;
+    const message = body.error?.message ?? `HTTP ${resp.status}`;
+    if (code === 'GH_NOT_INSTALLED' || code === 'GH_NOT_AUTHENTICATED' || code === 'GH_API_FAILED') {
+      return { error: { kind: code, message } };
+    }
+    return { error: { kind: 'OTHER', message } };
+  } catch (err) {
+    return { error: { kind: 'OTHER', message: String(err) } };
   }
 }
 
