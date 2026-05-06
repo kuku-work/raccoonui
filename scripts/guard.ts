@@ -214,8 +214,12 @@ async function checkTestLayout(): Promise<boolean> {
 }
 
 const e2ePackageJsonPath = path.join(repoRoot, "e2e", "package.json");
-const e2eSkippedDirectories = new Set([".od-data", "node_modules", "reports", "test-results"]);
-const e2eAllowedScripts = ["test", "typecheck"];
+// RACCOONUI-PATCH: also skip `.tmp` so ad-hoc smoke artifacts under
+// e2e/.tmp/ (gitignored) don't trip the layout check — 2026-05-06
+const e2eSkippedDirectories = new Set([".od-data", "node_modules", "reports", "test-results", ".tmp"]);
+// RACCOONUI-PATCH: allow `test:e2e:raccoonui-protocol` so the daily
+// upstream-audit cron can run the raccoonui contract suite — 2026-05-06
+const e2eAllowedScripts = ["test", "test:e2e:raccoonui-protocol", "typecheck"];
 
 async function collectRepositoryFiles(directory: string, skippedDirectoryNames = new Set<string>()): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -296,8 +300,14 @@ async function checkE2eLayout(): Promise<boolean> {
     }
 
     if (repositoryPath.startsWith("e2e/scripts/")) {
-      if (repositoryPath !== "e2e/scripts/playwright.ts") {
-        violations.push(`${repositoryPath} -> e2e scripts currently allow only scripts/playwright.ts`);
+      // RACCOONUI-PATCH: also allow raccoonui-protocol.e2e.live.test.ts
+      // (raccoonui contract suite invoked from upstream-audit cron) — 2026-05-06
+      const allowedScripts = new Set([
+        "e2e/scripts/playwright.ts",
+        "e2e/scripts/raccoonui-protocol.e2e.live.test.ts",
+      ]);
+      if (!allowedScripts.has(repositoryPath)) {
+        violations.push(`${repositoryPath} -> e2e scripts currently allow only scripts/playwright.ts or raccoonui-protocol.e2e.live.test.ts`);
       }
       continue;
     }
