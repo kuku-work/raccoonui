@@ -21,6 +21,7 @@ import type { MediaProvider } from '../media/models';
 import { PetSettings } from './pet/PetSettings';
 // RACCOONUI-PATCH: per-project git workflow section — 2026-05-04
 import { ProjectGitSection } from './ProjectGitSection';
+import { LibrarySection } from './LibrarySection';
 import { DEFAULT_NOTIFICATIONS } from '../state/config';
 import {
   FAILURE_SOUNDS,
@@ -36,6 +37,7 @@ export type SettingsSection =
   | 'media'
   // RACCOONUI-PATCH: raigc workflow picker section — 2026-05-04
   | 'raigc'
+  | 'composio'
   | 'integrations'
   | 'language'
   | 'appearance'
@@ -43,6 +45,7 @@ export type SettingsSection =
   | 'pet'
   // RACCOONUI-PATCH: per-project git workflow section — 2026-05-04
   | 'projectGit'
+  | 'library'
   | 'about';
 
 interface Props {
@@ -51,9 +54,7 @@ interface Props {
   daemonLive: boolean;
   appVersionInfo: AppVersionInfo | null;
   welcome?: boolean;
-  // Optional deep-link target so callers (e.g. the entry-view "adopt a
-  // pet" pill) can pop the dialog open straight on a specific section.
-  defaultSection?: SettingsSection;
+  initialSection?: SettingsSection;
   // RACCOONUI-PATCH: id of the project the user has open, if any. Lets
   // the Project Git section operate on the active project instead of
   // forcing the user to pick from a dropdown.
@@ -61,8 +62,13 @@ interface Props {
   onSave: (cfg: AppConfig) => void;
   onClose: () => void;
   onRefreshAgents: (
-    options?: { throwOnError?: boolean },
+    options?: AgentRefreshOptions,
   ) => AgentInfo[] | Promise<AgentInfo[] | void> | void;
+}
+
+export interface AgentRefreshOptions {
+  throwOnError?: boolean;
+  agentCliEnv?: AppConfig['agentCliEnv'];
 }
 
 const SUGGESTED_MODELS_BY_PROTOCOL = {
@@ -140,6 +146,21 @@ const API_KEY_PLACEHOLDERS: Record<ApiProtocol, string> = {
 type RescanNotice =
   | { kind: 'success'; count: number }
   | { kind: 'error' };
+
+const AGENT_CLI_ENV_FIELDS = [
+  {
+    agentId: 'claude',
+    envKey: 'CLAUDE_CONFIG_DIR',
+    labelKey: 'settings.cliEnvClaudeConfigDir',
+    placeholder: '~/.claude-2',
+  },
+  {
+    agentId: 'codex',
+    envKey: 'CODEX_HOME',
+    labelKey: 'settings.cliEnvCodexHome',
+    placeholder: '~/.codex-alt',
+  },
+] as const;
 
 function defaultApiProtocolConfig(protocol: ApiProtocol): ApiProtocolConfig {
   const provider = KNOWN_PROVIDERS.find((p) => p.protocol === protocol);
@@ -225,6 +246,40 @@ export function updateCurrentApiProtocolConfig(
   );
 }
 
+export function updateAgentCliEnvValue(
+  config: AppConfig,
+  agentId: string,
+  envKey: string,
+  rawValue: string,
+): AppConfig {
+  const value = rawValue.trim();
+  const agentCliEnv = { ...(config.agentCliEnv ?? {}) };
+  const nextAgentEnv = { ...(agentCliEnv[agentId] ?? {}) };
+  if (value) {
+    nextAgentEnv[envKey] = value;
+  } else {
+    delete nextAgentEnv[envKey];
+  }
+
+  if (Object.keys(nextAgentEnv).length > 0) {
+    agentCliEnv[agentId] = nextAgentEnv;
+  } else {
+    delete agentCliEnv[agentId];
+  }
+
+  return {
+    ...config,
+    agentCliEnv: Object.keys(agentCliEnv).length > 0 ? agentCliEnv : {},
+  };
+}
+
+export function agentRefreshOptionsForConfig(cfg: AppConfig): AgentRefreshOptions {
+  return {
+    throwOnError: true,
+    agentCliEnv: cfg.agentCliEnv ?? {},
+  };
+}
+
 export function switchApiProtocolConfig(
   config: AppConfig,
   protocol: ApiProtocol,
@@ -253,7 +308,7 @@ export function SettingsDialog({
   daemonLive,
   appVersionInfo,
   welcome,
-  defaultSection,
+  initialSection = 'execution',
   currentProjectId,
   onSave,
   onClose,
@@ -277,22 +332,16 @@ export function SettingsDialog({
   }, [initial.theme]);
   const [showApiKey, setShowApiKey] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState<SettingsSection>(
-    defaultSection ?? 'execution',
-  );
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [languageMenuRect, setLanguageMenuRect] = useState<DOMRect | null>(null);
   const [agentRescanRunning, setAgentRescanRunning] = useState(false);
   const [agentRescanNotice, setAgentRescanNotice] =
     useState<RescanNotice | null>(null);
   const languageRef = useRef<HTMLDivElement | null>(null);
 
-  // If the daemon goes offline mid-edit, force API mode so the UI doesn't
-  // pretend Local CLI is selectable.
   useEffect(() => {
-    if (!daemonLive && cfg.mode === 'daemon') {
-      setCfg((c) => ({ ...c, mode: 'api' }));
-    }
-  }, [daemonLive, cfg.mode]);
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     if (!languageOpen) return;
@@ -344,7 +393,7 @@ export function SettingsDialog({
     setAgentRescanRunning(true);
     setAgentRescanNotice(null);
     try {
-      const refreshed = await onRefreshAgents({ throwOnError: true });
+      const refreshed = await onRefreshAgents(agentRefreshOptionsForConfig(cfg));
       const nextAgents = Array.isArray(refreshed) ? refreshed : agents;
       setAgentRescanNotice({
         kind: 'success',
@@ -473,6 +522,17 @@ export function SettingsDialog({
             </button>
             <button
               type="button"
+              className={`settings-nav-item${activeSection === 'composio' ? ' active' : ''}`}
+              onClick={() => setActiveSection('composio')}
+            >
+              <Icon name="sliders" size={18} />
+              <span>
+                <strong>Connectors</strong>
+                <small>External system connections</small>
+              </span>
+            </button>
+            <button
+              type="button"
               className={`settings-nav-item${activeSection === 'integrations' ? ' active' : ''}`}
               onClick={() => setActiveSection('integrations')}
             >
@@ -536,6 +596,17 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.projectGit')}</strong>
                 <small>{t('settings.projectGitHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'library' ? ' active' : ''}`}
+              onClick={() => setActiveSection('library')}
+            >
+              <Icon name="grid" size={18} />
+              <span>
+                <strong>{t('settings.library')}</strong>
+                <small>{t('settings.libraryHint')}</small>
               </span>
             </button>
             <button
@@ -808,6 +879,35 @@ export function SettingsDialog({
                   </div>
                 );
               })()}
+              <div className="agent-cli-env">
+                <div className="agent-cli-env-head">
+                  <h4>{t('settings.cliEnvTitle')}</h4>
+                  <p className="hint">{t('settings.cliEnvHint')}</p>
+                </div>
+                <div className="agent-cli-env-grid">
+                  {AGENT_CLI_ENV_FIELDS.map((field) => (
+                    <label className="field" key={`${field.agentId}:${field.envKey}`}>
+                      <span className="field-label">{t(field.labelKey)}</span>
+                      <input
+                        type="text"
+                        value={cfg.agentCliEnv?.[field.agentId]?.[field.envKey] ?? ''}
+                        placeholder={field.placeholder}
+                        spellCheck={false}
+                        onChange={(e) =>
+                          setCfg((c) =>
+                            updateAgentCliEnvValue(
+                              c,
+                              field.agentId,
+                              field.envKey,
+                              e.target.value,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
             </section>
           ) : (
             <section className="settings-section">
@@ -951,6 +1051,7 @@ export function SettingsDialog({
 
           {/* RACCOONUI-PATCH: raigc workflow picker — 2026-05-04 */}
           {activeSection === 'raigc' ? <RaigcWorkflowSection cfg={cfg} setCfg={setCfg} locale={locale} /> : null}
+          {activeSection === 'composio' ? <ComposioSection cfg={cfg} setCfg={setCfg} /> : null}
 
           {activeSection === 'language' ? (
           <section className="settings-section">
@@ -1046,6 +1147,10 @@ export function SettingsDialog({
           {/* RACCOONUI-PATCH: per-project git workflow section — 2026-05-04 */}
           {activeSection === 'projectGit' ? (
             <ProjectGitSection currentProjectId={currentProjectId ?? null} />
+          ) : null}
+
+          {activeSection === 'library' ? (
+            <LibrarySection cfg={cfg} setCfg={setCfg} />
           ) : null}
 
           {activeSection === 'about' ? (
@@ -1249,6 +1354,80 @@ function RaigcWorkflowSection({
           </p>
         </>
       ) : null}
+    </section>
+  );
+}
+
+function ComposioSection({
+  cfg,
+  setCfg,
+}: {
+  cfg: AppConfig;
+  setCfg: Dispatch<SetStateAction<AppConfig>>;
+}) {
+  const composio = cfg.composio ?? {};
+
+  const updateComposio = (patch: NonNullable<AppConfig['composio']>) => {
+    setCfg((curr) => ({ ...curr, composio: { ...(curr.composio ?? {}), ...patch } }));
+  };
+  const hasPendingEdit = Boolean(composio.apiKey?.trim());
+  const apiKeyConfigured = Boolean(hasPendingEdit || composio.apiKeyConfigured);
+  const isSavedState = apiKeyConfigured && !hasPendingEdit;
+  const tail = composio.apiKeyTail?.trim();
+
+  return (
+    <section className="settings-section">
+      <div className="section-head">
+        <div>
+          <h3>Connectors</h3>
+          <p className="hint">Manage connector and tool provider settings for this device.</p>
+        </div>
+      </div>
+      <label className="field">
+        <span className="field-label-row">
+          <span className="field-label-group">
+            <span className="field-label">Composio API Key</span>
+            {isSavedState ? (
+              <span className="field-status-badge" title="Saved to local daemon">
+                {tail ? `Saved · ••••${tail}` : 'Saved'}
+              </span>
+            ) : null}
+          </span>
+          <a
+            className="field-label-link"
+            href="https://app.composio.dev"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Get API Key
+            <Icon name="external-link" size={11} />
+          </a>
+        </span>
+        <div className="field-row">
+          <input
+            type="password"
+            value={composio.apiKey ?? ''}
+            placeholder={isSavedState ? 'Paste a new key to replace the saved one' : 'Paste Composio API key'}
+            onChange={(e) => updateComposio({ apiKey: e.target.value })}
+            aria-describedby="composio-api-key-help"
+          />
+          <button
+            type="button"
+            className="ghost"
+            disabled={!apiKeyConfigured}
+            onClick={() => updateComposio({ apiKey: '', apiKeyConfigured: false, apiKeyTail: '' })}
+          >
+            Clear
+          </button>
+        </div>
+        <span id="composio-api-key-help" className="hint">
+          {isSavedState
+            ? 'Your key stays in the local daemon. Paste a new key above to replace it, or Clear to remove.'
+            : apiKeyConfigured
+              ? 'Unsaved changes — click Save to store this key in the local daemon.'
+              : 'Keys are stored locally in the daemon and never sent through environment variables.'}
+        </span>
+      </label>
     </section>
   );
 }
@@ -1706,7 +1885,7 @@ function IntegrationsSection() {
                 : 'Node binary is missing.'}
             </strong>{' '}
             {info.buildHint ??
-              'apps/daemon/dist/cli.js is missing. Run `pnpm build` and refresh.'}
+              'apps/daemon/dist/cli.js is missing. Run `pnpm --filter @open-design/daemon build` and refresh.'}
           </div>
         ) : null}
 
