@@ -53,6 +53,11 @@ const AUTO_PASS_PATH = [
   /^CONTRIBUTING/i,
   /^TRANSLATIONS\.md$/i,
   /^QUICKSTART/i,
+  // RACCOONUI-PATCH: Electron packaging surface — fork 不 build / 不 ship / 不啟用
+  // 這 4 個目錄 + tools/pack 跟我們的腳本路線無關。package.json / pnpm-lock.yaml
+  // 仍由 AUTO_FLAG_PATH 抓（FLAG 順序在 PASS 之前），所以依賴變動仍會 flag。
+  /^apps\/(desktop|sidecar|sidecar-proto|packaged)\//,
+  /^tools\/pack\//,
 ];
 
 const AUTO_FLAG_PATH = [
