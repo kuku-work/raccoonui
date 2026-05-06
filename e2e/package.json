@@ -9,7 +9,8 @@
     "test:ui:clean": "node --experimental-strip-types scripts/reset-artifacts.ts",
     "test:ui": "corepack pnpm run test:ui:clean && playwright test -c playwright.config.ts",
     "test:ui:headed": "corepack pnpm run test:ui:clean && playwright test -c playwright.config.ts --headed",
-    "test:e2e:live": "corepack pnpm --filter @open-design/daemon build && node --experimental-strip-types --test scripts/runtime-adapter.e2e.live.test.ts"
+    "test:e2e:live": "corepack pnpm --filter @open-design/daemon build && node --experimental-strip-types --test scripts/runtime-adapter.e2e.live.test.ts",
+    "test:e2e:raccoonui-protocol": "corepack pnpm --filter @open-design/daemon build && node --experimental-strip-types --test scripts/raccoonui-protocol.e2e.live.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

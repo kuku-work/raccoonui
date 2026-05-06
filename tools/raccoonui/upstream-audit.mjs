@@ -10,12 +10,14 @@
  *   3. classify each changed file → auto-pass / auto-flag / review
  *   4. pnpm-lock.yaml diff summary if changed
  *   5. update audit-logs/PATCHES.md (RACCOONUI-PATCH catalog)
- *   6. write audit-logs/YYYY-MM-DD.md (full report)
- *   7. emit Slack-friendly summary to stdout (cron consumes)
+ *   6. run raccoonui protocol e2e harness (catches contract regressions
+ *      typecheck would miss — see e2e/scripts/raccoonui-protocol.e2e.live.test.ts)
+ *   7. write audit-logs/YYYY-MM-DD.md (full report)
+ *   8. emit Slack-friendly summary to stdout (cron consumes)
  *
  * Exit code: 0 always (Slack icon conveys status — err handling in cron).
  *
- * Zero external deps: only node built-ins + git CLI.
+ * Zero external deps: only node built-ins + git CLI + pnpm (for e2e step).
  */
 
 import { execSync, spawnSync } from 'node:child_process';
@@ -158,6 +160,53 @@ function buildReport() {
   return { commits, buckets, depSummary, range };
 }
 
+// ── Protocol e2e harness ──
+//
+// Runs the raccoonui-namespace contract suite against a live in-process
+// daemon. Catches regressions in:
+//   - 7 git endpoints (init/status/commit/push/history/rollback) + import-fs
+//   - slug validation regex
+//   - /api/raccoonui/workflows shape (raigc-bridge)
+//   - /api/design-systems contains raccoonai
+// See e2e/scripts/raccoonui-protocol.e2e.live.test.ts.
+
+function runProtocolE2e() {
+  // `shell: true` so Windows can execute the corepack pnpm shim (`pnpm.cmd`)
+  // without us hard-coding a path. POSIX `pnpm` works the same way under a
+  // shell. Cron runs in a non-interactive shell so we don't get user PATH
+  // augmentation — keep this self-contained.
+  const r = spawnSync(
+    'pnpm -C e2e run test:e2e:raccoonui-protocol',
+    {
+      cwd: FORK_ROOT,
+      encoding: 'utf8',
+      timeout: 5 * 60_000,
+      shell: true,
+    },
+  );
+  const combined = (r.stdout || '') + (r.stderr || '');
+  // node:test summary lines: "ℹ pass 12" / "ℹ fail 0" / "ℹ tests 12"
+  const passMatch = combined.match(/ℹ\s*pass\s+(\d+)/);
+  const failMatch = combined.match(/ℹ\s*fail\s+(\d+)/);
+  const totalMatch = combined.match(/ℹ\s*tests\s+(\d+)/);
+  const pass = passMatch ? Number(passMatch[1]) : null;
+  const fail = failMatch ? Number(failMatch[1]) : null;
+  const total = totalMatch ? Number(totalMatch[1]) : null;
+  // ENOENT / timeout / non-zero exit without summary all count as a hard
+  // failure — don't paper over infrastructure issues.
+  const ranSuccessfully =
+    !r.error && r.status === 0 && pass !== null && fail === 0;
+  return {
+    ok: ranSuccessfully,
+    pass,
+    fail,
+    total,
+    exitCode: r.status,
+    error: r.error?.message ?? null,
+    output: combined,
+  };
+}
+
 function buildPatchCatalog() {
   // Match the canonical marker form `RACCOONUI-PATCH:` (colon-suffixed) so we
   // don't grab the .gitignore comment block or doc references that mention the
@@ -176,7 +225,33 @@ function listMd(arr, formatter = (x) => `\`${x}\``) {
   return arr.map((x) => `- ${formatter(x)}`).join('\n');
 }
 
-function renderReport({ commits, buckets, depSummary, range }, patches) {
+function renderProtocolSection(e2e) {
+  const lines = [];
+  lines.push('## 🧪 Protocol E2E Harness');
+  lines.push('');
+  if (e2e.ok) {
+    lines.push(`✅ **${e2e.pass}/${e2e.total} pass** — raccoonui contract surface intact.`);
+    lines.push('');
+    return lines.join('\n');
+  }
+  lines.push(`🚨 **Regression: ${e2e.fail ?? '?'}/${e2e.total ?? '?'} fail**, exit=${e2e.exitCode}`);
+  if (e2e.error) lines.push(`Error: \`${e2e.error}\``);
+  lines.push('');
+  lines.push('<details><summary>Failing tests + last output</summary>');
+  lines.push('');
+  lines.push('```');
+  // Trim to last 80 lines so the report doesn't balloon — full output
+  // streams to cron stderr anyway.
+  const tail = e2e.output.split('\n').slice(-80).join('\n');
+  lines.push(tail);
+  lines.push('```');
+  lines.push('');
+  lines.push('</details>');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function renderReport({ commits, buckets, depSummary, range }, patches, e2e) {
   const lines = [];
   lines.push(`# Upstream Audit — ${TODAY}`);
   lines.push('');
@@ -244,14 +319,22 @@ function renderReport({ commits, buckets, depSummary, range }, patches) {
     lines.push('');
   }
 
+  lines.push(renderProtocolSection(e2e));
+
   lines.push('## Recommended Action');
   lines.push('');
-  const blocked = buckets.flag.length > 0 || buckets.contentFlag.length > 0;
-  if (commits.length === 0) {
-    lines.push('Nothing to do — local already at upstream.');
+  const blocked =
+    buckets.flag.length > 0 || buckets.contentFlag.length > 0 || !e2e.ok;
+  if (commits.length === 0 && e2e.ok) {
+    lines.push('Nothing to do — local already at upstream, contracts green.');
   } else if (blocked) {
     lines.push('⚠️ **Manual review required** before `git merge upstream/main`.');
-    lines.push('Inspect flagged paths + suspicious diffs. Cherry-pick safe commits if needed.');
+    if (!e2e.ok) {
+      lines.push('Protocol e2e harness regressed — fix raccoonui namespace before merging.');
+    }
+    if (buckets.flag.length > 0 || buckets.contentFlag.length > 0) {
+      lines.push('Inspect flagged paths + suspicious diffs. Cherry-pick safe commits if needed.');
+    }
   } else {
     lines.push('✅ Safe to merge:');
     lines.push('');
@@ -294,14 +377,19 @@ function renderPatchCatalog(patches) {
 
 // ── Slack summary (stdout for cron) ──
 
-function renderSlackSummary({ commits, buckets, depSummary }, blocked) {
+function renderSlackSummary({ commits, buckets, depSummary }, blocked, e2e) {
+  const e2eLine = e2e.ok
+    ? `🧪 e2e: ${e2e.pass}/${e2e.total} pass`
+    : `🚨 e2e: ${e2e.fail ?? '?'}/${e2e.total ?? '?'} fail (exit=${e2e.exitCode})`;
   if (commits.length === 0) {
-    return `🟢 *Upstream Audit ${TODAY}* — 0 commits ahead, nothing to sync`;
+    const icon = e2e.ok ? '🟢' : '🚨';
+    return `${icon} *Upstream Audit ${TODAY}* — 0 commits ahead\n${e2eLine}`;
   }
   const icon = blocked ? '🚨' : '✅';
   const lines = [];
   lines.push(`${icon} *Upstream Audit ${TODAY}* — ${commits.length} commits ahead`);
   lines.push(`Files: pass=${buckets.pass.length} flag=${buckets.flag.length} review=${buckets.review.length} content-flag=${buckets.contentFlag.length}`);
+  lines.push(e2eLine);
   if (depSummary) lines.push(`📦 ${depSummary}`);
   if (blocked) {
     lines.push(`*Manual review:*`);
@@ -309,6 +397,7 @@ function renderSlackSummary({ commits, buckets, depSummary }, blocked) {
     for (const f of top) lines.push(`  • \`${f}\``);
     const more = buckets.flag.length + buckets.contentFlag.length - top.length;
     if (more > 0) lines.push(`  • _(+${more} more)_`);
+    if (!e2e.ok) lines.push(`  • raccoonui protocol regression → see audit-logs/${TODAY}.md`);
   }
   lines.push(`📄 Report: \`audit-logs/${TODAY}.md\``);
   return lines.join('\n');
@@ -320,13 +409,17 @@ try {
   mkdirSync(AUDIT_DIR, { recursive: true });
   const data = buildReport();
   const patches = buildPatchCatalog();
-  const { md, blocked } = renderReport(data, patches);
+  // Protocol e2e is the only step that can take >1 min (rebuilds daemon
+  // dist before running). Run after the audit so a hung e2e doesn't block
+  // the human-readable diff section from being captured.
+  const e2e = runProtocolE2e();
+  const { md, blocked } = renderReport(data, patches, e2e);
 
   writeFileSync(resolve(AUDIT_DIR, `${TODAY}.md`), md);
   writeFileSync(resolve(AUDIT_DIR, 'PATCHES.md'), renderPatchCatalog(patches));
 
   // stdout → cron picks up → Slack
-  console.log(renderSlackSummary(data, blocked));
+  console.log(renderSlackSummary(data, blocked, e2e));
   process.exit(0);
 } catch (err) {
   console.error(`❌ Upstream audit failed: ${err.message}`);
