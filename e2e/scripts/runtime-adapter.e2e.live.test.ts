@@ -25,7 +25,10 @@ interface ParsedSseEvent {
   data: Record<string, unknown>;
 }
 
-type StartServer = (options: { port: number; returnServer: true }) => Promise<http.Server | undefined>;
+type StartServer = (options: {
+  port: number;
+  returnServer: true;
+}) => Promise<{ url: string; server: http.Server }>;
 type CloseDatabase = () => void;
 
 const liveTimeoutMs = Number(process.env.OD_RUNTIME_LIVE_TIMEOUT_MS || 180_000);
@@ -46,15 +49,11 @@ test.before(async () => {
   ({ startServer } = await import('../../apps/daemon/dist/server.js') as { startServer: StartServer });
   ({ closeDatabase } = await import('../../apps/daemon/dist/db.js') as { closeDatabase: CloseDatabase });
   const started = await startServer({ port: 0, returnServer: true });
-  if (started == null) {
-    throw new Error('startServer did not return a server handle');
+  if (!started?.server || !started?.url) {
+    throw new Error('startServer did not return { url, server }');
   }
-  const address = started.address();
-  if (address == null || typeof address === 'string') {
-    throw new Error('startServer did not bind to a TCP port');
-  }
-  server = started;
-  baseUrl = `http://127.0.0.1:${address.port}`;
+  server = started.server;
+  baseUrl = started.url;
 });
 
 test.after(async () => {
