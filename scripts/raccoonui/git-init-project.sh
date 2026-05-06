@@ -65,8 +65,11 @@ if ! curl -sS "$BASE/api/design-systems" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Repo name = project slug (matches the daemon's `git/create-remote`
+# endpoint introduced 2026-05-06, so CLI and UI publish to the same repo
+# regardless of which entry point the user picks).
 GH_USER=$(gh api user --jq .login)
-REPO_NAME="raccoonui-proj-$SLUG"
+REPO_NAME="$SLUG"
 PROJECT_DIR="$RACCOONUI_DIR/.od/projects/$SLUG"
 REPO_URL_HTTPS="https://github.com/$GH_USER/$REPO_NAME.git"
 

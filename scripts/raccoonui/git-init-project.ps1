@@ -55,8 +55,11 @@ try {
     exit 1
 }
 
+# Repo name = project slug (matches the daemon's `git/create-remote`
+# endpoint introduced 2026-05-06, so CLI and UI publish to the same repo
+# regardless of which entry point the user picks).
 $ghUser = (& gh api user --jq .login).Trim()
-$repoName = "raccoonui-proj-$Slug"
+$repoName = $Slug
 $projectDir = Join-Path $RaccoonUIDir ".od\projects\$Slug"
 $repoUrlHttps = "https://github.com/$ghUser/$repoName.git"
 

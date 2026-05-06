@@ -18,8 +18,8 @@ usage() {
     printf "Clone a raccoonui project from a git URL and import into local raccoonui.\n"
     printf "\n"
     printf "Examples:\n"
-    printf "  %s git@github.com:kuku-work/raccoonui-proj-marketing-q3.git\n" "$(basename "$0")"
-    printf "  %s https://github.com/kuku-work/raccoonui-proj-pitch.git\n" "$(basename "$0")"
+    printf "  %s git@github.com:kuku-work/marketing-q3.git\n" "$(basename "$0")"
+    printf "  %s https://github.com/kuku-work/pitch.git\n" "$(basename "$0")"
     exit 1
 }
 

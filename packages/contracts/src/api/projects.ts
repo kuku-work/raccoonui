@@ -115,9 +115,9 @@ export interface Conversation {
 export interface CreateProjectRequest {
   name: string;
   // Optional explicit slug-style id (regex `^[A-Za-z0-9._-]{1,128}$`).
-  // When omitted, the daemon falls back to a generated random id. Used by
-  // the per-project git workflow so coworkers see a readable repo name
-  // (e.g. raccoonui-proj-marketing-q3).
+  // When omitted, the daemon falls back to a generated random id. The
+  // per-project git workflow uses the slug verbatim as the GitHub repo
+  // name, so coworkers see e.g. `kuku-work/marketing-q3` after publish.
   id?: string;
   skillId?: string | null;
   designSystemId?: string | null;
