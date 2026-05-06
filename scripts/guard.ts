@@ -58,6 +58,10 @@ const residualAllowedExactPaths = new Set([
   "tools/pack/resources/mac/notarize.cjs",
   // electron-builder hook path; CJS compatibility entry used by tools-pack mac builds.
   "tools/pack/resources/mac/web-standalone-after-pack.cjs",
+  // RACCOONUI-PATCH: raccoonui daily upstream-audit script — ESM .mjs by design
+  // (zero deps, runs from cron without TS compile step). 2026-05-04 → migrated
+  // here from scripts/check-residual-js.ts (deleted by upstream PR #496).
+  "tools/raccoonui/upstream-audit.mjs",
 ]);
 
 const residualAllowedPathPrefixes = [
