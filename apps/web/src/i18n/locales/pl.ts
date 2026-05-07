@@ -622,6 +622,8 @@ export const pl: Dict = {
   'fileViewer.preview': 'Podgląd',
   'fileViewer.source': 'Źródło',
   'fileViewer.tweaks': 'Poprawki',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': 'Komentarz',
   'fileViewer.edit': 'Edytuj',
   'fileViewer.draw': 'Rysuj',

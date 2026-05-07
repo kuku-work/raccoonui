@@ -5879,6 +5879,34 @@ button.connector-action.is-loading {
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
+/* RACCOONUI-PATCH: untagged-doc warning shown over the preview when
+   Tweaks is on but no [data-od-id] anchors were found — 2026-05-08 */
+.board-untagged-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  max-width: 480px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: 0 6px 18px hsl(0 0% 0% / 0.12);
+  pointer-events: none;
+  text-align: center;
+}
+.board-untagged-banner strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.board-untagged-banner span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
 .board-pod-summary strong {
   font-size: 12px;
 }

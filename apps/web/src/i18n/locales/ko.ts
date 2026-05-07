@@ -622,6 +622,8 @@ export const ko: Dict = {
   'fileViewer.preview': '미리보기',
   'fileViewer.source': '소스 코드',
   'fileViewer.tweaks': '조정 (Tweaks)',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': '댓글',
   'fileViewer.edit': '편집',
   'fileViewer.draw': '그리기',

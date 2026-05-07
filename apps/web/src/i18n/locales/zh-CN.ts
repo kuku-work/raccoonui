@@ -623,6 +623,8 @@ export const zhCN: Dict = {
   'fileViewer.preview': '预览',
   'fileViewer.source': '源代码',
   'fileViewer.tweaks': '调整',
+  'fileViewer.tweaksUntaggedTitle': '这份文件没有被 Tweaks 标记',
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods 需要每个 <section> 都带 data-od-id。修 skill 或重新生成来补上锚点。',
   'fileViewer.comment': '评论',
   'fileViewer.edit': '编辑',
   'fileViewer.draw': '绘制',

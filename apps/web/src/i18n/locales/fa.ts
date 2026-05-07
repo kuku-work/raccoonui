@@ -635,6 +635,8 @@ export const fa: Dict = {
   'fileViewer.preview': 'پیش‌نمایش',
   'fileViewer.source': 'منبع',
   'fileViewer.tweaks': 'تنظیمات جزئی',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': 'نظر',
   'fileViewer.edit': 'ویرایش',
   'fileViewer.draw': 'رسم',

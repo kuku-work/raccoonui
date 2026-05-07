@@ -577,6 +577,8 @@ export const esES: Dict = {
   'fileViewer.preview': 'Vista previa',
   'fileViewer.source': 'Código fuente',
   'fileViewer.tweaks': 'Ajustes',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': 'Comentar',
   'fileViewer.edit': 'Editar',
   'fileViewer.draw': 'Dibujar',

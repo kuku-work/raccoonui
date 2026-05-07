@@ -2848,6 +2848,12 @@ function HtmlViewer({
   const [hoveredCommentTarget, setHoveredCommentTarget] = useState<PreviewCommentSnapshot | null>(null);
   const [liveCommentTargets, setLiveCommentTargets] = useState<Map<string, PreviewCommentSnapshot>>(() => new Map());
   const liveCommentTargetsRef = useRef(liveCommentTargets);
+  // RACCOONUI-PATCH: tracks whether the iframe has actually reported its
+  // selectable-element list since Tweaks was switched on. Without this gate
+  // we cannot tell "iframe is still loading" apart from "doc has no
+  // [data-od-id] tagging" — both look like an empty liveCommentTargets map.
+  // The banner only fires once we have a confirmed empty report. — 2026-05-08
+  const [boardTargetsReported, setBoardTargetsReported] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   // Inspect mode shares the iframe selection bridge with comment mode but
   // routes the picked element to a side panel that mutates per-element CSS
@@ -3145,6 +3151,7 @@ function HtmlViewer({
       setLiveCommentTargets((current) => (current.size > 0 ? new Map() : current));
       setQueuedBoardNotes((current) => (current.length > 0 ? [] : current));
       setStrokePoints((current) => (current.length > 0 ? [] : current));
+      setBoardTargetsReported(false);
       return;
     }
     const snapshotFromData = (data: Partial<PreviewCommentSnapshot>): PreviewCommentSnapshot => ({
@@ -3179,6 +3186,7 @@ function HtmlViewer({
           if (snapshot.elementId) next.set(snapshot.elementId, snapshot);
         });
         setLiveCommentTargets(next);
+        setBoardTargetsReported(true);
         setActiveCommentTarget((current) => (
           current
             ? current.selectionKind === 'pod'
@@ -3821,6 +3829,10 @@ function HtmlViewer({
   function activateBoard(nextTool?: BoardTool) {
     setMode('preview');
     setBoardMode(true);
+    // Inspect mode shares the iframe picker bridge; leaving it on while
+    // Tweaks is active makes the srcdoc treat clicks as inspect targets
+    // and routes them to the wrong handler.
+    setInspectMode(false);
     if (nextTool) {
       setBoardTool(nextTool);
     }
@@ -4347,6 +4359,16 @@ function HtmlViewer({
                 )}
               </div>
             </div>
+            {/* RACCOONUI-PATCH: warn the user when Tweaks is on but the
+                doc has zero [data-od-id] / [data-screen-label] anchors —
+                upstream's contract (since 38eb78a3) is silent failure on
+                untagged HTML, which feels like a broken Picker. — 2026-05-08 */}
+            {boardMode && boardTargetsReported && liveCommentTargets.size === 0 ? (
+              <div className="board-untagged-banner" role="status">
+                <strong>{t('fileViewer.tweaksUntaggedTitle')}</strong>
+                <span>{t('fileViewer.tweaksUntaggedHint')}</span>
+              </div>
+            ) : null}
             {boardMode ? (
               <CommentPreviewOverlays
                 comments={previewComments}

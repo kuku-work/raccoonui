@@ -622,6 +622,8 @@ export const hu: Dict = {
   'fileViewer.preview': 'Előnézet',
   'fileViewer.source': 'Forrás',
   'fileViewer.tweaks': 'Finomhangolás',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': 'Megjegyzés',
   'fileViewer.edit': 'Szerkesztés',
   'fileViewer.draw': 'Rajz',

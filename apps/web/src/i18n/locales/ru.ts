@@ -634,6 +634,8 @@ export const ru: Dict = {
   'fileViewer.preview': 'Предпросмотр',
   'fileViewer.source': 'Исходный код',
   'fileViewer.tweaks': 'Настройки',
+  'fileViewer.tweaksUntaggedTitle': "This file isn't tagged for Tweaks",
+  'fileViewer.tweaksUntaggedHint': 'Picker / Pods need data-od-id on every <section>. Update the skill or regenerate to add anchors.',
   'fileViewer.comment': 'Комментарий',
   'fileViewer.edit': 'Редактировать',
   'fileViewer.draw': 'Рисовать',

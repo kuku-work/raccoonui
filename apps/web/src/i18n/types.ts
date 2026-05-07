@@ -742,6 +742,8 @@ export interface Dict {
   'fileViewer.preview': string;
   'fileViewer.source': string;
   'fileViewer.tweaks': string;
+  'fileViewer.tweaksUntaggedTitle': string;
+  'fileViewer.tweaksUntaggedHint': string;
   'fileViewer.comment': string;
   'fileViewer.edit': string;
   'fileViewer.draw': string;
