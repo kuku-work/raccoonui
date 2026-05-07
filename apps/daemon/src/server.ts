@@ -176,6 +176,9 @@ import {
   gitCreateRemote,
   GhCliError,
 } from './raccoonui/git-project-bridge.js';
+// RACCOONUI-PATCH: retag-anchors — mirror id → data-od-id so Tweaks Picker
+// works on hand-written / imported HTML. — 2026-05-08
+import { retagAnchorsInHtml } from './raccoonui/retag-anchors.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
 /** @typedef {import('@open-design/contracts').ApiError} ApiError */
@@ -2703,6 +2706,40 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       res.json(result);
     } catch (err) {
       sendApiError(res, 400, 'GIT_ROLLBACK_FAILED', String(err));
+    }
+  });
+
+  // RACCOONUI-PATCH: retag-anchors endpoint — mirror id → data-od-id on
+  // structural elements of an HTML file inside a project, so Tweaks Picker /
+  // Pods works on hand-written or imported docs without round-tripping
+  // through an LLM. Reads + writes through the upstream project file API
+  // so path-traversal and metadata.baseDir handling stay consistent. — 2026-05-08
+  app.post('/api/raccoonui/projects/:id/files/*/retag-anchors', async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      const relPath = req.params[0];
+      if (!relPath) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'file path required');
+      }
+      if (!/\.html?$/i.test(relPath)) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'retag-anchors only supports .html / .htm files');
+      }
+      const project = getProject(db, projectId);
+      const file = await readProjectFile(PROJECTS_DIR, projectId, relPath, project?.metadata);
+      const original = file.buffer.toString('utf8');
+      const { html, result } = retagAnchorsInHtml(original);
+      if (result.retagged > 0 && html !== original) {
+        await writeProjectFile(PROJECTS_DIR, projectId, relPath, html, {}, project?.metadata);
+      }
+      res.json(result);
+    } catch (err) {
+      const status = err && err.code === 'ENOENT' ? 404 : 400;
+      sendApiError(
+        res,
+        status,
+        status === 404 ? 'FILE_NOT_FOUND' : 'RETAG_FAILED',
+        String(err),
+      );
     }
   });
 

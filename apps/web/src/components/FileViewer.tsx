@@ -2854,6 +2854,11 @@ function HtmlViewer({
   // [data-od-id] tagging" — both look like an empty liveCommentTargets map.
   // The banner only fires once we have a confirmed empty report. — 2026-05-08
   const [boardTargetsReported, setBoardTargetsReported] = useState(false);
+  // RACCOONUI-PATCH: retag-anchors flow — POST to daemon to mirror id ->
+  // data-od-id, then reload preview so the iframe reports the new
+  // selectable list. — 2026-05-08
+  const [retagBusy, setRetagBusy] = useState(false);
+  const [retagMessage, setRetagMessage] = useState<{ kind: 'ok' | 'err' | 'noop'; text: string } | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
   // Inspect mode shares the iframe selection bridge with comment mode but
   // routes the picked element to a side panel that mutates per-element CSS
@@ -3838,6 +3843,36 @@ function HtmlViewer({
     }
   }
 
+  // RACCOONUI-PATCH: ask daemon to mirror `id` → `data-od-id` on this
+  // file's structural elements, then nudge parent to refetch source so
+  // the iframe sees the new tagging. — 2026-05-08
+  async function handleRetagAnchors() {
+    if (retagBusy) return;
+    setRetagBusy(true);
+    setRetagMessage(null);
+    try {
+      const url = `/api/raccoonui/projects/${encodeURIComponent(projectId)}/files/${file.name.split('/').map(encodeURIComponent).join('/')}/retag-anchors`;
+      const resp = await fetch(url, { method: 'POST' });
+      if (!resp.ok) {
+        const detail = await resp.text();
+        setRetagMessage({ kind: 'err', text: t('fileViewer.tweaksRetagFailed', { detail }) });
+        return;
+      }
+      const body = (await resp.json()) as { retagged: number; skipped: number; taggedIds: string[] };
+      if (body.retagged === 0) {
+        setRetagMessage({ kind: 'noop', text: t('fileViewer.tweaksRetagNoop') });
+        return;
+      }
+      setRetagMessage({ kind: 'ok', text: t('fileViewer.tweaksRetagDone', { count: body.retagged }) });
+      setBoardTargetsReported(false);
+      if (onFileSaved) await onFileSaved();
+    } catch (err) {
+      setRetagMessage({ kind: 'err', text: t('fileViewer.tweaksRetagFailed', { detail: String(err) }) });
+    } finally {
+      setRetagBusy(false);
+    }
+  }
+
   function queueCurrentDraft() {
     const note = commentDraft.trim();
     if (!note) return;
@@ -4362,11 +4397,27 @@ function HtmlViewer({
             {/* RACCOONUI-PATCH: warn the user when Tweaks is on but the
                 doc has zero [data-od-id] / [data-screen-label] anchors —
                 upstream's contract (since 38eb78a3) is silent failure on
-                untagged HTML, which feels like a broken Picker. — 2026-05-08 */}
+                untagged HTML, which feels like a broken Picker. The retag
+                button mirrors id="X" → data-od-id="X" via daemon endpoint
+                so existing structural elements opt into the contract
+                without round-tripping through the LLM. — 2026-05-08 */}
             {boardMode && boardTargetsReported && liveCommentTargets.size === 0 ? (
               <div className="board-untagged-banner" role="status">
                 <strong>{t('fileViewer.tweaksUntaggedTitle')}</strong>
                 <span>{t('fileViewer.tweaksUntaggedHint')}</span>
+                <button
+                  type="button"
+                  className="board-untagged-banner-btn"
+                  onClick={handleRetagAnchors}
+                  disabled={retagBusy}
+                >
+                  {retagBusy ? t('fileViewer.tweaksRetagBusy') : t('fileViewer.tweaksRetagBtn')}
+                </button>
+                {retagMessage ? (
+                  <span className={`board-untagged-banner-result board-untagged-banner-result-${retagMessage.kind}`}>
+                    {retagMessage.text}
+                  </span>
+                ) : null}
               </div>
             ) : null}
             {boardMode ? (

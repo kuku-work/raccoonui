@@ -315,3 +315,87 @@ test('D2 design-systems/raccoonai serves DESIGN.md body', async () => {
     'raccoonai DESIGN.md body suspiciously short',
   );
 });
+
+// ── E. retag-anchors contract ────────────────────────────────────────
+// Mirrors `id` -> `data-od-id` on structural elements so Tweaks Picker
+// works on hand-written / imported HTML. End-to-end: create project,
+// upload a file with `id` but no `data-od-id`, hit retag, verify file
+// now has the mirrored attribute.
+
+test('E1 retag-anchors mirrors id to data-od-id on structural tags', async () => {
+  const slug = `retag-test-${Date.now().toString(36)}`;
+  const createRes = await fetch(`${baseUrl}/api/projects`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: slug, name: 'retag e2e' }),
+  });
+  assert.equal(createRes.status, 200, 'project create should succeed');
+
+  const sourceHtml = `<!doctype html><html><body>
+    <section id="sec-00">first</section>
+    <article id="art-1">second</article>
+    <header id="hdr">third</header>
+    <h1 id="title">heading</h1>
+    <section id="already" data-od-id="already">should skip</section>
+    <div id="not-structural">should skip (non-structural)</div>
+    <section>should skip (no id)</section>
+  </body></html>`;
+  const writeRes = await fetch(`${baseUrl}/api/projects/${slug}/files`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'index.html', content: sourceHtml, encoding: 'utf8' }),
+  });
+  assert.equal(writeRes.status, 200, 'file write should succeed');
+
+  const retagRes = await fetch(
+    `${baseUrl}/api/raccoonui/projects/${slug}/files/index.html/retag-anchors`,
+    { method: 'POST' },
+  );
+  assert.equal(retagRes.status, 200);
+  const result = (await retagRes.json()) as {
+    retagged: number;
+    skipped: number;
+    taggedIds: string[];
+  };
+  assert.equal(result.retagged, 4, 'should retag the 4 structural tags with ids');
+  assert.deepEqual(
+    result.taggedIds.sort(),
+    ['art-1', 'hdr', 'sec-00', 'title'],
+    'taggedIds should match exactly the elements rewritten',
+  );
+
+  const readRes = await fetch(`${baseUrl}/api/projects/${slug}/raw/index.html`);
+  assert.equal(readRes.status, 200);
+  const after = await readRes.text();
+  assert.match(after, /id="sec-00"\s+data-od-id="sec-00"/);
+  assert.match(after, /id="art-1"\s+data-od-id="art-1"/);
+  assert.match(after, /id="hdr"\s+data-od-id="hdr"/);
+  assert.match(after, /id="title"\s+data-od-id="title"/);
+  // already-tagged section must keep exactly one data-od-id (no duplicate)
+  assert.equal(
+    (after.match(/id="already"[^>]*data-od-id="already"/g) ?? []).length,
+    1,
+    'already-tagged section should not be double-tagged',
+  );
+});
+
+test('E2 retag-anchors rejects non-html paths', async () => {
+  const slug = `retag-nohtml-${Date.now().toString(36)}`;
+  await fetch(`${baseUrl}/api/projects`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: slug, name: 'retag bad path' }),
+  });
+  await fetch(`${baseUrl}/api/projects/${slug}/files`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'note.md', content: '# hi', encoding: 'utf8' }),
+  });
+  const res = await fetch(
+    `${baseUrl}/api/raccoonui/projects/${slug}/files/note.md/retag-anchors`,
+    { method: 'POST' },
+  );
+  assert.equal(res.status, 400);
+  const err = (await res.json()) as { error?: { code?: string } };
+  assert.equal(err?.error?.code, 'BAD_REQUEST');
+});

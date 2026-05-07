@@ -5907,6 +5907,35 @@ button.connector-action.is-loading {
   color: var(--text-muted);
   line-height: 1.45;
 }
+.board-untagged-banner-btn {
+  justify-self: center;
+  margin-top: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.board-untagged-banner-btn:hover:not(:disabled) {
+  background: var(--bg-emphasis);
+}
+.board-untagged-banner-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.board-untagged-banner-result {
+  font-size: 11px;
+}
+.board-untagged-banner-result-ok {
+  color: var(--text);
+}
+.board-untagged-banner-result-noop,
+.board-untagged-banner-result-err {
+  color: var(--text-muted);
+}
 .board-pod-summary strong {
   font-size: 12px;
 }

@@ -200,6 +200,17 @@ export interface GitRollbackResponse {
 // Bulk import of project sidecars dropped on disk via git pull. Daemon
 // scans projects dir and inserts any rows missing from SQLite. Returns
 // per-row outcomes so the UI can show a count and surface failures.
+// RaccoonUI: mirror `id` -> `data-od-id` on structural elements so the
+// OpenDesign Tweaks selection bridge can pick / pod them. Upstream
+// tightened the bridge contract to require explicit data-od-id tagging
+// (since 38eb78a3); this lets hand-written / imported HTML opt into the
+// contract without round-tripping through an LLM regeneration.
+export interface RetagAnchorsResponse {
+  retagged: number;
+  skipped: number;
+  taggedIds: string[];
+}
+
 export interface ImportFsResponse {
   imported: string[];
   failed: { id: string; error: string }[];
