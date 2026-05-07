@@ -27,6 +27,41 @@ fail() {
     ERR_COUNT=$((ERR_COUNT + 1))
 }
 
+# Resource layers the daemon expects under OD_RESOURCE_ROOT (= .raccoonui/).
+# Each entry is "<repo-relative-source>:<.raccoonui-relative-dest>" — keep
+# in sync with apps/daemon/src/server.ts → resolveDaemonResourceDir.
+RACCOONUI_RESOURCES=(
+    "design-systems:design-systems"
+    "skills:skills"
+    "craft:craft"
+    "assets/frames:frames"
+    "assets/community-pets:community-pets"
+    "prompt-templates:prompt-templates"
+)
+
+seed_raccoonui_resources() {
+    local root=$1 entry src dst src_path dst_path count
+    for entry in "${RACCOONUI_RESOURCES[@]}"; do
+        src=${entry%%:*}
+        dst=${entry##*:}
+        src_path="$root/$src"
+        dst_path="$root/.raccoonui/$dst"
+        if [ ! -d "$src_path" ]; then
+            printf "⚠️  source missing: %s (resource not seeded)\n" "$src"
+            continue
+        fi
+        if [ -d "$dst_path" ]; then
+            ok ".raccoonui/$dst/ already present (skipped)"
+            continue
+        fi
+        step "Seeding .raccoonui/$dst/..."
+        mkdir -p "$dst_path"
+        cp -r "$src_path"/. "$dst_path/"
+        count=$(find "$dst_path" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+        ok ".raccoonui/$dst/ seeded ($count entries)"
+    done
+}
+
 # ── 1. node 22+ ──
 if command -v node >/dev/null 2>&1; then
     version=$(node -v | tr -d 'v')
@@ -98,17 +133,13 @@ cd "$RACCOONUI_DIR"
 step "pnpm install..."
 pnpm install
 
-# ── 6. Seed .raccoonui/design-systems/ ──
-DS_DIR=".raccoonui/design-systems"
-if [ ! -d "$DS_DIR" ]; then
-    step "Seeding .raccoonui/design-systems/..."
-    mkdir -p "$DS_DIR"
-    cp -r design-systems/. "$DS_DIR/"
-    count=$(find "$DS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-    ok "seeded $count design systems"
-else
-    ok "user dir exists at $DS_DIR (skipped seed)"
-fi
+# ── 6. Seed .raccoonui/ resource layers ──
+# start.sh sets OD_RESOURCE_ROOT=.raccoonui, which makes the daemon
+# resolve EVERY resource segment under that dir (skills, design-systems,
+# craft, frames, community-pets, prompt-templates). Seed each one from
+# the matching repo path; dir-already-exists → skip so user-edits in
+# .raccoonui/ are preserved across re-runs.
+seed_raccoonui_resources "$RACCOONUI_DIR"
 
 # ── 7. Build ──
 step "Building daemon + web (this takes ~1-2 min)..."

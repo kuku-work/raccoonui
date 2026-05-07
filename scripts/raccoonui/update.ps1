@@ -1,11 +1,14 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Update RaccoonUI fork — git pull origin/main + reinstall + rebuild.
+  Update RaccoonUI fork — git pull current branch + reinstall + rebuild +
+  top up missing .raccoonui/ resources.
 .NOTES
-  origin/main is updated by kuku after running daily upstream-audit
+  origin/<branch> is updated by kuku after running daily upstream-audit
   (slack-bot/jobs.json: raccoonui-upstream-audit). Coworkers run this
-  whenever Slack posts "新版可用".
+  whenever Slack posts "新版可用". Detects whichever branch the user is
+  on rather than hardcoding `main` so kuku's dev workflow and coworkers
+  on `main` both work without surprise.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -14,21 +17,66 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $RaccoonUIDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 
+# Resource layers the daemon expects under OD_RESOURCE_ROOT (= .raccoonui/).
+# Mirrors the list in install.ps1 so update can top up directories the
+# user never had (e.g. upstream added skills/ + prompt-templates/ but
+# install.ps1 had only seeded design-systems/ in older revisions).
+$RaccoonUIResources = @(
+    @{ src = 'design-systems';        dst = 'design-systems' },
+    @{ src = 'skills';                dst = 'skills' },
+    @{ src = 'craft';                 dst = 'craft' },
+    @{ src = 'assets/frames';         dst = 'frames' },
+    @{ src = 'assets/community-pets'; dst = 'community-pets' },
+    @{ src = 'prompt-templates';      dst = 'prompt-templates' }
+)
+
+function Seed-MissingRaccoonUIResources {
+    param([string]$Root)
+    foreach ($r in $RaccoonUIResources) {
+        $srcPath = Join-Path $Root ($r.src -replace '/', '\')
+        $dstPath = Join-Path $Root (".raccoonui\$($r.dst)")
+        if (-not (Test-Path $srcPath)) { continue }
+        if (Test-Path $dstPath) { continue }
+        Write-Host "→ Seeding missing .raccoonui/$($r.dst)/..." -ForegroundColor Cyan
+        New-Item -ItemType Directory -Path $dstPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $srcPath '*') -Destination $dstPath -Recurse -Force
+        Write-Host "✅ .raccoonui/$($r.dst)/ seeded" -ForegroundColor Green
+    }
+}
+
 Push-Location $RaccoonUIDir
 try {
-    Write-Host "🔄 Fetching latest from origin..." -ForegroundColor Cyan
+    # Branch detection — user might be on main, dev, or a feature branch.
+    $branch = (git rev-parse --abbrev-ref HEAD 2>$null | Out-String).Trim()
+    if ([string]::IsNullOrEmpty($branch) -or $branch -eq 'HEAD') {
+        Write-Host "❌ Cannot detect current branch (detached HEAD?)" -ForegroundColor Red
+        Write-Host "   Check out a branch first: git checkout main" -ForegroundColor Yellow
+        exit 1
+    }
+
+    Write-Host "🔄 Fetching latest from origin (branch: $branch)..." -ForegroundColor Cyan
     git fetch origin --quiet
 
-    $local = git rev-parse main
-    $remote = git rev-parse origin/main
+    git rev-parse "origin/$branch" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ origin/$branch does not exist — local-only branch?" -ForegroundColor Red
+        Write-Host "   Push it first or switch to a tracked branch." -ForegroundColor Yellow
+        exit 1
+    }
+
+    $local = git rev-parse $branch
+    $remote = git rev-parse "origin/$branch"
 
     if ($local -eq $remote) {
-        Write-Host "✅ already up-to-date ($($local.Substring(0,8)))" -ForegroundColor Green
+        Write-Host "✅ already up-to-date ($($local.Substring(0,8)) on $branch)" -ForegroundColor Green
+        # Still top up missing resources — handles older installs where
+        # install.ps1 only seeded design-systems and never backfilled.
+        Seed-MissingRaccoonUIResources $RaccoonUIDir
         exit 0
     }
 
-    Write-Host "Pulling..." -ForegroundColor Cyan
-    git pull origin main --ff-only
+    Write-Host "Pulling origin/$branch..." -ForegroundColor Cyan
+    git pull origin $branch --ff-only
 
     Write-Host "📦 Refreshing dependencies..." -ForegroundColor Cyan
     pnpm install
@@ -37,6 +85,9 @@ try {
     Write-Host "🔨 Rebuilding..." -ForegroundColor Cyan
     pnpm -r --workspace-concurrency=1 build
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
+
+    # Top up any .raccoonui/ resource the user is still missing.
+    Seed-MissingRaccoonUIResources $RaccoonUIDir
 
     # Re-link Claude Code skills (claude-skills/ → ~/.claude/commands/)
     $skillsSrc = Join-Path $RaccoonUIDir 'claude-skills'

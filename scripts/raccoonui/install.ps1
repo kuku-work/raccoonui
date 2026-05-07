@@ -37,6 +37,40 @@ function Fail {
     $script:ErrCount++
 }
 
+# Resource layers daemon expects under OD_RESOURCE_ROOT (= .raccoonui/).
+# `src` is repo-relative; `dst` is .raccoonui-relative (matches the
+# segment names baked into apps/daemon/src/server.ts —
+# resolveDaemonResourceDir).
+$RaccoonUIResources = @(
+    @{ src = 'design-systems';        dst = 'design-systems' },
+    @{ src = 'skills';                dst = 'skills' },
+    @{ src = 'craft';                 dst = 'craft' },
+    @{ src = 'assets/frames';         dst = 'frames' },
+    @{ src = 'assets/community-pets'; dst = 'community-pets' },
+    @{ src = 'prompt-templates';      dst = 'prompt-templates' }
+)
+
+function Seed-RaccoonUIResources {
+    param([string]$Root)
+    foreach ($r in $RaccoonUIResources) {
+        $srcPath = Join-Path $Root ($r.src -replace '/', '\')
+        $dstPath = Join-Path $Root (".raccoonui\$($r.dst)")
+        if (-not (Test-Path $srcPath)) {
+            Write-Host "⚠️  source missing: $($r.src) (resource not seeded)" -ForegroundColor DarkYellow
+            continue
+        }
+        if (Test-Path $dstPath) {
+            Ok ".raccoonui/$($r.dst)/ already present (skipped)"
+            continue
+        }
+        Step "Seeding .raccoonui/$($r.dst)/..."
+        New-Item -ItemType Directory -Path $dstPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $srcPath '*') -Destination $dstPath -Recurse -Force
+        $count = (Get-ChildItem $dstPath -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
+        Ok ".raccoonui/$($r.dst)/ seeded ($count entries)"
+    }
+}
+
 # ── 1. node 22+ ──
 if (Get-Command node -ErrorAction SilentlyContinue) {
     $v = (node -v).TrimStart('v')
@@ -134,17 +168,13 @@ try {
     pnpm install 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
 
-    # ── 6. Seed .raccoonui/design-systems/ ──
-    $dsDir = Join-Path $RaccoonUIDir ".raccoonui\design-systems"
-    if (-not (Test-Path $dsDir)) {
-        Step "Seeding .raccoonui/design-systems/..."
-        New-Item -ItemType Directory -Path $dsDir -Force | Out-Null
-        Copy-Item -Path "$RaccoonUIDir\design-systems\*" -Destination $dsDir -Recurse -Force
-        $count = (Get-ChildItem $dsDir -Directory).Count
-        Ok "seeded $count design systems"
-    } else {
-        Ok "user dir exists at $dsDir (skipped seed)"
-    }
+    # ── 6. Seed .raccoonui/ resource layers ──
+    # start.ps1 sets OD_RESOURCE_ROOT=.raccoonui, which makes the daemon
+    # resolve EVERY resource segment under that dir (skills, design-systems,
+    # craft, frames, community-pets, prompt-templates). Seed each one from
+    # the matching repo path; dir-already-exists → skip so user-edits in
+    # .raccoonui/ are preserved across re-runs.
+    Seed-RaccoonUIResources $RaccoonUIDir
 
     # ── 7. Build ──
     Step "Building daemon + web (this takes ~1-2 min)..."
