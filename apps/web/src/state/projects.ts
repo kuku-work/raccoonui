@@ -6,6 +6,7 @@
 // the UI can stay rendered when the daemon is briefly unreachable.
 
 import type { ImportFolderRequest, ImportFolderResponse } from '@open-design/contracts';
+import { randomUUID } from '../utils/uuid';
 import type {
   ChatMessage,
   Conversation,
@@ -62,7 +63,14 @@ export async function createProject(input: {
   metadata?: ProjectMetadata;
 }): Promise<{ project: Project; conversationId: string } | null> {
   try {
-    const id = input.id?.trim() ? input.id.trim() : crypto.randomUUID();
+    // `randomUUID` (the helper) falls back to `crypto.getRandomValues` /
+    // `Math.random` when `crypto.randomUUID` is unavailable — Open Design
+    // served over plain HTTP on a LAN IP (Docker / unRAID self-hosting)
+    // is a non-secure context, where `crypto.randomUUID` is undefined and
+    // calling it directly throws (issue #849). When the caller passes an
+    // explicit slug (`^[A-Za-z0-9._-]{1,128}$`) we honor it so the
+    // raccoonui per-project git workflow can use stable folder names.
+    const id = input.id?.trim() ? input.id.trim() : randomUUID();
     const { id: _ignored, ...rest } = input;
     const resp = await fetch('/api/projects', {
       method: 'POST',
