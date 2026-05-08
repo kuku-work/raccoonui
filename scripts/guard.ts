@@ -25,6 +25,9 @@ const residualSkippedDirectories = new Set([
   ".od",
   ".od-e2e",
   ".opencode",
+  // RACCOONUI-PATCH: gitignored seed dir for OD_RESOURCE_ROOT — contains
+  // upstream skill JS we don't own and shouldn't audit. — 2026-05-08
+  ".raccoonui",
   ".task",
   ".tmp",
   ".vite",

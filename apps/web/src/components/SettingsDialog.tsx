@@ -1097,6 +1097,8 @@ export function SettingsDialog({
   const sectionHeader: Record<SettingsSection, { title: string; subtitle: string }> = {
     execution: { title: t('settings.title'), subtitle: t('settings.subtitle') },
     media: { title: t('settings.mediaProviders'), subtitle: t('settings.mediaProvidersHint') },
+    // RACCOONUI-PATCH: raigc workflow picker section — 2026-05-04
+    raigc: { title: 'raigc Workflow', subtitle: 'Advanced ComfyUI flows' },
     composio: { title: t('connectors.title'), subtitle: t('connectors.subtitle') },
     orbit: { title: t('settings.orbit.title'), subtitle: t('settings.orbit.lede') },
     integrations: { title: t('settings.mcpServerTitle'), subtitle: t('settings.mcpServerHint') },
@@ -1105,6 +1107,8 @@ export function SettingsDialog({
     appearance: { title: t('settings.appearance'), subtitle: t('settings.appearanceHint') },
     notifications: { title: t('settings.notifications'), subtitle: t('settings.notificationsHint') },
     pet: { title: t('pet.title'), subtitle: t('pet.subtitle') },
+    // RACCOONUI-PATCH: per-project git workflow section — 2026-05-04
+    projectGit: { title: t('projectGit.title'), subtitle: t('projectGit.subtitle') },
     library: { title: t('settings.library'), subtitle: t('settings.libraryHint') },
     about: { title: t('settings.about'), subtitle: t('settings.aboutHint') },
   };
