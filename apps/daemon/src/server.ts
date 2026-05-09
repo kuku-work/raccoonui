@@ -6909,6 +6909,55 @@ export async function startServer({
     design.runs.stream(run, req, res);
   });
 
+  // Phase 4 / spec §10.3.5 — AG-UI canonical stream.
+  //
+  // Same data plane as /api/runs/:id/events but every record passes
+  // through `encodeOdEventForAgui` first so an external CopilotKit /
+  // AG-UI client can consume the run unmodified. Events the encoder
+  // can't map are dropped; the SSE stream stays canonical even when
+  // OD adds internal-only events later.
+  app.get('/api/runs/:id/agui', async (req, res) => {
+    const run = design.runs.get(req.params.id);
+    if (!run) return sendApiError(res, 404, 'NOT_FOUND', 'run not found');
+    const { encodeOdEventForAgui } = await import('@open-design/agui-adapter');
+    const sse = createSseResponse(res);
+    const lastEventId = Number(req.get('Last-Event-ID') || req.query.after || 0);
+    const emitMapped = (record) => {
+      const mapped = encodeOdEventForAgui(
+        { kind: record.event, ...(record.data ?? {}) },
+        { runId: run.id, seq: record.id, now: Date.now() },
+      );
+      if (mapped) sse.send(mapped.kind, mapped, record.id);
+    };
+    for (const record of run.events) {
+      if (!Number.isFinite(lastEventId) || record.id > lastEventId) emitMapped(record);
+    }
+    if (design.runs.isTerminal(run.status)) {
+      sse.end();
+      return;
+    }
+    // Mirror runs.stream's subscriber pattern but route through the
+    // adapter. We attach a thin wrapper to run.clients so the existing
+    // emit() loop reaches us; the wrapper only implements the
+    // {send,end,cleanup} surface the runs service uses.
+    const adapterClient = {
+      send: (event, data, id) => {
+        const mapped = encodeOdEventForAgui(
+          { kind: event, ...(data ?? {}) },
+          { runId: run.id, seq: id, now: Date.now() },
+        );
+        if (mapped) sse.send(mapped.kind, mapped, id);
+      },
+      end:     () => sse.end(),
+      cleanup: () => sse.cleanup?.(),
+    };
+    run.clients.add(adapterClient);
+    res.on('close', () => {
+      run.clients.delete(adapterClient);
+      sse.cleanup?.();
+    });
+  });
+
   app.post('/api/runs/:id/cancel', (req, res) => {
     const run = design.runs.get(req.params.id);
     if (!run) return sendApiError(res, 404, 'NOT_FOUND', 'run not found');

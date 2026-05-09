@@ -29,6 +29,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.29.0(zod@4.4.2)
+      '@open-design/agui-adapter':
+        specifier: workspace:*
+        version: link:../../packages/agui-adapter
       '@open-design/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -247,6 +250,25 @@ importers:
       tsx:
         specifier: 4.21.0
         version: 4.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(jsdom@29.1.1)
+
+  packages/agui-adapter:
+    dependencies:
+      '@open-design/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^20.17.10
+        version: 20.19.39
+      esbuild:
+        specifier: 0.27.7
+        version: 0.27.7
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
