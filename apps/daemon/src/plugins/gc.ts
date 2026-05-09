@@ -52,7 +52,17 @@ export function startSnapshotGc(opts: SnapshotGcOptions): SnapshotGcHandle {
 
   const tick = () => {
     try {
-      const result = pruneExpiredSnapshots(opts.db);
+      // Plan §3.M1 / spec PB2 — feed OD_SNAPSHOT_RETENTION_DAYS into
+      // pruneExpiredSnapshots so referenced rows whose project has
+      // been deleted are eligible for deletion after the configured
+      // window. The unreferenced-TTL sweep stays the v1 default
+      // path; retention only kicks in when the operator opted in.
+      const knobs = readPluginEnvKnobs();
+      const result = pruneExpiredSnapshots(opts.db, {
+        ...(typeof knobs.snapshotRetentionDays === 'number' && knobs.snapshotRetentionDays > 0
+          ? { retentionDays: knobs.snapshotRetentionDays }
+          : {}),
+      });
       if (result.removed > 0) {
         log(`[plugins] snapshot GC removed ${result.removed} expired snapshot(s)`, {
           ids: result.ids,
@@ -71,7 +81,15 @@ export function startSnapshotGc(opts: SnapshotGcOptions): SnapshotGcHandle {
     stop: () => {
       clearInterval(timer);
     },
-    sweep: (now?: number) => pruneExpiredSnapshots(opts.db, now ? { now } : {}),
+    sweep: (now?: number) => {
+      const knobs = readPluginEnvKnobs();
+      return pruneExpiredSnapshots(opts.db, {
+        ...(now ? { now } : {}),
+        ...(typeof knobs.snapshotRetentionDays === 'number' && knobs.snapshotRetentionDays > 0
+          ? { retentionDays: knobs.snapshotRetentionDays }
+          : {}),
+      });
+    },
   };
 }
 

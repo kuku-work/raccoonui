@@ -123,4 +123,56 @@ describe('snapshot GC', () => {
     expect(result.removed).toBe(0);
     expect(getSnapshot(db, referenced.snapshotId)).not.toBeNull();
   });
+
+  // Plan §3.M1 / spec PB2 — referenced-row TTL.
+  //
+  // Operators who opt into OD_SNAPSHOT_RETENTION_DAYS expect referenced
+  // snapshots whose project has been deleted to be reaped after the
+  // configured window. Live projects keep their snapshots pinned
+  // forever (reproducibility wins).
+  describe('OD_SNAPSHOT_RETENTION_DAYS referenced-row TTL', () => {
+    it('prunes referenced snapshots whose project no longer exists and applied_at is older than the window', () => {
+      const referenced = createSnapshot(db, baseInput());
+      linkSnapshotToRun(db, referenced.snapshotId, 'run-r');
+      // Backdate to 90 days ago, then drop the project so the LEFT JOIN
+      // matches the no-longer-exists condition. Disable foreign-key
+      // enforcement around the DELETE so the FK cascade doesn't beat
+      // the GC sweep to it (the daemon's real openDb path has
+      // foreign_keys=ON; the in-memory test DB defaults to OFF, but
+      // we set it explicitly to keep the test readable).
+      const oldEnough = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      db.prepare('UPDATE applied_plugin_snapshots SET applied_at = ? WHERE id = ?')
+        .run(oldEnough, referenced.snapshotId);
+      db.pragma('foreign_keys = OFF');
+      db.prepare('DELETE FROM projects WHERE id = ?').run('project-1');
+      db.pragma('foreign_keys = ON');
+      const result = pruneExpiredSnapshots(db, { retentionDays: 30 });
+      expect(result.ids).toContain(referenced.snapshotId);
+      expect(getSnapshot(db, referenced.snapshotId)).toBeNull();
+    });
+
+    it('keeps referenced snapshots whose project is still alive', () => {
+      const referenced = createSnapshot(db, baseInput());
+      linkSnapshotToRun(db, referenced.snapshotId, 'run-r');
+      const oldEnough = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      db.prepare('UPDATE applied_plugin_snapshots SET applied_at = ? WHERE id = ?')
+        .run(oldEnough, referenced.snapshotId);
+      const result = pruneExpiredSnapshots(db, { retentionDays: 30 });
+      expect(result.removed).toBe(0);
+      expect(getSnapshot(db, referenced.snapshotId)).not.toBeNull();
+    });
+
+    it('respects the retentionDays window — recent rows survive even on a deleted project', () => {
+      const referenced = createSnapshot(db, baseInput());
+      linkSnapshotToRun(db, referenced.snapshotId, 'run-r');
+      db.pragma('foreign_keys = OFF');
+      db.prepare('DELETE FROM projects WHERE id = ?').run('project-1');
+      db.pragma('foreign_keys = ON');
+      // applied_at is now (well within retentionDays); the project
+      // is gone but the row is still recent enough to keep.
+      const result = pruneExpiredSnapshots(db, { retentionDays: 30 });
+      expect(result.removed).toBe(0);
+      expect(getSnapshot(db, referenced.snapshotId)).not.toBeNull();
+    });
+  });
 });

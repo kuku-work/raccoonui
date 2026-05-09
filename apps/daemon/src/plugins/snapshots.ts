@@ -188,15 +188,37 @@ export interface PruneExpiredResult {
   ids: string[];
 }
 
+export interface PruneExpiredOptions {
+  // Override for tests so the clock is deterministic.
+  now?: number;
+  // Operator escape hatch: force-delete unreferenced rows older than
+  // this unix-ms timestamp even when their TTL has not yet expired.
+  // Does NOT touch referenced rows (run_id IS NOT NULL); the
+  // `retentionDays` knob below is the only way to reach those.
+  before?: number;
+  // Plan §3.M1 / spec PB2 / §16 Phase 5 — operator-opt-in
+  // referenced-row TTL. When set, snapshots are eligible for deletion
+  // even after they have been linked to a run / conversation / project,
+  // provided two conditions:
+  //
+  //   (1) `applied_at < now - retentionDays * 86_400_000`
+  //   (2) the referenced run / conversation / project is "terminal"
+  //
+  // v1 implements (2) as: the snapshot's `project_id` no longer
+  // appears in `projects` (i.e. the project was deleted). Runs are
+  // in-memory in v1 so we cannot distinguish "active" vs "completed"
+  // from SQLite alone; `conversations.archived_at` does not exist.
+  // The conservative rule keeps reproducibility wins for live
+  // projects while letting operators clean up after `od project
+  // delete <id>` so dangling snapshot rows don't accumulate.
+  retentionDays?: number;
+}
+
 export function pruneExpiredSnapshots(
   db: SqliteDb,
-  options: { now?: number; before?: number } = {},
+  options: PruneExpiredOptions = {},
 ): PruneExpiredResult {
   const now = options.now ?? Date.now();
-  // The `before` cutoff is an operator escape hatch (`od plugin snapshots prune --before <ts>`)
-  // that lets a hosted operator force-delete unreferenced rows older than
-  // an arbitrary time even when their TTL has not yet expired. It does
-  // NOT touch referenced rows (run_id IS NOT NULL) — reproducibility wins.
   const cutoff = typeof options.before === 'number' ? options.before : now;
   const expiredIds = db
     .prepare(
@@ -212,11 +234,35 @@ export function pruneExpiredSnapshots(
         )
         .all(options.before) as Array<{ id: string }>)
     : [];
-  const ids = [...expiredIds, ...beforeIds].map((r) => r.id);
-  if (ids.length === 0) return { removed: 0, ids: [] };
-  const placeholders = ids.map(() => '?').join(', ');
-  db.prepare(`DELETE FROM applied_plugin_snapshots WHERE id IN (${placeholders})`).run(...ids);
-  return { removed: ids.length, ids };
+
+  // Plan §3.M1 — referenced-row TTL.
+  //
+  // Pull every snapshot whose `applied_at` is older than
+  // `now - retentionDays * 86_400_000` and whose `project_id` no
+  // longer exists in `projects`. The LEFT JOIN approach lets us run
+  // a single query per sweep instead of N project lookups.
+  const retentionIds: Array<{ id: string }> = [];
+  if (typeof options.retentionDays === 'number' && options.retentionDays > 0) {
+    const retentionCutoff = now - options.retentionDays * 24 * 60 * 60 * 1000;
+    const rows = db
+      .prepare(
+        `SELECT s.id AS id
+           FROM applied_plugin_snapshots s
+           LEFT JOIN projects p ON p.id = s.project_id
+          WHERE s.applied_at <= ?
+            AND p.id IS NULL`,
+      )
+      .all(retentionCutoff) as Array<{ id: string }>;
+    retentionIds.push(...rows);
+  }
+
+  const ids = [...expiredIds, ...beforeIds, ...retentionIds].map((r) => r.id);
+  // Dedupe — a row might match both expires_at and retentionDays.
+  const unique = Array.from(new Set(ids));
+  if (unique.length === 0) return { removed: 0, ids: [] };
+  const placeholders = unique.map(() => '?').join(', ');
+  db.prepare(`DELETE FROM applied_plugin_snapshots WHERE id IN (${placeholders})`).run(...unique);
+  return { removed: unique.length, ids: unique };
 }
 
 export function countSnapshotsForProject(db: SqliteDb, projectId: string): number {
