@@ -835,6 +835,7 @@ async function runPlugin(args) {
     case 'replay':    return runPluginReplay(rest);
     case 'trust':     return runPluginTrust(rest);
     case 'snapshots': return runPluginSnapshots(rest);
+    case 'simulate':  return runPluginSimulate(rest);
     case 'run':       return runPluginRun(rest);
     case 'scaffold': return runPluginScaffold(rest);
     case 'validate': return runPluginValidate(rest);
@@ -1749,6 +1750,110 @@ async function runPluginInstall(rest) {
 // Plan §3.Z2 — `od plugin upgrade <id>`. Re-installs the plugin
 // from its recorded source. Streams the same SSE event shape as
 // install, so 'progress' / 'success' / 'error' arrive verbatim.
+// Plan §3.EE1 — `od plugin simulate <pluginId> [-s key=value ...]`.
+//
+// Walks the plugin's pipeline against caller-supplied signals and
+// reports per-stage convergence (iterations + outcome). No LLM is
+// invoked — this is a pure devloop dry-run for testing 'until'
+// expressions.
+//
+// Signals are supplied via repeatable -s key=value flags. The
+// closed UntilSignals vocabulary applies (critique.score /
+// iterations / user.confirmed / preview.ok / build.passing /
+// tests.passing); unknown keys surface as warnings.
+async function runPluginSimulate(rest) {
+  const flags = parseFlags(rest, {
+    string:  new Set([...PLUGIN_STRING_FLAGS, 's', 'cap']),
+    boolean: PLUGIN_BOOLEAN_FLAGS,
+  });
+  const positional = rest.filter((a) => !a.startsWith('-'));
+  const id = positional[0];
+  if (flags.help || flags.h || !id) {
+    console.log(`Usage:
+  od plugin simulate <pluginId> [-s key=value ...] [--cap <n>] [--json]
+
+Walks the plugin's pipeline against caller-supplied signals and
+reports per-stage convergence. No LLM is invoked.
+
+Examples:
+  # critique-theater stage that exits when score >= 4
+  od plugin simulate my-plugin -s critique.score=5
+
+  # build-test devloop where both signals must hold
+  od plugin simulate code-migration \\
+      -s build.passing=true -s tests.passing=true
+
+  # raise the per-stage iteration cap (default 10)
+  od plugin simulate my-plugin -s critique.score=2 --cap 20
+
+Closed signal vocabulary:
+  critique.score (number)
+  iterations     (number)
+  user.confirmed (boolean)
+  preview.ok     (boolean)
+  build.passing  (boolean)
+  tests.passing  (boolean)`);
+    process.exit(id ? 0 : 2);
+  }
+  // Collect every -s value (parseFlags returns the last only).
+  const sValues = [];
+  for (let i = 0; i < rest.length; i++) {
+    if ((rest[i] === '-s' || rest[i] === '--signal') && typeof rest[i + 1] === 'string') {
+      sValues.push(rest[i + 1]);
+    }
+  }
+  // Fetch the plugin from the daemon so we get the resolved
+  // manifest (including pipeline).
+  const base = pluginDaemonUrl(flags).replace(/\/$/, '');
+  const resp = await fetch(`${base}/api/plugins/${encodeURIComponent(id)}`);
+  if (resp.status === 404) {
+    console.error(`plugin ${id} not found`);
+    process.exit(65);
+  }
+  if (!resp.ok) {
+    console.error(`GET /api/plugins/${id} failed: ${resp.status} ${await resp.text()}`);
+    process.exit(1);
+  }
+  const plugin = await resp.json();
+  const pipeline = plugin?.manifest?.od?.pipeline;
+  if (!pipeline || !Array.isArray(pipeline.stages) || pipeline.stages.length === 0) {
+    if (flags.json) {
+      process.stdout.write(JSON.stringify({ outcome: 'no-pipeline', stages: [] }, null, 2) + '\n');
+    } else {
+      console.log(`[simulate] plugin ${id} has no od.pipeline (or it is empty); nothing to walk.`);
+    }
+    return;
+  }
+  const { simulatePipeline, parseSignalKv } = await import('./plugins/simulate.js');
+  const parsedSignals = parseSignalKv(sValues);
+  for (const w of parsedSignals.warnings) console.warn(`[simulate] warn: ${w}`);
+  const cap = typeof flags.cap === 'string' ? Number(flags.cap) : undefined;
+  const result = simulatePipeline({
+    pipeline,
+    signals: parsedSignals.signals,
+    ...(Number.isFinite(cap) && cap > 0 ? { iterationCap: cap } : {}),
+  });
+  if (flags.json) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return;
+  }
+  console.log(`[simulate] plugin ${id} \u2014 outcome: ${result.outcome}, totalIterations: ${result.totalIterations}`);
+  for (const stage of result.stages) {
+    const tag = stage.outcome === 'converged' ? '\u2713'
+              : stage.outcome === 'cap'         ? '\u2717'
+              : stage.outcome === 'unparsable'  ? '!'
+              :                                   '\u2014';
+    const reason = stage.reason ? `  (${stage.reason})` : '';
+    const matched = stage.matched && stage.matched.length > 0
+      ? `  matched=[${stage.matched.map((c) => `${c.signal}${c.op}${c.value}`).join(' && ')}]`
+      : '';
+    console.log(`  ${tag} ${stage.stageId}: ${stage.outcome} (${stage.iterations} iter)${reason}${matched}`);
+  }
+  // Exit non-zero on cap-hit / unparsable so CI can wire this
+  // into a pipeline check easily.
+  if (result.outcome === 'cap-hit' || result.outcome === 'unparsable') process.exit(4);
+}
+
 // Plan §3.CC1 / §3.DD2 — `od plugin canon <snapshotId>`. Prints the
 // canonical `## Active plugin` block a snapshot will splice into
 // the system prompt. Useful for understanding what the agent
@@ -2514,6 +2619,9 @@ function printPluginHelp() {
   od plugin doctor <id>                   Lint a plugin's manifest, atoms and resolved refs.
   od plugin canon <snapshotId>            Print the canonical system-prompt block for a snapshot.
                                           (--check <file> for byte-equality fixtures.)
+  od plugin simulate <pluginId> [-s k=v]  Walk the plugin's pipeline against caller-supplied
+                                          signals; report stage convergence + iterations
+                                          (no LLM in the loop).
   od plugin diff <a> <b> [--json]         Compare two installed plugins by id.
   od plugin replay <runId> --snapshot-id <id>
                                           Re-emit the immutable snapshot a run launched against.

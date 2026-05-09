@@ -40,6 +40,14 @@ export {
   type SnapshotInventoryStats,
   type SnapshotStatsRow,
 } from './stats.js';
+export {
+  simulatePipeline,
+  parseSignalKv,
+  type SimulatePipelineInput,
+  type SimulatePipelineResult,
+  type SimulateStageOutcome,
+  type StageSignalProvider,
+} from './simulate.js';
 export * from './atoms/build-test.js';
 export * from './atoms/code-import.js';
 export * from './atoms/design-extract.js';
