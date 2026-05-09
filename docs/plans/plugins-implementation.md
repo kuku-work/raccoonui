@@ -118,9 +118,12 @@ This section tracks **what exists in the repo today**. Update in the same PR tha
 | `apps/daemon/src/plugins/atoms/build-test.ts` | shipped | Phase 7 — typecheck + test shell-out runner; emits build.passing + tests.passing signals |
 | `apps/daemon/src/plugins/atoms/code-import.ts` | shipped | Phase 7 — repo walker writing normalised `<cwd>/code/index.json` |
 | `apps/daemon/src/plugins/atoms/design-extract.ts` | shipped | Phase 6/7 — token bag extractor reading code/index.json + writing code/tokens.json |
+| `apps/daemon/src/plugins/atoms/figma-extract.ts` | shipped | Phase 6 — Figma REST shell-out → figma/{tree,tokens,meta}.json |
+| `apps/daemon/src/plugins/atoms/token-map.ts` | shipped | Phase 6/7 — exact + normalised-hex + fuzzy-name crosswalk against the active design system |
 | `apps/daemon/src/plugins/atoms/rewrite-plan.ts` | shipped | Phase 7 — heuristic ownership classifier + per-leaf step generator |
 | `apps/daemon/src/plugins/atoms/patch-edit.ts` | shipped | Phase 7 — unified-diff applier with shell-tier safety gate + per-step receipts |
 | `apps/daemon/src/plugins/atoms/diff-review.ts` | shipped | Phase 7-8 — review/{diff.patch,summary.md,decision.json,meta.json} from receipts |
+| `apps/daemon/src/plugins/atoms/auto-surfaces.ts` | shipped | Phase 8 — auto-derives `__auto_diff_review_<stageId>` choice surface for each stage that lists `diff-review` |
 | `apps/daemon/src/plugins/atoms/handoff.ts` | shipped | Phase 8 — recordHandoff + isDeployableAppEligible helpers |
 | `packages/plugin-runtime/src/pipeline-fallback.ts` | shipped | spec §23.3.3 — resolveAppliedPipeline falls back to a bundled scenario when od.pipeline is absent |
 | `plugins/_official/atoms/<atom>/{SKILL.md,open-design.json}` | shipped | Phase 4 / 6 / 7 / 8 — 13 first-party atom plugins (4 implemented + 9 reserved fragments) |
@@ -495,7 +498,7 @@ Validation
 
 These are tracked but **not part of v1 sign-off**. Listed here so spec patches that promote `(planned)` atoms have a place to update.
 
-- [ ] **Phase 6 — figma-migration native**: implement `figma-extract` + `token-map`; ship official `figma-migration` plugin. **Substrate landed (plan §3.M3 / §3.N4 / §3.O2): SKILL.md + open-design.json for both ids; bundled scenario plugin `od-figma-migration` registered; `design-extract` impl reuses the same token bag shape. The Figma REST shell-out (`figma-extract`) + the token-map crosswalk (`token-map`) stay scheduled.**
+- [x] **Phase 6 — figma-migration native**: implement `figma-extract` + `token-map`; ship official `figma-migration` plugin. **All atom impls landed (plan §3.M3 / §3.N4 / §3.O2 / §3.P1 / §3.P2): `figma-extract` walks the Figma REST API into `<cwd>/figma/{tree,tokens,meta}.json`, `token-map` crosswalks any source bag against the active design system. Bundled scenario plugin `od-figma-migration` ships the canonical pipeline. Asset rasterisation (the `GET /v1/images` second pass) stays scheduled — current impl runs in offline-assets mode by default.**
 - [x] **Phase 7 — code-migration native** (§20.3 §21.3.2): `code-import`, `design-extract`, `rewrite-plan`, `patch-edit`, `diff-review`, `build-test`. **All six atom impls landed (plan §3.N1 / §3.N2 / §3.O2 / §3.O3 / §3.O4 / §3.O5). Bundled scenario plugin `od-code-migration` ships the canonical pipeline (`code-import` → `design-extract` + `token-map` → `rewrite-plan` → `patch-edit ↔ build-test` devloop → `diff-review` → `handoff`). Live HTTP wiring for the per-stage runner keeps to scheduled.**
 - [ ] **Phase 8 — production code delivery native**: repo-aware multi-file patch orchestration; native review-and-apply surface; promote `handoffKind: 'deployable-app'` from reservation to implementation. **Substrate landed (plan §3.N3 / §3.O4 / §3.O5): `patch-edit` enforces shell-tier safety + writes per-step receipts; `diff-review` emits review/{diff.patch,summary.md,decision.json,meta.json}; `recordHandoff()` enforces append-only export/deploy targets; `isDeployableAppEligible()` centralises the §11.5.1 promotion rule. `ArtifactManifest` carries the full reserved provenance surface. The native review-and-apply UI + GenUI surface mounting stay scheduled.**
 
@@ -554,10 +557,10 @@ Plus repo-wide gates
 
 | Field | Value |
 | --- | --- |
-| Current phase | Phase 2A + 1 + 1.5 + 2B + 2C entry slice + 3 (full) + 4 (full minus the live OD_BUNDLED_ATOM_PROMPTS rollout) + 5 (full minus the AWS SDK + postgres adapter wiring) + 6 (design-extract reused) + 7 (all six atom impls) + 8 (patch + review substrate; UI scheduled) + scenarios bundle + bundled-scenario fallback resolver |
-| Next planned PR | (a) Promote OD_BUNDLED_ATOM_PROMPTS=1 to default; (b) AWS SDK wiring inside S3ProjectStorage; (c) postgres adapter wiring inside the DaemonDb resolver; (d) Phase 6 `figma-extract` REST shell-out + `token-map` crosswalk; (e) Phase 8 native review-and-apply UI mounting `diff-review` decision through a GenUI choice surface. |
+| Current phase | Phase 2A + 1 + 1.5 + 2B + 2C entry slice + 3 (full) + 4 (full minus the live OD_BUNDLED_ATOM_PROMPTS rollout) + 5 (full minus the AWS SDK + postgres adapter wiring) + 6 (figma-extract + token-map impls) + 7 (all six atom impls) + 8 (patch + review + auto-surface substrate; native UI mount scheduled) + scenarios bundle + bundled-scenario fallback resolver |
+| Next planned PR | (a) Promote OD_BUNDLED_ATOM_PROMPTS=1 to default; (b) AWS SDK wiring inside S3ProjectStorage; (c) postgres adapter wiring inside the DaemonDb resolver; (d) Phase 6 figma-extract asset rasterisation second pass (offlineAssets=false); (e) Phase 8 native review-and-apply UI mounting the auto-derived choice surface in the web composer. |
 | Open spec push-backs | none — PB1 / PB2 resolved (see §7) |
-| Last sync against `docs/plugins-spec.md` | 2026-05-09 (Phase 7 atom impls + bundled-scenario fallback resolver + diff-review + patch-edit safety gate landing) |
+| Last sync against `docs/plugins-spec.md` | 2026-05-09 (Phase 6 figma-extract + token-map + Phase 8 diff-review auto-surface landing) |
 
 Update this table on every plugin-system PR merge. When the value of "Current phase" advances, also flip the matching deliverables in §6 and the modules in §3.
 
