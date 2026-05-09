@@ -67,6 +67,11 @@ export interface ComposeInput {
   // (web returns 409 when a plugin is bound), so contracts callers only
   // see this on a daemon-bound run that uses the contracts composer.
   pluginBlock?: string | undefined;
+  // Plan §3.L2 / spec §23.4 — pre-rendered `## Active stage` blocks
+  // produced by `renderActiveStageBlock(stageId, atomBodies)`. The
+  // contracts composer simply splices them in after the plugin block;
+  // every block is already self-contained markdown.
+  activeStageBlocks?: ReadonlyArray<string> | undefined;
 }
 
 export function composeSystemPrompt({
@@ -78,6 +83,7 @@ export function composeSystemPrompt({
   metadata,
   template,
   pluginBlock,
+  activeStageBlocks,
 }: ComposeInput): string {
   // Discovery + philosophy goes FIRST so its hard rules ("emit a form on
   // turn 1", "branch on brand on turn 2", "TodoWrite on turn 3", run
@@ -104,6 +110,14 @@ export function composeSystemPrompt({
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
     parts.push(pluginBlock);
+  }
+
+  if (Array.isArray(activeStageBlocks) && activeStageBlocks.length > 0) {
+    for (const block of activeStageBlocks) {
+      if (typeof block === 'string' && block.trim().length > 0) {
+        parts.push(block);
+      }
+    }
   }
 
   const metaBlock = renderMetadataBlock(metadata, template);

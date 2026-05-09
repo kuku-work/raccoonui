@@ -136,6 +136,13 @@ export interface ComposeInput {
   // its companion skill body in the prompt. Pass undefined when no
   // plugin is bound to the run.
   pluginBlock?: string | undefined;
+  // Plan §3.L2 / spec §23.4 — pre-rendered `## Active stage: <id>`
+  // blocks (one per pipeline stage active for the run). The daemon's
+  // pipeline runner builds these from `loadAtomBodies()` +
+  // `renderActiveStageBlock()` when the OD_BUNDLED_ATOM_PROMPTS env
+  // flag is set; otherwise this stays undefined and the prompt
+  // composer's hard-coded constants keep their precedence (back-compat).
+  activeStageBlocks?: ReadonlyArray<string> | undefined;
 }
 
 export function composeSystemPrompt({
@@ -155,6 +162,7 @@ export function composeSystemPrompt({
   critiqueSkill,
   connectedExternalMcp,
   pluginBlock,
+  activeStageBlocks,
 }: ComposeInput): string {
   // Discovery + philosophy goes FIRST so its hard rules ("emit a form on
   // turn 1", "branch on brand on turn 2", "TodoWrite on turn 3", run
@@ -191,6 +199,20 @@ export function composeSystemPrompt({
 
   if (pluginBlock && pluginBlock.trim().length > 0) {
     parts.push(pluginBlock);
+  }
+
+  // Plan §3.L2 / spec §23.4 — splice per-stage atom blocks immediately
+  // after the active plugin block. Empty entries are skipped so a
+  // pipeline whose stages don't resolve any bundled atom bodies
+  // produces zero extra prompt mass. The active-skill body above
+  // remains the precedence carrier; these blocks add the stage-by-
+  // stage atom guidance that spec §23.3.2 calls out.
+  if (Array.isArray(activeStageBlocks) && activeStageBlocks.length > 0) {
+    for (const block of activeStageBlocks) {
+      if (typeof block === 'string' && block.trim().length > 0) {
+        parts.push(block);
+      }
+    }
   }
 
   const metaBlock = renderMetadataBlock(metadata, template);

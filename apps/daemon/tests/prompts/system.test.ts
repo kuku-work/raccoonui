@@ -25,6 +25,37 @@ const liveArtifactSkillBody = [
   liveArtifactSkillMarkdown.replace(/^---[\s\S]*?---\n\n/, '').trim(),
 ].join('\n');
 
+describe('composeSystemPrompt — activeStageBlocks splice (spec §23.4)', () => {
+  it('inserts every active stage block after the plugin block when supplied', () => {
+    const stage1 = '\n\n## Active stage: discovery\n\n### discovery-question-form\n\nAsk audience.';
+    const stage2 = '\n\n## Active stage: plan\n\n### todo-write\n\nCommit a plan.';
+    const prompt = composeSystemPrompt({
+      pluginBlock: '\n\n## Active plugin\n\nThe user applied test-plugin.',
+      activeStageBlocks: [stage1, stage2],
+    });
+    expect(prompt).toContain('## Active plugin');
+    expect(prompt.indexOf('## Active stage: discovery')).toBeGreaterThan(prompt.indexOf('## Active plugin'));
+    expect(prompt.indexOf('## Active stage: plan')).toBeGreaterThan(prompt.indexOf('## Active stage: discovery'));
+  });
+
+  it('skips empty / whitespace-only blocks', () => {
+    const prompt = composeSystemPrompt({
+      activeStageBlocks: ['', '   ', '\n\n## Active stage: critique\n\n### critique-theater\n\nScore.'],
+    });
+    expect(prompt).toContain('## Active stage: critique');
+    // Only one stage block means just one heading.
+    expect((prompt.match(/## Active stage:/g) ?? []).length).toBe(1);
+  });
+
+  it('is a no-op when activeStageBlocks is undefined or empty', () => {
+    const baseline = composeSystemPrompt({});
+    const withUndefined = composeSystemPrompt({ activeStageBlocks: undefined });
+    const withEmpty = composeSystemPrompt({ activeStageBlocks: [] });
+    expect(withUndefined).toBe(baseline);
+    expect(withEmpty).toBe(baseline);
+  });
+});
+
 describe('composeSystemPrompt', () => {
   it('injects live-artifact skill guidance and metadata intent', () => {
     const prompt = composeSystemPrompt({
