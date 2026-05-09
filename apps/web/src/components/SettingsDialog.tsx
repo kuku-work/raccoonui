@@ -13,8 +13,11 @@ import {
 import {
   DEFAULT_NOTIFICATIONS,
   DEFAULT_ORBIT,
+  isStoredMediaProviderEntryEmpty,
+  isStoredMediaProviderEntryPresent,
   KNOWN_PROVIDERS,
   hasAnyConfiguredProvider,
+  mergeDaemonMediaProviders,
   syncComposioConfigToDaemon,
   syncConfigToDaemon,
   syncMediaProvidersToDaemon,
@@ -114,6 +117,10 @@ interface Props {
   onRefreshAgents: (
     options?: AgentRefreshOptions,
   ) => AgentInfo[] | Promise<AgentInfo[] | void> | void;
+  daemonMediaProviders?: AppConfig['mediaProviders'] | null;
+  daemonMediaProvidersFetchState?: 'idle' | 'ok' | 'error';
+  mediaProvidersNotice?: string | null;
+  onReloadMediaProviders?: () => Promise<AppConfig['mediaProviders'] | null>;
 }
 
 export interface AgentRefreshOptions {
@@ -567,6 +574,10 @@ export function SettingsDialog({
   composioConfigLoading = false,
   onClose,
   onRefreshAgents,
+  daemonMediaProviders,
+  daemonMediaProvidersFetchState = 'idle',
+  mediaProvidersNotice,
+  onReloadMediaProviders,
 }: Props) {
   const { t, locale, setLocale } = useI18n();
   const [cfg, setCfg] = useState<AppConfig>(initial);
@@ -1871,6 +1882,8 @@ export function SettingsDialog({
             <MediaProvidersSection
               cfg={cfg}
               setCfg={setCfg}
+              mediaProvidersNotice={mediaProvidersNotice}
+              onReloadMediaProviders={onReloadMediaProviders}
               onChange={() => {
                 mediaProvidersChangeVersionRef.current += 1;
               }}
@@ -1896,6 +1909,8 @@ export function SettingsDialog({
               cfg={cfg}
               setCfg={setCfg}
               composioApiKeyConfigured={Boolean(cfg.composio?.apiKeyConfigured)}
+              daemonMediaProviders={daemonMediaProviders}
+              daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
               onOpenComposioSection={() => setActiveSection('composio')}
               onLeaveForOrbitProject={(runConfig) => {
                 // Persist any in-flight Orbit edits (toggle / time) before
@@ -2475,8 +2490,16 @@ interface OrbitRunStartResponse {
 
 export async function persistConfigAndRunOrbit(
   config: AppConfig,
+  options?: {
+    daemonProviders?: AppConfig['mediaProviders'] | null;
+    syncMediaProviders?: boolean;
+  },
 ): Promise<OrbitRunStartResponse> {
-  await syncMediaProvidersToDaemon(config.mediaProviders);
+  if (options?.syncMediaProviders !== false) {
+    await syncMediaProvidersToDaemon(config.mediaProviders, {
+      daemonProviders: options?.daemonProviders,
+    });
+  }
   await syncConfigToDaemon(config, { throwOnError: true });
   const response = await fetch('/api/orbit/run', { method: 'POST' });
   if (!response.ok) throw new Error('Orbit run failed');
@@ -2520,6 +2543,8 @@ function OrbitSection({
   cfg,
   setCfg,
   composioApiKeyConfigured,
+  daemonMediaProviders,
+  daemonMediaProvidersFetchState,
   onOpenComposioSection,
   onLeaveForOrbitProject,
 }: {
@@ -2530,6 +2555,8 @@ function OrbitSection({
    *  that Orbit needs Composio first; when true (key present, just no
    *  connectors yet) it nudges the user toward the connector catalog. */
   composioApiKeyConfigured: boolean;
+  daemonMediaProviders?: AppConfig['mediaProviders'] | null;
+  daemonMediaProvidersFetchState?: 'idle' | 'ok' | 'error';
   /** Switch the parent settings dialog to the Connectors (Composio) tab.
    *  Used by the Orbit gate's primary CTA so the user can fix the
    *  prerequisite without leaving the dialog. */
@@ -2688,7 +2715,10 @@ function OrbitSection({
     void (async () => {
       try {
         const runConfig = configForManualOrbitRun(cfg);
-        const payload = await persistConfigAndRunOrbit(runConfig);
+        const payload = await persistConfigAndRunOrbit(runConfig, {
+          daemonProviders: daemonMediaProviders,
+          syncMediaProviders: daemonMediaProvidersFetchState === 'ok',
+        });
         if (!payload.projectId) throw new Error('Orbit run did not return a project');
 
         onLeaveForOrbitProject(runConfig);
@@ -3308,13 +3338,19 @@ function OrbitSection({
 function MediaProvidersSection({
   cfg,
   setCfg,
+  mediaProvidersNotice,
+  onReloadMediaProviders,
   onChange,
 }: {
   cfg: AppConfig;
   setCfg: Dispatch<SetStateAction<AppConfig>>;
+  mediaProvidersNotice?: string | null;
+  onReloadMediaProviders?: () => Promise<AppConfig['mediaProviders'] | null>;
   onChange: () => void;
 }) {
   const { t } = useI18n();
+  const [reloadRunning, setReloadRunning] = useState(false);
+  const [reloadNotice, setReloadNotice] = useState<{ kind: 'error' | 'success'; message: string } | null>(null);
   const [visibleApiKeys, setVisibleApiKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3334,22 +3370,28 @@ function MediaProvidersSection({
     .sort((a, b) => {
       const aEntry = cfg.mediaProviders?.[a.id];
       const bEntry = cfg.mediaProviders?.[b.id];
-      const aConfigured = Boolean(aEntry?.apiKey.trim() || aEntry?.baseUrl.trim());
-      const bConfigured = Boolean(bEntry?.apiKey.trim() || bEntry?.baseUrl.trim());
+      const aConfigured = isStoredMediaProviderEntryPresent(aEntry);
+      const bConfigured = isStoredMediaProviderEntryPresent(bEntry);
       if (aConfigured !== bConfigured) return aConfigured ? -1 : 1;
       if (a.integrated !== b.integrated) return a.integrated ? -1 : 1;
       return a.label.localeCompare(b.label);
     });
   const updateProvider = (
     provider: MediaProvider,
-    patch: { apiKey?: string; baseUrl?: string; model?: string },
+    patch: {
+      apiKey?: string;
+      baseUrl?: string;
+      model?: string;
+      apiKeyConfigured?: boolean;
+      apiKeyTail?: string;
+    },
   ) => {
     onChange();
     setCfg((curr) => {
       const prev = curr.mediaProviders?.[provider.id] ?? { apiKey: '', baseUrl: '', model: '' };
       const next = { ...prev, ...patch };
       const map = { ...(curr.mediaProviders ?? {}) };
-      if (!next.apiKey.trim() && !next.baseUrl.trim() && !next.model?.trim()) {
+      if (isStoredMediaProviderEntryEmpty(next)) {
         delete map[provider.id];
       } else {
         map[provider.id] = next;
@@ -3357,6 +3399,23 @@ function MediaProvidersSection({
       return { ...curr, mediaProviders: map };
     });
   };
+  const handleReload = async () => {
+    if (!onReloadMediaProviders || reloadRunning) return;
+    setReloadRunning(true);
+    setReloadNotice(null);
+    try {
+      const next = await onReloadMediaProviders();
+      if (!next) {
+        setReloadNotice({ kind: 'error', message: t('settings.mediaProviderReloadError') });
+        return;
+      }
+      setCfg((curr) => mergeDaemonMediaProviders(curr, next));
+      setReloadNotice({ kind: 'success', message: t('settings.mediaProviderReloadSuccess') });
+    } finally {
+      setReloadRunning(false);
+    }
+  };
+
   const toggleApiKeyVisibility = (providerId: string) => {
     setVisibleApiKeys((current) => {
       const next = new Set(current);
@@ -3376,20 +3435,46 @@ function MediaProvidersSection({
           <h3>{t('settings.mediaProviders')}</h3>
           <p className="hint">{t('settings.mediaProvidersHint')}</p>
         </div>
+        {onReloadMediaProviders ? (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => void handleReload()}
+            disabled={reloadRunning}
+          >
+            {reloadRunning ? t('common.loading') : t('settings.mediaProviderReload')}
+          </button>
+        ) : null}
       </div>
+      {mediaProvidersNotice ? (
+        <p className="hint" role="alert">{mediaProvidersNotice}</p>
+      ) : null}
+      {reloadNotice ? (
+        <p className="hint" role={reloadNotice.kind === 'error' ? 'alert' : 'status'}>
+          {reloadNotice.message}
+        </p>
+      ) : null}
       <div className="media-provider-list">
         {providers.map((provider) => {
           const entry = cfg.mediaProviders?.[provider.id] ?? { apiKey: '', baseUrl: '', model: '' };
-          const configured = Boolean(entry.apiKey.trim() || entry.baseUrl.trim());
+          const hasPendingEdit = Boolean(entry.apiKey.trim());
+          const isSavedState = Boolean((hasPendingEdit || entry.apiKeyConfigured) && !hasPendingEdit);
+          const tail = entry.apiKeyTail?.trim();
+          const configured = isStoredMediaProviderEntryPresent(entry);
           const disabled = !provider.integrated;
           const supportsCustomModel = provider.supportsCustomModel === true;
-          const clearable = Boolean(entry.apiKey.trim() || entry.baseUrl.trim() || entry.model?.trim());
+          const clearable = isStoredMediaProviderEntryPresent(entry);
           const apiKeyVisible = visibleApiKeys.has(provider.id);
           return (
             <div key={provider.id} className={`media-provider-row${provider.integrated ? '' : ' pending'}`}>
               <div className="media-provider-head">
                 <div className="media-provider-meta">
                   <span className="media-provider-name">{provider.label}</span>
+                  {isSavedState ? (
+                    <span className="field-status-badge" title={t('settings.connectorsSavedTitle')}>
+                      {tail ? t('settings.connectorsSavedWithTail', { tail }) : t('settings.connectorsSaved')}
+                    </span>
+                  ) : null}
                   <span className="media-provider-hint">{provider.hint}</span>
                 </div>
                 <div className="media-provider-badges">
@@ -3408,7 +3493,7 @@ function MediaProvidersSection({
                   <input
                     type={apiKeyVisible ? 'text' : 'password'}
                     value={entry.apiKey}
-                    placeholder={t('settings.mediaProviderPlaceholder')}
+                    placeholder={isSavedState ? t('settings.connectorsReplaceKeyPlaceholder') : t('settings.mediaProviderPlaceholder')}
                     aria-label={`${provider.label} ${t('settings.mediaProviderApiKey')}`}
                     disabled={disabled}
                     onChange={(e) => updateProvider(provider, { apiKey: e.target.value })}
@@ -3425,9 +3510,9 @@ function MediaProvidersSection({
                     aria-pressed={apiKeyVisible}
                     onClick={() => toggleApiKeyVisibility(provider.id)}
                   >
-                    <Icon name={apiKeyVisible ? 'eye' : 'eye-off'} size={15} />
-                  </button>
-                </div>
+                      <Icon name={apiKeyVisible ? 'eye' : 'eye-off'} size={15} />
+                    </button>
+                  </div>
                 <input
                   value={entry.baseUrl}
                   placeholder={provider.defaultBaseUrl || t('settings.mediaProviderBaseUrlPlaceholder')}
@@ -3463,7 +3548,13 @@ function MediaProvidersSection({
                     ) {
                       return;
                     }
-                    updateProvider(provider, { apiKey: '', baseUrl: '', model: '' });
+                    updateProvider(provider, {
+                      apiKey: '',
+                      baseUrl: '',
+                      model: '',
+                      apiKeyConfigured: false,
+                      apiKeyTail: '',
+                    });
                   }}
                 >
                   {t('settings.mediaProviderClear')}
