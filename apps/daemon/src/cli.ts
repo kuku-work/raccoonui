@@ -1840,9 +1840,11 @@ async function runPluginEvents(rest) {
   od plugin events tail     [-f] [--since <id>] [--kind <k>] [--plugin-id <id>] [--json]
   od plugin events snapshot [--since <id>] [--kind <k>] [--plugin-id <id>] [--json]
   od plugin events stats    [--json]
+  od plugin events purge    [--confirm] [--json]    (loopback-only)
 
-Tail / snapshot / stats over the daemon's in-memory plugin event
-ring buffer (capped at 1000 entries; resets on daemon restart).
+Tail / snapshot / stats / purge over the daemon's in-memory
+plugin event ring buffer (capped at 1000 entries; resets on
+daemon restart).
 Lifecycle vocabulary:
   plugin.installed | plugin.upgraded | plugin.uninstalled
   plugin.trust-changed | plugin.snapshot-pruned
@@ -1895,6 +1897,31 @@ Lifecycle vocabulary:
       const detailKeys = ev.details ? Object.keys(ev.details).slice(0, 3).join(',') : '';
       console.log(`#${ev.id}  ${ts}  ${ev.kind}  pluginId=${ev.pluginId || '-'}` +
         (detailKeys ? `  details=${detailKeys}` : ''));
+    }
+    return;
+  }
+
+  if (sub === 'purge') {
+    // Refuse to run without an explicit --confirm so 'od plugin
+    // events purge' alone never drops audit data accidentally.
+    const purgeFlags = parseFlags(rest.slice(1), {
+      string:  new Set(['daemon-url']),
+      boolean: new Set(['help', 'h', 'json', 'confirm']),
+    });
+    if (!purgeFlags.confirm) {
+      console.error('[events purge] refusing without --confirm. This drops every event in the in-memory buffer.');
+      process.exit(2);
+    }
+    const resp = await fetch(`${base}/api/plugins/events/purge`, { method: 'POST' });
+    if (!resp.ok) {
+      console.error(`POST /api/plugins/events/purge failed: ${resp.status} ${await resp.text()}`);
+      process.exit(1);
+    }
+    const data = await resp.json();
+    if (purgeFlags.json) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    } else {
+      console.log(`[events purge] dropped ${data.purged ?? 0} event${(data.purged ?? 0) === 1 ? '' : 's'} (id range: ${data.firstId ?? '(none)'} \u2192 ${data.lastId ?? '(none)'}; preNextId=${data.preNextId})`);
     }
     return;
   }
@@ -3066,6 +3093,7 @@ function printPluginHelp() {
   od plugin events tail [-f] [--kind k]   Tail the in-memory plugin event ring buffer.
   od plugin events snapshot               One-shot read (filterable, no SSE).
   od plugin events stats                  Roll-up: counts by kind / pluginId / time range.
+  od plugin events purge                  Drop every event in the buffer (loopback-only).
   od plugin diff <a> <b> [--json]         Compare two installed plugins by id.
   od plugin replay <runId> --snapshot-id <id>
                                           Re-emit the immutable snapshot a run launched against.

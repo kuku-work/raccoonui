@@ -65,9 +65,11 @@ export {
   subscribePluginEvents,
   pluginEventBufferSize,
   summarisePluginEvents,
+  purgePluginEventBuffer,
   type PluginEvent,
   type PluginEventKind,
   type PluginEventStats,
+  type PurgePluginEventBufferResult,
 } from './events.js';
 export * from './atoms/build-test.js';
 export * from './atoms/code-import.js';

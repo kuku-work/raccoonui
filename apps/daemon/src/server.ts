@@ -2135,6 +2135,22 @@ export async function startServer({
     });
   });
 
+  // Plan §3.NN1 — `od plugin events purge`. Operator escape
+  // hatch for resetting the in-memory ring buffer. Loopback-only
+  // because clearing the buffer drops audit history; an operator
+  // with shell access to the daemon machine should be the only
+  // one allowed to invoke. Returns the pre-purge stats so the
+  // caller can confirm what they discarded.
+  app.post('/api/plugins/events/purge', requireLocalDaemonRequest, async (_req, res) => {
+    try {
+      const { purgePluginEventBuffer } = await import('./plugins/events.js');
+      const result = purgePluginEventBuffer();
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Plan §3.II1 — `od plugin events tail`. SSE-backed live event
   // stream of plugin lifecycle events from the in-memory ring
   // buffer. On open: emits the buffered backlog as 'event: backlog'

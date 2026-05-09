@@ -119,6 +119,36 @@ export function __resetPluginEventBufferForTests(): void {
   singleton.reset();
 }
 
+// Plan §3.NN1 — operator-facing buffer reset. Distinct from
+// __resetPluginEventBufferForTests because it returns the
+// pre-purge stats so the caller can audit what was discarded.
+// Exposed via the loopback-only `POST /api/plugins/events/purge`
+// route + `od plugin events purge` CLI subcommand.
+export interface PurgePluginEventBufferResult {
+  purged:        number;
+  // The ids of the first / last entry that was discarded, so an
+  // operator who exported the buffer right before the purge can
+  // confirm coverage.
+  firstId:       number | null;
+  lastId:        number | null;
+  // The ringe buffer's nextId value PRE-purge — useful for
+  // debugging 'did we lose a window of events between export
+  // and purge?'.
+  preNextId:     number;
+}
+
+export function purgePluginEventBuffer(): PurgePluginEventBufferResult {
+  const events = singleton.snapshot();
+  const result: PurgePluginEventBufferResult = {
+    purged:    events.length,
+    firstId:   events.length > 0 ? events[0]!.id                    : null,
+    lastId:    events.length > 0 ? events[events.length - 1]!.id    : null,
+    preNextId: (singleton as unknown as { nextId: number }).nextId,
+  };
+  singleton.reset();
+  return result;
+}
+
 // Plan §3.KK2 — pure roll-up over a slice of events. Useful for
 // dashboards + the `od plugin events stats` CLI summary. Lives
 // next to the buffer so consumers can compute the same rollup
