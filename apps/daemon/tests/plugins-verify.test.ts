@@ -116,6 +116,39 @@ describe('verifyPlugin — canon byte-equality', () => {
   });
 });
 
+describe('verifyPlugin — strict mode (Plan §3.HH1)', () => {
+  it('passes by default when doctor reports warnings + no errors', () => {
+    const doctor: DoctorReport = {
+      pluginId: 'p',
+      ok: true,
+      issues: [{ severity: 'warning', code: 'a', message: 'x' }],
+      freshDigest: 'abc',
+    };
+    const report = verifyPlugin({ config: { enabled: ['doctor'] }, doctor });
+    expect(report.passed).toBe(true);
+    expect(report.outcomes.find((o) => o.check === 'doctor')?.status).toBe('passed');
+  });
+
+  it('FAILS in strict mode when doctor reports any warning', () => {
+    const doctor: DoctorReport = {
+      pluginId: 'p',
+      ok: true,
+      issues: [{ severity: 'warning', code: 'a', message: 'x' }],
+      freshDigest: 'abc',
+    };
+    const report = verifyPlugin({ config: { enabled: ['doctor'], strict: true }, doctor });
+    expect(report.passed).toBe(false);
+    const outcome = report.outcomes.find((o) => o.check === 'doctor');
+    expect(outcome?.status).toBe('failed');
+    expect(outcome?.summary).toMatch(/strict mode/);
+  });
+
+  it('still passes in strict mode when doctor reports zero issues', () => {
+    const report = verifyPlugin({ config: { enabled: ['doctor'], strict: true }, doctor: passingDoctor() });
+    expect(report.passed).toBe(true);
+  });
+});
+
 describe('verifyPlugin — summaries', () => {
   it('doctor summary mentions error + warning counts', () => {
     const doctor: DoctorReport = {

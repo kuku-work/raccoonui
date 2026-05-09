@@ -27,6 +27,9 @@ export type VerifyCheckId = 'doctor' | 'simulate' | 'canon';
 export interface VerifyConfig {
   // Subset of checks to run. Default: all.
   enabled?: ReadonlyArray<VerifyCheckId>;
+  // Plan §3.HH1 — when true, doctor warnings count as failures.
+  // Mirrors `od plugin doctor --strict`. Default false.
+  strict?: boolean;
   // Optional simulate inputs — if absent, simulate is skipped (the
   // verify config doesn't auto-build a default signal map; the
   // author must opt in by declaring expected signals).
@@ -95,12 +98,18 @@ export function verifyPlugin(input: VerifyInput): VerifyReport {
   } else {
     const errors = input.doctor.issues.filter((i) => i.severity === 'error').length;
     const warnings = input.doctor.issues.filter((i) => i.severity === 'warning').length;
-    const status: VerifyCheckOutcome['status'] = errors === 0 ? 'passed' : 'failed';
+    // Plan §3.HH1: in strict mode, warnings fail the check too.
+    const strict = input.config.strict === true;
+    const failed = errors > 0 || (strict && warnings > 0);
+    const status: VerifyCheckOutcome['status'] = failed ? 'failed' : 'passed';
+    const summary = strict && warnings > 0 && errors === 0
+      ? `doctor: 0 errors, ${warnings} warning${warnings === 1 ? '' : 's'} (strict mode \u2014 warnings fail the check)`
+      : `doctor: ${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`;
     outcomes.push({
       check: 'doctor',
       status,
-      summary: `doctor: ${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`,
-      details: { errors, warnings, ok: input.doctor.ok, freshDigest: input.doctor.freshDigest },
+      summary,
+      details: { errors, warnings, ok: input.doctor.ok, freshDigest: input.doctor.freshDigest, strict },
     });
   }
 

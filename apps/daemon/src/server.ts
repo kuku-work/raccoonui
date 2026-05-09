@@ -2115,6 +2115,34 @@ export async function startServer({
     }
   });
 
+  // Plan §3.HH2 — `od daemon db vacuum`. Runs SQLite VACUUM to
+  // reclaim space after large delete batches (snapshot prune,
+  // plugin uninstall, etc.). Reports before / after sizes so the
+  // operator sees the reclamation, plus elapsed ms so a slow
+  // VACUUM on a big DB is visible.
+  app.post('/api/daemon/db/vacuum', requireLocalDaemonRequest, async (_req, res) => {
+    try {
+      const { inspectSqliteDatabase } = await import('./storage/db-inspect.js');
+      const file = path.join(RUNTIME_DATA_DIR, 'app.sqlite');
+      const before = await inspectSqliteDatabase({ db, file });
+      const startedAt = Date.now();
+      // VACUUM cannot run inside an active transaction; better-sqlite3
+      // exposes it as a regular pragma exec.
+      db.exec('VACUUM');
+      const elapsedMs = Date.now() - startedAt;
+      const after = await inspectSqliteDatabase({ db, file });
+      res.json({
+        ok: true,
+        beforeBytes: before.sizeBytes,
+        afterBytes:  after.sizeBytes,
+        reclaimedBytes: Math.max(0, before.sizeBytes - after.sizeBytes),
+        elapsedMs,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Plan §3.F2 — graceful shutdown. The CLI calls this from
   // `od daemon stop`; the actual close path goes through the same
   // SIGTERM-equivalent flow as a parent-process kill (the boot wrapper

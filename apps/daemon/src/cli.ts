@@ -1898,8 +1898,9 @@ Exit codes:
   const report = verifyPlugin({
     config: {
       enabled: [...enabledSet],
-      ...(config.simulate ? { simulate: config.simulate } : {}),
-      ...(config.canon    ? { canon:    config.canon    } : {}),
+      ...(config.strict   === true     ? { strict:   true }      : {}),
+      ...(config.simulate              ? { simulate: config.simulate } : {}),
+      ...(config.canon                 ? { canon:    config.canon    } : {}),
     },
     ...(doctorReport   ? { doctor:        doctorReport } : {}),
     ...(simulateReport ? { simulate:      simulateReport } : {}),
@@ -2412,10 +2413,16 @@ publish from a frozen run snapshot rather than the live installed copy.`);
 }
 
 async function runPluginDoctor(rest) {
-  const flags = parseFlags(rest, { string: PLUGIN_STRING_FLAGS, boolean: PLUGIN_BOOLEAN_FLAGS });
+  // Plan §3.HH1 — --strict promotes warnings to errors so CI can
+  // opt into 'no warnings allowed' mode without parsing the issue
+  // list manually.
+  const flags = parseFlags(rest, {
+    string:  PLUGIN_STRING_FLAGS,
+    boolean: new Set([...PLUGIN_BOOLEAN_FLAGS, 'strict']),
+  });
   const id = rest.find((a) => !a.startsWith('-') && a !== flags['daemon-url'] && a !== flags.source);
   if (!id) {
-    console.error('Usage: od plugin doctor <id>');
+    console.error('Usage: od plugin doctor <id> [--strict] [--json]');
     process.exit(2);
   }
   const url = `${pluginDaemonUrl(flags).replace(/\/$/, '')}/api/plugins/${encodeURIComponent(id)}/doctor`;
@@ -2425,19 +2432,26 @@ async function runPluginDoctor(rest) {
     process.exit(1);
   }
   const data = await resp.json();
+  const issues = Array.isArray(data?.issues) ? data.issues : [];
+  const warnings = issues.filter((i) => i?.severity === 'warning');
+  const strict = flags.strict === true;
+  // Strict mode: a clean issue list is still required, but the
+  // pass/fail bit also fails on any warning.
+  const passed = data.ok && (!strict || warnings.length === 0);
   if (flags.json) {
-    process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...data, strict, passed }, null, 2) + '\n');
   } else {
-    if (data.ok && (data.issues ?? []).length === 0) {
+    if (passed && issues.length === 0) {
       console.log(`[doctor] ${data.pluginId} ok (digest ${data.freshDigest.slice(0, 12)}…)`);
     } else {
-      console.log(`[doctor] ${data.pluginId} ${data.ok ? 'warnings' : 'errors'}:`);
-      for (const issue of data.issues ?? []) {
+      const tier = !data.ok ? 'errors' : (strict && warnings.length > 0) ? 'warnings (--strict)' : 'warnings';
+      console.log(`[doctor] ${data.pluginId} ${tier}:`);
+      for (const issue of issues) {
         console.log(`  [${issue.severity}] ${issue.code}: ${issue.message}`);
       }
     }
   }
-  process.exit(data.ok ? 0 : 1);
+  process.exit(passed ? 0 : (data.ok ? 4 : 1));
 }
 
 function safeParseJson(s) {
@@ -3324,6 +3338,7 @@ async function runDaemon(args) {
                                           Print the daemon's runtime snapshot.
   od daemon stop   [--daemon-url <url>]   Send a graceful shutdown signal.
   od daemon db     status                 Print SQLite path + size + table row counts.
+  od daemon db     vacuum                 Run SQLite VACUUM to reclaim space after deletes.
 
 Common options:
   --daemon-url <url>   Open Design daemon HTTP base.
@@ -3353,19 +3368,42 @@ async function runDaemonDb(rest, flags) {
   if (!sub || sub === 'help' || rest.includes('--help') || rest.includes('-h')) {
     console.log(`Usage:
   od daemon db status [--json] [--daemon-url <url>]
+  od daemon db vacuum [--json] [--daemon-url <url>]
 
-Prints a structured inventory of the daemon's SQLite backend:
-  - file path (under .od/ by default; OD_DATA_DIR overrides)
-  - size on disk (primary + WAL + SHM)
-  - schema version (user_version PRAGMA)
-  - per-table row counts (system tables excluded)`);
+status:
+  Prints a structured inventory of the daemon's SQLite backend:
+    - file path (under .od/ by default; OD_DATA_DIR overrides)
+    - size on disk (primary + WAL + SHM)
+    - schema version (user_version PRAGMA)
+    - per-table row counts (system tables excluded)
+
+vacuum:
+  Runs SQLite VACUUM to reclaim space after large delete batches
+  (snapshot prune, plugin uninstall, etc.). Reports before/after
+  sizes + elapsed ms.`);
     process.exit(sub ? 0 : 2);
+  }
+  const base = libraryDaemonUrl(flags).replace(/\/$/, '');
+  if (sub === 'vacuum') {
+    const resp = await fetch(`${base}/api/daemon/db/vacuum`, { method: 'POST' });
+    if (!resp.ok) {
+      console.error(`POST /api/daemon/db/vacuum failed: ${resp.status} ${await resp.text()}`);
+      process.exit(1);
+    }
+    const data = await resp.json();
+    if (flags.json) {
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return;
+    }
+    console.log(`[db vacuum] reclaimed ${formatBytes(data.reclaimedBytes ?? 0)} (`
+      + `${formatBytes(data.beforeBytes ?? 0)} \u2192 ${formatBytes(data.afterBytes ?? 0)}, `
+      + `${data.elapsedMs ?? 0}ms)`);
+    return;
   }
   if (sub !== 'status') {
     console.error(`unknown subcommand: od daemon db ${sub}`);
     process.exit(2);
   }
-  const base = libraryDaemonUrl(flags).replace(/\/$/, '');
   const resp = await fetch(`${base}/api/daemon/db`);
   if (!resp.ok) {
     console.error(`GET /api/daemon/db failed: ${resp.status} ${await resp.text()}`);
