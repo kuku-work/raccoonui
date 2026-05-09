@@ -7,7 +7,9 @@ import { useEffect, useState } from 'react';
 
 export type Route =
   | { kind: 'home' }
-  | { kind: 'project'; projectId: string; fileName: string | null };
+  | { kind: 'project'; projectId: string; fileName: string | null }
+  | { kind: 'marketplace' }
+  | { kind: 'marketplace-detail'; pluginId: string };
 
 export function parseRoute(pathname: string): Route {
   const parts = pathname.replace(/\/+$/, '').split('/').filter(Boolean);
@@ -23,11 +25,24 @@ export function parseRoute(pathname: string): Route {
     }
     return { kind: 'project', projectId, fileName: null };
   }
+  // Phase 2B / spec §11.6 — marketplace deep UI routes. Two paths:
+  //   /marketplace            → catalog grid (MarketplaceView)
+  //   /marketplace/<pluginId> → detail page (PluginDetailView)
+  // Aliases to /plugins remain reserved for the public site (spec §13);
+  // in-app we keep /marketplace canonical.
+  if (parts[0] === 'marketplace' || parts[0] === 'plugins') {
+    if (parts[1]) {
+      return { kind: 'marketplace-detail', pluginId: decodeURIComponent(parts[1]) };
+    }
+    return { kind: 'marketplace' };
+  }
   return { kind: 'home' };
 }
 
 export function buildPath(route: Route): string {
   if (route.kind === 'home') return '/';
+  if (route.kind === 'marketplace') return '/marketplace';
+  if (route.kind === 'marketplace-detail') return `/marketplace/${encodeURIComponent(route.pluginId)}`;
   const id = encodeURIComponent(route.projectId);
   if (route.fileName) {
     const file = route.fileName

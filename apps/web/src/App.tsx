@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EntryView } from './components/EntryView';
+import { MarketplaceView } from './components/MarketplaceView';
+import { PluginDetailView } from './components/PluginDetailView';
 import type { CreateInput } from './components/NewProjectPanel';
 import { PetOverlay } from './components/pet/PetOverlay';
 import { migrateCustomPetAtlas } from './components/pet/pets';
@@ -696,6 +698,17 @@ export function App() {
       ),
     [designSystems, config.disabledDesignSystems],
   );
+
+  // Phase 2B / spec §11.6 — marketplace deep UI dispatch. The
+  // /marketplace and /marketplace/:id routes render outside the
+  // EntryView / ProjectView split so the discovery surface stays
+  // independent of any active project.
+  if (route.kind === 'marketplace') {
+    return <MarketplaceView />;
+  }
+  if (route.kind === 'marketplace-detail') {
+    return <PluginDetailView pluginId={route.pluginId} />;
+  }
 
   return (
     <>
