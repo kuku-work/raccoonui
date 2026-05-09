@@ -117,7 +117,12 @@ This section tracks **what exists in the repo today**. Update in the same PR tha
 | `apps/daemon/src/plugins/atom-bodies.ts` | shipped | Phase 4 (§23.3.2 entry slice) — bundled-atom SKILL.md body loader |
 | `apps/daemon/src/plugins/atoms/build-test.ts` | shipped | Phase 7 — typecheck + test shell-out runner; emits build.passing + tests.passing signals |
 | `apps/daemon/src/plugins/atoms/code-import.ts` | shipped | Phase 7 — repo walker writing normalised `<cwd>/code/index.json` |
+| `apps/daemon/src/plugins/atoms/design-extract.ts` | shipped | Phase 6/7 — token bag extractor reading code/index.json + writing code/tokens.json |
+| `apps/daemon/src/plugins/atoms/rewrite-plan.ts` | shipped | Phase 7 — heuristic ownership classifier + per-leaf step generator |
+| `apps/daemon/src/plugins/atoms/patch-edit.ts` | shipped | Phase 7 — unified-diff applier with shell-tier safety gate + per-step receipts |
+| `apps/daemon/src/plugins/atoms/diff-review.ts` | shipped | Phase 7-8 — review/{diff.patch,summary.md,decision.json,meta.json} from receipts |
 | `apps/daemon/src/plugins/atoms/handoff.ts` | shipped | Phase 8 — recordHandoff + isDeployableAppEligible helpers |
+| `packages/plugin-runtime/src/pipeline-fallback.ts` | shipped | spec §23.3.3 — resolveAppliedPipeline falls back to a bundled scenario when od.pipeline is absent |
 | `plugins/_official/atoms/<atom>/{SKILL.md,open-design.json}` | shipped | Phase 4 / 6 / 7 / 8 — 13 first-party atom plugins (4 implemented + 9 reserved fragments) |
 | `plugins/_official/scenarios/<id>/{SKILL.md,open-design.json}` | shipped | Phase 4 (§23.3.3) — 4 default-pipeline scenario plugins (one per taskKind) |
 | `packages/agui-adapter/` | shipped | Phase 4 — pure-TS AG-UI canonical event encoder |
@@ -490,9 +495,9 @@ Validation
 
 These are tracked but **not part of v1 sign-off**. Listed here so spec patches that promote `(planned)` atoms have a place to update.
 
-- [ ] **Phase 6 — figma-migration native**: implement `figma-extract` + `token-map`; ship official `figma-migration` plugin. **Substrate landed (plan §3.M3): SKILL.md + open-design.json for both ids; bundled scenario plugin `od-figma-migration` registered. The Figma REST shell-out + token-map heuristic stay scheduled.**
-- [ ] **Phase 7 — code-migration native** (§20.3 §21.3.2): `code-import`, `design-extract`, `rewrite-plan`, `patch-edit`, `diff-review`, `build-test` evaluator; freeze target-stack contract; freeze design-token mapping contract. **Substrate + two implementations landed (plan §3.N1 / §3.N2): `runBuildTest()` shells out and emits `build.passing` + `tests.passing` signals, `runCodeImport()` walks a repo into `code/index.json`. Bundled scenario plugin `od-code-migration` ships the canonical pipeline. The remaining four (`design-extract`, `rewrite-plan`, `patch-edit`, `diff-review`) keep their SKILL.md fragments + reserved ids; impls stay scheduled.**
-- [ ] **Phase 8 — production code delivery native**: repo-aware multi-file patch orchestration; native review-and-apply surface; promote `handoffKind: 'deployable-app'` from reservation to implementation. **Substrate landed (plan §3.N3): `recordHandoff()` enforces append-only `exportTargets` / `deployTargets`, `isDeployableAppEligible()` centralises the §11.5.1 promotion rule. `ArtifactManifest` carries the full reserved provenance surface. The native review-and-apply UI stays scheduled.**
+- [ ] **Phase 6 — figma-migration native**: implement `figma-extract` + `token-map`; ship official `figma-migration` plugin. **Substrate landed (plan §3.M3 / §3.N4 / §3.O2): SKILL.md + open-design.json for both ids; bundled scenario plugin `od-figma-migration` registered; `design-extract` impl reuses the same token bag shape. The Figma REST shell-out (`figma-extract`) + the token-map crosswalk (`token-map`) stay scheduled.**
+- [x] **Phase 7 — code-migration native** (§20.3 §21.3.2): `code-import`, `design-extract`, `rewrite-plan`, `patch-edit`, `diff-review`, `build-test`. **All six atom impls landed (plan §3.N1 / §3.N2 / §3.O2 / §3.O3 / §3.O4 / §3.O5). Bundled scenario plugin `od-code-migration` ships the canonical pipeline (`code-import` → `design-extract` + `token-map` → `rewrite-plan` → `patch-edit ↔ build-test` devloop → `diff-review` → `handoff`). Live HTTP wiring for the per-stage runner keeps to scheduled.**
+- [ ] **Phase 8 — production code delivery native**: repo-aware multi-file patch orchestration; native review-and-apply surface; promote `handoffKind: 'deployable-app'` from reservation to implementation. **Substrate landed (plan §3.N3 / §3.O4 / §3.O5): `patch-edit` enforces shell-tier safety + writes per-step receipts; `diff-review` emits review/{diff.patch,summary.md,decision.json,meta.json}; `recordHandoff()` enforces append-only export/deploy targets; `isDeployableAppEligible()` centralises the §11.5.1 promotion rule. `ArtifactManifest` carries the full reserved provenance surface. The native review-and-apply UI + GenUI surface mounting stay scheduled.**
 
 ---
 
@@ -549,10 +554,10 @@ Plus repo-wide gates
 
 | Field | Value |
 | --- | --- |
-| Current phase | Phase 2A + 1 + 1.5 + 2B + 2C entry slice + 3 (full) + 4 (full minus the live OD_BUNDLED_ATOM_PROMPTS rollout) + 5 (full minus the AWS SDK + postgres adapter wiring) + 6 substrate + 7 (build-test + code-import impls) + 8 (handoff helper + ArtifactManifest provenance) + scenarios bundle |
-| Next planned PR | (a) Promote OD_BUNDLED_ATOM_PROMPTS=1 to default once the bundled fragment library covers DISCOVERY_AND_PHILOSOPHY's responsibilities; (b) AWS SDK wiring inside S3ProjectStorage; (c) postgres adapter wiring inside the DaemonDb resolver; (d) Phase 6 figma-extract REST shell-out + token-map heuristic; (e) Phase 7 design-extract / rewrite-plan / patch-edit / diff-review impls (build-test + code-import already landed); (f) Phase 8 native review-and-apply UI + lookup-bundled-scenario fallback for omitted od.pipeline. |
+| Current phase | Phase 2A + 1 + 1.5 + 2B + 2C entry slice + 3 (full) + 4 (full minus the live OD_BUNDLED_ATOM_PROMPTS rollout) + 5 (full minus the AWS SDK + postgres adapter wiring) + 6 (design-extract reused) + 7 (all six atom impls) + 8 (patch + review substrate; UI scheduled) + scenarios bundle + bundled-scenario fallback resolver |
+| Next planned PR | (a) Promote OD_BUNDLED_ATOM_PROMPTS=1 to default; (b) AWS SDK wiring inside S3ProjectStorage; (c) postgres adapter wiring inside the DaemonDb resolver; (d) Phase 6 `figma-extract` REST shell-out + `token-map` crosswalk; (e) Phase 8 native review-and-apply UI mounting `diff-review` decision through a GenUI choice surface. |
 | Open spec push-backs | none — PB1 / PB2 resolved (see §7) |
-| Last sync against `docs/plugins-spec.md` | 2026-05-09 (build-test + code-import + handoff atom impls + ArtifactManifest provenance fields + bundled scenario plugins landing) |
+| Last sync against `docs/plugins-spec.md` | 2026-05-09 (Phase 7 atom impls + bundled-scenario fallback resolver + diff-review + patch-edit safety gate landing) |
 
 Update this table on every plugin-system PR merge. When the value of "Current phase" advances, also flip the matching deliverables in §6 and the modules in §3.
 
