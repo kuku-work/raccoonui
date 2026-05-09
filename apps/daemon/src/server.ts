@@ -2099,6 +2099,22 @@ export async function startServer({
     });
   });
 
+  // Plan §3.GG1 — `od daemon db status`. Inventory of the SQLite
+  // backend: file path, size on disk (primary + WAL + SHM), schema
+  // version (the user_version PRAGMA we use for migrations), and
+  // per-table row counts. Useful for ops sanity-checking
+  // deployments + comparing 'expected' vs. 'actual' table rosters.
+  app.get('/api/daemon/db', async (_req, res) => {
+    try {
+      const { inspectSqliteDatabase } = await import('./storage/db-inspect.js');
+      const file = path.join(RUNTIME_DATA_DIR, 'app.sqlite');
+      const report = await inspectSqliteDatabase({ db, file });
+      res.json(report);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Plan §3.F2 — graceful shutdown. The CLI calls this from
   // `od daemon stop`; the actual close path goes through the same
   // SIGTERM-equivalent flow as a parent-process kill (the boot wrapper

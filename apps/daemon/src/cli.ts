@@ -3323,6 +3323,7 @@ async function runDaemon(args) {
   od daemon status [--json] [--daemon-url <url>]
                                           Print the daemon's runtime snapshot.
   od daemon stop   [--daemon-url <url>]   Send a graceful shutdown signal.
+  od daemon db     status                 Print SQLite path + size + table row counts.
 
 Common options:
   --daemon-url <url>   Open Design daemon HTTP base.
@@ -3338,10 +3339,65 @@ Common options:
     case 'start':   return runDaemonStart(flags);
     case 'status':  return runDaemonStatus(flags);
     case 'stop':    return runDaemonStop(flags);
+    case 'db':      return runDaemonDb(rest, flags);
     default:
       console.error(`unknown subcommand: od daemon ${sub}`);
       process.exit(2);
   }
+}
+
+// Plan §3.GG1 — `od daemon db status`. Prints a SQLite inventory
+// (file path, size on disk, schema version, per-table row counts).
+async function runDaemonDb(rest, flags) {
+  const sub = rest[0];
+  if (!sub || sub === 'help' || rest.includes('--help') || rest.includes('-h')) {
+    console.log(`Usage:
+  od daemon db status [--json] [--daemon-url <url>]
+
+Prints a structured inventory of the daemon's SQLite backend:
+  - file path (under .od/ by default; OD_DATA_DIR overrides)
+  - size on disk (primary + WAL + SHM)
+  - schema version (user_version PRAGMA)
+  - per-table row counts (system tables excluded)`);
+    process.exit(sub ? 0 : 2);
+  }
+  if (sub !== 'status') {
+    console.error(`unknown subcommand: od daemon db ${sub}`);
+    process.exit(2);
+  }
+  const base = libraryDaemonUrl(flags).replace(/\/$/, '');
+  const resp = await fetch(`${base}/api/daemon/db`);
+  if (!resp.ok) {
+    console.error(`GET /api/daemon/db failed: ${resp.status} ${await resp.text()}`);
+    process.exit(1);
+  }
+  const data = await resp.json();
+  if (flags.json) {
+    process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    return;
+  }
+  console.log(`# Daemon DB`);
+  console.log(`  kind:           ${data.kind ?? 'unknown'}`);
+  console.log(`  location:       ${data.location ?? '?'}`);
+  console.log(`  size on disk:   ${formatBytes(data.sizeBytes ?? 0)}`);
+  console.log(`  schema version: ${data.schemaVersion ?? '(none)'}`);
+  console.log(`  tables:`);
+  const tables = Array.isArray(data.tables) ? data.tables : [];
+  if (tables.length === 0) {
+    console.log('    (none)');
+  } else {
+    const longest = Math.max(...tables.map((t) => t.name.length));
+    for (const t of tables) {
+      console.log(`    ${t.name.padEnd(longest)}  ${t.rowCount}`);
+    }
+  }
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)} MiB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GiB`;
 }
 
 async function runDaemonStart(flags) {
