@@ -3502,6 +3502,67 @@ export async function startServer({
     res.json({ atoms: FIRST_PARTY_ATOMS.map((a) => ({ ...a, taskKinds: a.taskKinds.slice() })) });
   });
 
+  // Plan §3.L3 / spec §10.3.5 / §9.2 — plugin asset endpoint.
+  //
+  // Serves a static file from inside an installed plugin's fsPath,
+  // sandboxed by:
+  //   - whitelisted plugin ids (the registry row),
+  //   - normalized relpath (no '..' / absolute / leading drive),
+  //   - the §9.2 preview CSP (default-src 'none'; script-src 'self'
+  //     'unsafe-inline'; connect-src 'none'; frame-ancestors 'self'),
+  //   - X-Content-Type-Options: nosniff so the browser respects the
+  //     declared content type even on miss.
+  // The web GenUISurfaceRenderer's SandboxedComponentSurface points
+  // its iframe at this URL.
+  app.get('/api/plugins/:id/asset/*', async (req, res) => {
+    try {
+      const plugin = getInstalledPlugin(db, req.params.id);
+      if (!plugin) return res.status(404).json({ error: 'plugin not found' });
+      const relpath = String(req.params[0] ?? '');
+      // Reject obvious traversal up-front; the path resolution below
+      // normalizes again, but this catches the easy cases without
+      // touching disk.
+      if (!relpath || relpath.includes('..') || relpath.startsWith('/') || relpath.includes('\0')) {
+        return res.status(400).json({ error: 'invalid asset path' });
+      }
+      const path = await import('node:path');
+      const fsp = await import('node:fs/promises');
+      const resolved = path.resolve(plugin.fsPath, relpath);
+      // Final containment check — `resolved` must stay under fsPath.
+      const root = path.resolve(plugin.fsPath) + path.sep;
+      if (!(resolved + path.sep).startsWith(root) && resolved !== path.resolve(plugin.fsPath)) {
+        return res.status(400).json({ error: 'asset escape rejected' });
+      }
+      let buf;
+      try {
+        buf = await fsp.readFile(resolved);
+      } catch {
+        return res.status(404).json({ error: 'asset not found' });
+      }
+      // §9.2 preview CSP — sandboxed iframes get only inline script + style;
+      // no network, no external resources, no document-level forms.
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; frame-ancestors 'self'",
+      );
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      const ext = path.extname(resolved).toLowerCase();
+      const ct =
+        ext === '.html' ? 'text/html; charset=utf-8'
+        : ext === '.js'  ? 'application/javascript; charset=utf-8'
+        : ext === '.css' ? 'text/css; charset=utf-8'
+        : ext === '.json' ? 'application/json; charset=utf-8'
+        : ext === '.svg' ? 'image/svg+xml'
+        : ext === '.png' ? 'image/png'
+        : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+        : 'application/octet-stream';
+      res.setHeader('Content-Type', ct);
+      res.send(buf);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Plan §3.H2 / spec §12.2 — craft list endpoint.
   // Mirrors the daemon's existing /api/skills + /api/design-systems
   // discovery surface so `od craft list` is a thin wrapper over a
