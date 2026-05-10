@@ -1,0 +1,112 @@
+{
+  "$schema": "./schema.ts#RaccoonaiDeckInputs",
+  "scenario": "saleskit",
+  "brand": {
+    "name": "Raccoon AI",
+    "mark": "R",
+    "edition": "Q3 / SalesKit · CONFIDENTIAL",
+    "locale": "zh-Hant",
+    "description": "RaccoonAI SalesKit — 對潛在客戶的 1:1 提案。"
+  },
+  "deck_title": "Raccoon AI · SalesKit · [客戶名]",
+  "slides": [
+    {
+      "kind": "cover",
+      "eyebrow": "FOR · [客戶公司名]",
+      "title": "三個月內,把客服從成本中心變成業績中心。",
+      "subtitle": "[客戶公司名] × Raccoon AI · 提案版本 v1.0",
+      "meta": "2026 / Q3 · 業務窗口 Carol Wang · CONFIDENTIAL"
+    },
+    {
+      "kind": "content",
+      "layout": "pain",
+      "eyebrow": "我們聽到的問題",
+      "title": "我們訪談過你們團隊,聽到三件事。",
+      "pains": [
+        { "label": "PAIN · 01", "text": "客服平均回應時間 12 分鐘,流失客戶 42%。" },
+        { "label": "PAIN · 02", "text": "8 位客服同時處理 6 個通路,訊息漏接率 18%。" },
+        { "label": "PAIN · 03", "text": "顧客重複問題每月 200+ 次,團隊熱情逐月遞減。" }
+      ]
+    },
+    {
+      "kind": "content",
+      "layout": "left",
+      "eyebrow": "提案 · 三條支柱",
+      "title": "我們建議從三件事開始。",
+      "body": "不是賣你一套工具——是替 [客戶公司名] 三個月內做完三件能上 dashboard 的改變。",
+      "bullets": [
+        "通路統一 · LINE OA + FB Messenger + 官網 chat 同一收件匣",
+        "AI 接 70% 重複問題 · 客服剩 30% 回複雜對話",
+        "週週看數據 · 客戶情緒、流失預警、行銷部當天用"
+      ],
+      "chips": ["第一個月", "第二個月", "第三個月"]
+    },
+    {
+      "kind": "content",
+      "layout": "left",
+      "eyebrow": "FEATURE · BRAND VOICE",
+      "title": "AI 用你品牌的口調回話,14 天上線。",
+      "body": "餵 100 條歷史客服對話,Brand Voice Engine 自動萃取語氣、禁字、回應節奏。沒有工程師,業務自己就能調。",
+      "bullets": [
+        "支援 LINE OA / FB Messenger / Instagram / Web Chat / Email",
+        "每週讀新對話,自動 patch 偏移",
+        "整合既有 CRM / Shopify / GA4"
+      ]
+    },
+    {
+      "kind": "stats",
+      "eyebrow": "PROOF · 你會得到什麼",
+      "title": "100+ 客戶導入後的平均成果。",
+      "stats": [
+        { "value": "14",   "unit": "天",  "label": "上線時間",       "tone": "plain" },
+        { "value": "70",   "unit": "%",   "label": "自動處理率",     "tone": "warm"  },
+        { "value": "3.2",  "unit": "x",   "label": "成交對話數",     "tone": "plain" },
+        { "value": "24/7", "unit": "",    "label": "不打烊",         "tone": "plain" }
+      ],
+      "source": "RaccoonAI 2025 客戶 cohort 平均 · 美妝 + 零售 + 餐飲"
+    },
+    {
+      "kind": "quote",
+      "quote": "三個月內,客服離職率從 38% 降到 9%,還幫我們發現產品定價有問題。",
+      "author": { "name": "林雅婷", "title": "客服總監" },
+      "context": "知名美妝電商 · 2025 H2"
+    },
+    {
+      "kind": "stats",
+      "eyebrow": "ROI · 你投資 vs. 你拿回",
+      "title": "三個月內可量化的回報。",
+      "stats": [
+        { "value": "$1.2M",  "unit": "",  "label": "三個月投資",       "tone": "alert" },
+        { "value": "$4.8M",  "unit": "",  "label": "預估三個月回報", "tone": "warm"  },
+        { "value": "4.0x",   "unit": "",  "label": "ROI 倍數",         "tone": "plain" }
+      ],
+      "source": "客戶導入第 90 天 cohort 中位數 · 不含未來 LTV"
+    },
+    {
+      "kind": "content",
+      "layout": "matrix",
+      "eyebrow": "PRICING",
+      "title": "我們建議從 GROWTH 方案開始。",
+      "matrix": {
+        "us_label": "GROWTH (建議)",
+        "them_label": "STARTER",
+        "rows": [
+          { "dim": "月費",         "us": "$58k / 月",                "them": "$28k / 月" },
+          { "dim": "通路數",       "us": "6 個通路無限對話",         "them": "2 個通路 / 月 5,000 對話" },
+          { "dim": "Brand Voice",  "us": "客製訓練 + 月度更新",      "them": "標準語氣模板" },
+          { "dim": "Insight",      "us": "每週情緒 + 流失報告",      "them": "月度摘要" },
+          { "dim": "支援",         "us": "1:1 顧問 + 24h 回覆",      "them": "Email · 48h 回覆" }
+        ]
+      }
+    },
+    {
+      "kind": "cta",
+      "eyebrow": "下一步",
+      "title": "兩週內,我們可以做到這件事。",
+      "body": "下週簽約 → 第二週串接通路 + 餵歷史對話 → 第 14 天 pilot 客戶可以開始用。",
+      "primary":   { "label": "確認 GROWTH 方案",      "url": "mailto:carol@raccoonai.com", "qr": false },
+      "secondary": { "label": "再評估 30 天 trial",     "url": "https://raccoonai.com/trial", "qr": false },
+      "highlight": "本月簽約贈 1:1 顧問 onboarding"
+    }
+  ]
+}

@@ -1,0 +1,365 @@
+/*
+  RaccoonAI Brand Deck — design tokens.
+
+  Locked from:
+    creative/raigc_assets/brand/meta.yaml      ← official brand spec
+    creative/raccoonui/design-systems/raccoonai/DESIGN.md
+    creative/2026產品發表大會視覺/*.png         ← KV reference
+
+  Two substrates only: rc-bg-deep (ceremonial) and rc-bg-light (content).
+  No third substrate. KV photographic moments use rc-bg-deep with the
+  optional `--rc-bg-image` hook (see below).
+
+  When the sister skill `raccoonai-landing` ships, this file moves there
+  and `raccoonai-deck` will read it via composer at compile time.
+*/
+
+:root {
+  /* ─── core blues ─────────────────────────────────────────────────── */
+  --rc-deep-blue:    #142572;   /* primary substrate, ceremonial bg */
+  --rc-mid-blue:     #3D57CD;   /* gradient stop, secondary fill */
+  --rc-light-blue:   #6B96EC;   /* accent fill, link, active state */
+
+  /* ─── armor / paper ──────────────────────────────────────────────── */
+  --rc-armor-white:  #E8ECF0;   /* light substrate (content slides) */
+  --rc-fur-light:    #B8C0C8;   /* muted fg on dark, soft borders */
+  --rc-fur-dark:     #5D6570;   /* muted fg on light */
+  --rc-ink:          #0A1142;   /* deepest text on light substrate */
+
+  /* ─── accents (sparingly — semantic only) ────────────────────────── */
+  --rc-yellow:       #FFC648;   /* big numbers, highlight pill */
+  --rc-coral:        #E24E24;   /* warning, urgent CTA, pain point */
+  --rc-cyan:         #4ED1D1;   /* tech accent, Racco palette echo */
+
+  /* ─── KV-derived edge glow (HIGHLIGHT ONLY — never fill) ─────────── */
+  --rc-glow-magenta: #C56AFF;
+  --rc-glow-pink:    #FF6BB5;
+
+  /* ─── glass mixin tokens ─────────────────────────────────────────── */
+  --rc-glass-fill:   rgba(255, 255, 255, 0.14);
+  --rc-glass-stroke: rgba(255, 255, 255, 0.32);
+  --rc-glass-inner:  rgba(255, 255, 255, 0.55);
+  --rc-glass-shadow: 0 24px 64px -16px rgba(10, 17, 66, 0.55),
+                     0 1px 0 0 var(--rc-glass-inner) inset,
+                     0 -1px 0 0 rgba(20, 37, 114, 0.35) inset;
+  --rc-glass-radius: 28px;
+
+  /* ─── type stack ─────────────────────────────────────────────────── */
+  --rc-font-cn-display: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --rc-font-en-display: 'Urbanist', 'Inter Tight', system-ui, sans-serif;
+  --rc-font-body:       'Pontano Sans', 'Inter Tight', 'Noto Sans TC', system-ui, sans-serif;
+  --rc-font-mono:       'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+
+  /* ─── type scale (size by visual weight, not by name) ────────────── */
+  --rc-stat-mega: clamp(200px, 22vw, 360px); /* 1 cell = 1 page (stats kind, 1 cell) */
+  --rc-stat-duo:  clamp(120px, 14vw, 220px); /* 2-up dramatic (stats kind, 2 cells) */
+  --rc-stat-quad: clamp(56px, 6vw, 96px);    /* 4-up KPI (stats kind, 3-4 cells) */
+  --rc-h-mega:  clamp(80px, 9vw, 156px);   /* cover title */
+  --rc-h-hero:  clamp(64px, 7vw, 120px);   /* chapter / cta title */
+  --rc-h-xl:    clamp(44px, 5vw, 72px);    /* content / stats title */
+  --rc-h-lg:    clamp(32px, 3.4vw, 48px);  /* matrix header */
+  --rc-h-md:    clamp(22px, 2.2vw, 32px);  /* card title */
+  --rc-lead:    clamp(18px, 1.6vw, 24px);  /* body lead */
+  --rc-meta:    13px;
+  --rc-source:  12px;
+
+  /* ─── spacing rhythm ─────────────────────────────────────────────── */
+  --rc-pad-x:   clamp(56px, 7vw, 112px);
+  --rc-pad-y:   clamp(48px, 6vw, 96px);
+  --rc-gap-md:  24px;
+  --rc-gap-lg:  48px;
+
+  /* ─── optional KV image hook ─────────────────────────────────────── */
+  /* When set on a `.rc-bg-deep` slide via inline style, the deep substrate
+     becomes a photographic background. Used by composer for cover images. */
+  --rc-bg-image: none;
+}
+
+/* ─── substrate utilities (TWO ONLY) ────────────────────────────────── */
+/*
+  rc-bg-deep   → ceremonial (cover / chapter / stats / quote / cta / end)
+  rc-bg-light  → content / detail (most content kinds — feature, matrix, list)
+
+  IRON RULE: no flat colors. Each substrate carries ≥ 2 layers (gradient +
+  radial light). The KV signature is depth, not flatness.
+
+  KV photographic moments: set inline style="--rc-bg-image: url('./kv.png')"
+  on a `.rc-bg-deep` slide. The image takes over the substrate; gradient
+  remains as fallback if the image fails to load.
+*/
+.rc-bg-deep {
+  background:
+    var(--rc-bg-image, none),
+    radial-gradient(ellipse 80% 60% at 70% 30%, rgba(107, 150, 236, 0.22), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(197, 106, 255, 0.16), transparent 55%),
+    linear-gradient(135deg, var(--rc-deep-blue) 0%, var(--rc-mid-blue) 100%);
+  background-size: cover, auto, auto, auto;
+  background-position: center, center, center, center;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+  color: var(--rc-armor-white);
+}
+.rc-bg-light {
+  background:
+    radial-gradient(ellipse 50% 40% at 80% 20%, rgba(107, 150, 236, 0.12), transparent 60%),
+    radial-gradient(ellipse 40% 30% at 10% 90%, rgba(197, 106, 255, 0.06), transparent 60%),
+    var(--rc-armor-white);
+  color: var(--rc-ink);
+}
+
+/* ─── contrast helpers ──────────────────────────────────────────────── */
+/*
+  Use inside containers that flip the implicit color (e.g. dark text inside
+  a glass card on rc-bg-light). Substrate utilities set defaults; only
+  override when the local container demands the opposite ink.
+
+  Banned combos (low contrast — deck looks broken on stage):
+    light-blue  text on rc-bg-light
+    mid-blue    text on rc-bg-deep
+    fur-light   text on rc-bg-light
+    fur-dark    text on rc-bg-deep
+*/
+.rc-on-dark  { color: var(--rc-armor-white); }
+.rc-on-dark  .rc-muted  { color: rgba(232, 236, 240, 0.62); }
+.rc-on-dark  .rc-source { color: rgba(232, 236, 240, 0.45); }
+.rc-on-light { color: var(--rc-ink); }
+.rc-on-light .rc-muted  { color: var(--rc-fur-dark); }
+.rc-on-light .rc-source { color: rgba(10, 17, 66, 0.45); }
+
+/* ─── glass primitive ───────────────────────────────────────────────── */
+/*
+  Frosted glass card with KV-signature magenta/pink edge leak.
+  Use for: feature mockup containers, hub center, story frames, CTA action,
+  speaker avatars, pill chips. The ::after edge leak is automatic — do NOT
+  paint magenta panels yourself.
+
+  In `@supports not (backdrop-filter)` fallback (older browsers / print),
+  glass degrades to solid deep-blue panel. See composer DECK_CSS / template.
+*/
+.rc-glass {
+  background: var(--rc-glass-fill);
+  border: 1px solid var(--rc-glass-stroke);
+  border-radius: var(--rc-glass-radius);
+  box-shadow: var(--rc-glass-shadow);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  position: relative;
+  overflow: hidden;
+}
+.rc-glass::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 0% 100%, var(--rc-glow-magenta) 0%, transparent 35%),
+    radial-gradient(circle at 100% 0%, var(--rc-glow-pink) 0%, transparent 30%);
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+
+/* ─── pill row (cover pillars: 對話智能 × 數據驅動 × 多通路整合) ─────── */
+.rc-pill-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--rc-font-cn-display);
+  font-size: clamp(15px, 1.2vw, 18px);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.rc-pill {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--rc-glass-stroke);
+  background: var(--rc-glass-fill);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: inherit;
+}
+.rc-pill-x {
+  font-family: var(--rc-font-en-display);
+  font-weight: 300;
+  opacity: 0.6;
+}
+
+/* ─── chip (semantic — 5 roles, ≥ 6 per deck) ───────────────────────── */
+/*
+  Chip is load-bearing brand voice, not decoration. Five roles:
+    1. Hero pillar       — cover top
+    2. Feature sub-cap   — above feature title
+    3. Section label     — small heading
+    4. CTA highlight     — '前 100 名免費試用 14 天'
+    5. Source / context  — '客戶 · 美妝電商 2025 H2'
+*/
+.rc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: var(--rc-font-cn-display);
+  font-size: clamp(13px, 1vw, 15px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--rc-glass-stroke);
+  background: var(--rc-glass-fill);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: inherit;
+  white-space: nowrap;
+}
+.rc-chip-row { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+.rc-chip.solid-blue   { background: var(--rc-light-blue); color: var(--rc-deep-blue);   border-color: transparent; font-weight: 700; }
+.rc-chip.solid-yellow { background: var(--rc-yellow);     color: var(--rc-ink);         border-color: transparent; font-weight: 700; }
+.rc-chip.solid-coral  { background: var(--rc-coral);      color: var(--rc-armor-white); border-color: transparent; font-weight: 600; }
+
+/* ─── headline utilities ────────────────────────────────────────────── */
+.rc-h-mega { font-family: var(--rc-font-cn-display); font-weight: 900; font-size: var(--rc-h-mega); line-height: 0.95; letter-spacing: -0.02em; margin: 0; }
+.rc-h-hero { font-family: var(--rc-font-cn-display); font-weight: 800; font-size: var(--rc-h-hero); line-height: 1;    letter-spacing: -0.02em; margin: 0; }
+.rc-h-xl   { font-family: var(--rc-font-cn-display); font-weight: 700; font-size: var(--rc-h-xl);   line-height: 1.1;  letter-spacing: -0.015em; margin: 0; }
+.rc-h-lg   { font-family: var(--rc-font-cn-display); font-weight: 700; font-size: var(--rc-h-lg);   line-height: 1.15; margin: 0; }
+.rc-h-md   { font-family: var(--rc-font-cn-display); font-weight: 600; font-size: var(--rc-h-md);   line-height: 1.25; margin: 0; }
+
+.rc-en-display { font-family: var(--rc-font-en-display); font-weight: 800; letter-spacing: -0.01em; }
+
+.rc-lead {
+  font-family: var(--rc-font-body);
+  font-size: var(--rc-lead);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 56ch;
+  opacity: 0.86;
+}
+.rc-meta-line {
+  font-family: var(--rc-font-mono);
+  font-size: var(--rc-meta);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ─── stat number (used by composer + paste-block template) ─────────── */
+/*
+  Choose by stats kind cell count:
+    1 cell  → mega (200-360px) — single number = the entire argument
+    2 cells → duo  (120-220px) — dramatic comparison
+    3-4     → quad ( 56- 96px) — KPI grid
+  Always pair with .rc-source — number without source = decoration.
+*/
+.rc-stat-mega {
+  font-family: var(--rc-font-en-display);
+  font-weight: 800;
+  font-size: var(--rc-stat-mega);
+  line-height: 0.85;
+  letter-spacing: -0.045em;
+  color: var(--rc-light-blue);
+}
+.rc-stat-duo {
+  font-family: var(--rc-font-en-display);
+  font-weight: 800;
+  font-size: var(--rc-stat-duo);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: var(--rc-light-blue);
+}
+.rc-stat-mega.warm,  .rc-stat-duo.warm  { color: var(--rc-yellow); }
+.rc-stat-mega.alert, .rc-stat-duo.alert { color: var(--rc-coral);  }
+
+.rc-stat-unit {
+  font-size: 0.42em;
+  opacity: 0.78;
+  font-family: var(--rc-font-cn-display);
+  font-weight: 700;
+  margin-left: 0.08em;
+  letter-spacing: 0;
+}
+
+/* ─── source / footnote ─────────────────────────────────────────────── */
+/*
+  Every stats slide MUST carry a source line. No source = the number reads
+  as decoration, not data. Composer enforces structurally; paste-block
+  template authors must add `<div class='rc-source'>...</div>` manually.
+*/
+.rc-source {
+  font-family: var(--rc-font-mono);
+  font-size: var(--rc-source);
+  letter-spacing: 0.04em;
+  margin-top: 24px;
+  opacity: 0.55;
+}
+.rc-source::before { content: 'Source · '; opacity: 0.6; }
+
+/* ─── deck chrome (counter / hint / progress) ───────────────────────── */
+/*
+  These power the live HUD on both composer-rendered decks and the
+  paste-block template. Composer's DECK_CSS may override edge cases.
+*/
+.rc-deck-counter {
+  position: fixed;
+  bottom: 24px; right: 32px;
+  font-family: var(--rc-font-mono);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--rc-glass-fill);
+  border: 1px solid var(--rc-glass-stroke);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  letter-spacing: 0.06em;
+  z-index: 50;
+}
+.rc-deck-hint {
+  position: fixed;
+  bottom: 24px; left: 32px;
+  font-family: var(--rc-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  z-index: 50;
+}
+.rc-deck-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  width: 0;
+  background: linear-gradient(90deg, var(--rc-light-blue), var(--rc-glow-magenta));
+  z-index: 50;
+  transition: width 0.18s ease;
+}
+
+/* ─── chrome strip on every slide (top bar) ─────────────────────────── */
+.rc-chrome-top {
+  position: absolute;
+  top: 32px;
+  left: var(--rc-pad-x);
+  right: var(--rc-pad-x);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--rc-font-mono);
+  font-size: var(--rc-meta);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  z-index: 5;
+}
+.rc-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--rc-font-en-display);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  font-size: 16px;
+  text-transform: none;
+  opacity: 1;
+}
+.rc-brand-mark::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, var(--rc-light-blue), var(--rc-mid-blue));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+}

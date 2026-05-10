@@ -1,0 +1,167 @@
+{
+  "$schema": "./schema.ts#RaccoonaiDeckInputs",
+  "scenario": "keynote",
+  "brand": {
+    "name": "Raccoon AI",
+    "mark": "R",
+    "edition": "2026 / Product Launch",
+    "locale": "zh-Hant",
+    "description": "RaccoonAI 2026 產品發表會 — 從對話到業績,新世代生成式 AI 客戶經營平台。"
+  },
+  "deck_title": "Raccoon AI · 產品發表會 2026",
+  "slides": [
+    {
+      "kind": "cover",
+      "eyebrow": "2026 / RACCOON AI PRODUCT LAUNCH",
+      "title": "產品發表 2026",
+      "subtitle": "從對話到業績——新世代生成式 AI 客戶經營平台。",
+      "pillars": ["對話智能", "數據驅動", "多通路整合"],
+      "meta": "6/3 (三) 12:30-16:00 · 華南銀行國際會議中心 2F"
+    },
+    {
+      "kind": "content",
+      "layout": "speakers",
+      "eyebrow": "TODAY · 主講團隊",
+      "title": "把 6/3 交給這四個人。",
+      "speakers": [
+        { "name": "James Chou",   "role": "Raccoon AI CEO",            "initial": "JC" },
+        { "name": "Stanley Chen", "role": "Raccoon AI COO",            "initial": "SC" },
+        { "name": "DC Chen",      "role": "Raccoon AI Product Director","initial": "DC" },
+        { "name": "Carol Wang",   "role": "Raccoon AI 業務開發經理",     "initial": "CW" }
+      ]
+    },
+    {
+      "kind": "stats",
+      "eyebrow": "DATA · 市場現況",
+      "title": "客戶等待回應的耐心,正在崩潰。",
+      "stats": [
+        {
+          "value": "78",
+          "unit": "%",
+          "label": "客戶在第一句就決定要不要繼續對話",
+          "tone": "plain"
+        }
+      ],
+      "source": "Gartner 2025 · Customer Journey Report"
+    },
+    {
+      "kind": "content",
+      "layout": "pain",
+      "eyebrow": "PAIN · 我們聽到的問題",
+      "title": "你們現在每天卡在哪。",
+      "pains": [
+        { "label": "PAIN · 01", "text": "客服回應像填表格——客戶問三句就跑去找對手。" },
+        { "label": "PAIN · 02", "text": "行銷文案靠寫手手刻——新檔期還沒上線,檔期就過了。" },
+        { "label": "PAIN · 03", "text": "數據躺在 LINE / FB / GA / CRM 各角落,看完已經是上週的事。" }
+      ]
+    },
+    {
+      "kind": "chapter",
+      "numeral": "II",
+      "title": "我們怎麼做。",
+      "lead": "三個能力,把對話變成業績流程——而非另一套客服工具。"
+    },
+    {
+      "kind": "content",
+      "layout": "left",
+      "eyebrow": "FEATURE · 01 · INTELLIGENT SCRIPT",
+      "title": "Raccoon Studio——用對話,寫對話。",
+      "body": "餵入既有 FAQ + 對話紀錄,生成式 AI 自動學會品牌口調。不用 ML 工程師,業務自己就能調腳本。",
+      "bullets": [
+        "支援中、英、日、泰四語",
+        "每週自動學新對話、人工 review 一次",
+        "整合 LINE OA / FB Messenger / 官網 chat"
+      ],
+      "chips": ["No-Code 構建", "Multi-Agent", "LLM-Based Design"]
+    },
+    {
+      "kind": "content",
+      "layout": "left",
+      "eyebrow": "FEATURE · 02 · BRAND VOICE",
+      "title": "14 天,AI 學會你品牌的口調。",
+      "body": "餵 100 條歷史客服對話,模型自動萃取你品牌的語氣、禁字、回應節奏——不需工程師寫一條規則。",
+      "bullets": [
+        "自動學品牌語氣 · 不再 maintain 規則庫",
+        "跨通路一致 · LINE / FB / IG / Web 同一個聲音",
+        "上線後持續微調 · 每週讀新對話、自動 patch 偏移"
+      ]
+    },
+    {
+      "kind": "content",
+      "layout": "flow",
+      "eyebrow": "PROCESS · 14 天上線",
+      "title": "三步,把對話變成業績。",
+      "flow": [
+        { "nb": "01 / 03", "title": "接通你現有通路", "body": "5 分鐘串接 LINE OA / FB Messenger / Instagram / 自家網站,不換系統、不搬資料。" },
+        { "nb": "02 / 03", "title": "AI 自動學語氣", "body": "餵 100 條歷史對話,Brand Voice Engine 14 天內鍛出你品牌專屬模型。" },
+        { "nb": "03 / 03", "title": "對話即轉換",    "body": "從問答到下單,在同一個視窗完成——客戶不用切站,客服不用切 tab。" }
+      ]
+    },
+    {
+      "kind": "content",
+      "layout": "hub",
+      "eyebrow": "PLATFORM · INTEGRATION",
+      "title": "接得起你已經在用的工具——不是另一個孤島。",
+      "hub_spoke": {
+        "hub": "Raccoon AI",
+        "hub_pillars": ["通路", "CRM", "數據"],
+        "spokes": ["LINE OA", "FB Messenger", "Instagram", "HubSpot", "Shopify", "BigQuery", "GA4", "Slack"]
+      }
+    },
+    {
+      "kind": "content",
+      "layout": "storyboard",
+      "eyebrow": "USER JOURNEY · OMNICHAT",
+      "title": "在 Omnichat 即可啟動真人客服與 Raccoon AI 的協作。",
+      "storyboard": [
+        { "caption": "客戶開啟對話", "meta": "CHAT · 14:23",  "body": "想找昨天那雙鞋,還有嗎?",            "tone": "neutral" },
+        { "caption": "AI 識別意圖",  "meta": "AI · DRAFT",     "body": "是說粉色拼接的這款嗎? · #SS-1042 · 庫存 8", "tone": "ai"      },
+        { "caption": "真人微調送出", "meta": "AGENT · LILY",   "body": "對對對就那雙~ 還有 36/37 號喔!",     "tone": "agent"   },
+        { "caption": "完成轉單",    "meta": "ORDER · #7821",  "body": "SS-1042 · 36 號 · $2,480 · 已付款", "tone": "success" }
+      ],
+      "source": "2025 客戶 cohort 平均 onboarding 至首通成交對話 · 中位數 2 分 47 秒"
+    },
+    {
+      "kind": "quote",
+      "quote": "以前一週只能跑 3 個檔期,現在一週 9 個——同一支客服隊伍。",
+      "author": { "name": "林雅婷", "title": "客服總監" },
+      "context": "知名美妝電商 · 2025 H2"
+    },
+    {
+      "kind": "content",
+      "layout": "matrix",
+      "eyebrow": "HEAD-TO-HEAD",
+      "title": "Raccoon AI vs. 規則型客服系統。",
+      "matrix": {
+        "us_label": "RACCOON AI",
+        "them_label": "規則型客服系統",
+        "rows": [
+          { "dim": "設定方式",   "us": "AI 自動學品牌口調",       "them": "工程師寫規則樹" },
+          { "dim": "回應靈活度", "us": "處理上下文、隨情境延伸", "them": "鎖死選項樹" },
+          { "dim": "上線時間",   "us": "14 天",                   "them": "6–12 週" },
+          { "dim": "自動處理率", "us": "75% 以上",                "them": "30%" },
+          { "dim": "客戶體驗",   "us": "像跟真人聊天",            "them": "像填表格" }
+        ]
+      },
+      "source": "RaccoonAI 2025 客戶 cohort · 對手取自公開部署案例平均"
+    },
+    {
+      "kind": "stats",
+      "eyebrow": "SCALE · 我們做到了",
+      "title": "把對話變成業績,我們已經跑了 2 年。",
+      "stats": [
+        { "value": "2,000", "unit": "萬+", "label": "用戶市場經營",   "tone": "plain" },
+        { "value": "<100",  "unit": "萬",  "label": "行銷成本",       "tone": "warm"  }
+      ],
+      "source": "RaccoonAI 2025 客戶 cohort 平均 · 美妝 + 零售產業"
+    },
+    {
+      "kind": "cta",
+      "eyebrow": "立即體驗",
+      "title": "現在就讓你的對話,開始替你工作。",
+      "primary":   { "label": "Demo 試用 · 無需註冊",         "url": "https://raccoonai.com/launch-2026", "qr": true },
+      "secondary": { "label": "1:1 顧問 · 業務 24h 內回覆",    "url": "https://raccoonai.com/consult",     "qr": true },
+      "highlight": "前 100 名免費試用 14 天 + 1:1 顧問 onboarding"
+    }
+  ]
+}
