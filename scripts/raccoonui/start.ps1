@@ -1,12 +1,22 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Launch RaccoonUI daemon + open browser. Usage-and-close mode.
+  Launch RaccoonUI in dev mode (pnpm tools-dev) + open Electron desktop window.
 .DESCRIPTION
-  Sets OD_RESOURCE_ROOT=.raccoonui so daemon reads user-writable dir,
-  spawns daemon on $env:OD_PORT (default 17456), waits for listen,
-  opens default browser, then sits on the daemon process.
-  Closing the console (Ctrl-C / window close) terminates the daemon.
+  Spawns daemon + web from source so SKILL.md / design-systems / craft /
+  prompt-templates edits in `creative/raccoonui/` are picked up immediately
+  (no .raccoonui/ snapshot indirection, no prebuild dist), then attaches
+  the Electron desktop shell on top.
+
+  - Daemon API port: $env:OD_PORT or 17456
+  - Web UI port:     $env:OD_WEB_PORT or 17573
+  - Electron desktop window opens automatically once web is ready.
+  - Closing the console (Ctrl-C / window close) terminates daemon + web +
+    desktop together.
+
+  Note: this is the in-repo author/operator entry point. The packaged
+  release path (for installable .exe / .app distribution) lives in
+  `tools/pack` and still uses prebuild dist + .raccoonui/ seed.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +24,8 @@ $ErrorActionPreference = 'Stop'
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $RaccoonUIDir = (Resolve-Path "$PSScriptRoot\..\..").Path
-$Port = if ($env:OD_PORT) { [int]$env:OD_PORT } else { 17456 }
+$DaemonPort   = if ($env:OD_PORT)     { [int]$env:OD_PORT }     else { 17456 }
+$WebPort      = if ($env:OD_WEB_PORT) { [int]$env:OD_WEB_PORT } else { 17573 }
 
 # Brand the console window: replace cmd.exe icon in taskbar / Alt-Tab / window
 # corner with raccoonui.ico. Best-effort — failure is non-fatal (e.g. when
@@ -32,7 +43,6 @@ public static extern System.IntPtr SendMessage(System.IntPtr hWnd, uint msg, Sys
 '@ -ErrorAction SilentlyContinue
         $hWnd = [RaccoonUI.Win32]::GetConsoleWindow()
         if ($hWnd -ne [System.IntPtr]::Zero) {
-            # IMAGE_ICON=1, LR_LOADFROMFILE=0x10, WM_SETICON=0x80, ICON_SMALL=0, ICON_BIG=1
             $hIconSmall = [RaccoonUI.Win32]::LoadImage([System.IntPtr]::Zero, $IconPath, 1, 16, 16, 0x10)
             $hIconBig   = [RaccoonUI.Win32]::LoadImage([System.IntPtr]::Zero, $IconPath, 1, 32, 32, 0x10)
             [void][RaccoonUI.Win32]::SendMessage($hWnd, 0x80, [System.IntPtr]0, $hIconSmall)
@@ -45,8 +55,9 @@ public static extern System.IntPtr SendMessage(System.IntPtr hWnd, uint msg, Sys
 
 Push-Location $RaccoonUIDir
 try {
-    if (-not (Test-Path "apps\daemon\dist\cli.js")) {
-        Write-Host "❌ daemon 還沒 build — 先跑 install.ps1" -ForegroundColor Red
+    # ── pre-flight: dev-mode requires installed deps ──
+    if (-not (Test-Path "node_modules")) {
+        Write-Host "❌ node_modules 不在 — 先跑 install.ps1 或 pnpm install" -ForegroundColor Red
         exit 1
     }
 
@@ -55,7 +66,7 @@ try {
     # is best-effort (network errors / detached HEAD / no upstream branch
     # silently skip); the update phase, once user picks Y, fails loud so the
     # user never starts a half-rebuilt daemon. Default after 30s of no input
-    # is N → start with current build.
+    # is N → start with current source.
     $detectOk = $true
     $branch = $null
     $behind = 0
@@ -96,64 +107,82 @@ try {
             Write-Host "📦 pnpm install..." -ForegroundColor Cyan
             pnpm install
             if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
-            Write-Host "🔨 Rebuilding..." -ForegroundColor Cyan
-            pnpm -r --workspace-concurrency=1 build
-            if ($LASTEXITCODE -ne 0) { throw "build failed" }
             Write-Host "✅ updated, continuing to start" -ForegroundColor Green
         } else {
-            Write-Host "→ skipping update, starting current build" -ForegroundColor DarkGray
+            Write-Host "→ skipping update, starting current source" -ForegroundColor DarkGray
         }
     }
 
-    $env:OD_RESOURCE_ROOT = ".raccoonui"
-    $env:OD_PORT = $Port
-
-    Write-Host "🦝 RaccoonUI starting on http://127.0.0.1:$Port/" -ForegroundColor Cyan
+    Write-Host "🦝 RaccoonUI starting (dev mode, source-of-truth)" -ForegroundColor Cyan
+    Write-Host "   daemon API: http://127.0.0.1:$DaemonPort" -ForegroundColor DarkGray
+    Write-Host "   web UI:     http://127.0.0.1:$WebPort" -ForegroundColor DarkGray
 
     # ── stale daemon hardening ──
-    # A prior start.ps1 may have left a detached daemon on this port. Without
-    # a kill the new spawn would EADDRINUSE. Match commandline before kill
-    # so we never axe an unrelated service that happens to bind the port.
-    $stale = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    foreach ($c in $stale) {
-        $proc = Get-CimInstance Win32_Process `
-            -Filter "ProcessId = $($c.OwningProcess)" -ErrorAction SilentlyContinue
-        if ($proc -and $proc.CommandLine -match 'apps[\\/]daemon[\\/]dist[\\/]cli\.js') {
-            Write-Host "⚠️  killing stale daemon PID $($c.OwningProcess) on :$Port" -ForegroundColor Yellow
-            Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500
+    # A prior run may have left a detached daemon / web on these ports. Match
+    # by commandline before kill so we never axe an unrelated service that
+    # happens to bind the port.
+    foreach ($p in @($DaemonPort, $WebPort)) {
+        $stale = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+        foreach ($c in $stale) {
+            $proc = Get-CimInstance Win32_Process `
+                -Filter "ProcessId = $($c.OwningProcess)" -ErrorAction SilentlyContinue
+            if ($proc -and $proc.CommandLine -match '(node|tools-dev|next|raccoonui|electron)') {
+                Write-Host "⚠️  killing stale process PID $($c.OwningProcess) on :$p" -ForegroundColor Yellow
+                Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds 500
+            }
         }
     }
 
-    $daemon = Start-Process -FilePath "node" `
-        -ArgumentList "apps\daemon\dist\cli.js","--no-open","--port",$Port `
+    # ── spawn pnpm tools-dev run ──
+    # `run` keeps the parent alive (vs `start` which daemonizes). When this
+    # console closes, tools-dev shuts down daemon + web cleanly.
+    # Use `pnpm.cmd` explicitly: PowerShell's Start-Process -FilePath does not
+    # honor PATHEXT, so a bare `pnpm` resolves to the .ps1 entry and Windows
+    # rejects it as "not a valid Win32 application". Same trap as the
+    # npx-on-Windows issue (see raccoonui/git-project-bridge spawn fix).
+    $devProc = Start-Process -FilePath "pnpm.cmd" `
+        -ArgumentList "tools-dev","run", `
+                      "--daemon-port",$DaemonPort, `
+                      "--web-port",$WebPort `
         -PassThru -NoNewWindow
 
-    # Wait for listen
+    # Wait for web to listen (web is what the user opens; daemon is upstream)
     $ready = $false
-    for ($i = 0; $i -lt 30; $i++) {
+    for ($i = 0; $i -lt 90; $i++) {  # dev mode is slower than dist — give 90s
         try {
-            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/design-systems" `
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$WebPort/" `
                 -UseBasicParsing -TimeoutSec 2
-            if ($r.StatusCode -eq 200) { $ready = $true; break }
+            if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) { $ready = $true; break }
         } catch { }
         Start-Sleep -Seconds 1
     }
 
     if (-not $ready) {
-        Write-Host "❌ daemon 啟動 timeout (30s)" -ForegroundColor Red
-        Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "❌ web 啟動 timeout (90s) — 看 'pnpm tools-dev logs' 查錯" -ForegroundColor Red
+        Stop-Process -Id $devProc.Id -Force -ErrorAction SilentlyContinue
         exit 1
     }
 
-    Write-Host "✅ daemon ready, opening browser..." -ForegroundColor Green
-    Start-Process "http://127.0.0.1:$Port/"
-
-    # Sit on daemon — exits when daemon exits or user kills the console
-    Wait-Process -Id $daemon.Id
-} finally {
-    if ($daemon -and -not $daemon.HasExited) {
-        Stop-Process -Id $daemon.Id -Force -ErrorAction SilentlyContinue
+    # ── attach Electron desktop ──
+    # `tools-dev start desktop` is a separate (background-stamped) spawn that
+    # discovers the running web URL via sidecar IPC and pops a native window.
+    # `run` itself only covers daemon+web (DEFAULT_RUN_APPS in tools/dev), so
+    # desktop has to be kicked explicitly.
+    Write-Host "✅ web ready — launching Electron desktop window..." -ForegroundColor Green
+    pnpm tools-dev start desktop 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "⚠️  desktop 啟動失敗 — 仍可在瀏覽器開 http://127.0.0.1:$WebPort/" -ForegroundColor Yellow
     }
+
+    # Sit on tools-dev `run` (daemon+web). When user closes the console or
+    # the Electron window via tools-dev stop, this returns and we clean up.
+    Wait-Process -Id $devProc.Id
+} finally {
+    if ($devProc -and -not $devProc.HasExited) {
+        Stop-Process -Id $devProc.Id -Force -ErrorAction SilentlyContinue
+    }
+    # Best-effort: tell tools-dev to clean up daemon + web + desktop it spawned
+    try { pnpm tools-dev stop 2>$null | Out-Null } catch { }
     Pop-Location
 }

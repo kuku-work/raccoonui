@@ -1,14 +1,14 @@
 # RaccoonUI scripts
 
-These scripts replace the upstream desktop-app workflow (Electron / signing /
-auto-update). RaccoonUI runs as a local web app — daemon listens on
-`127.0.0.1:17456`, browser opens automatically.
+These scripts wrap the upstream `tools-dev` lifecycle for non-engineering
+coworkers. RaccoonUI runs as a local Electron desktop app — daemon listens
+on `127.0.0.1:17456`, web on `:17573`, and an Electron window opens on top.
 
 | script | platform | purpose |
 |--------|----------|---------|
-| `install.{ps1,sh}` | win / mac+linux | first-time setup — checks node 22+ / git / pnpm / native build toolchain (VS C++ on Win, Xcode CLT on mac, build-essential on Linux), installs deps, seeds `.raccoonui/`, builds daemon + web |
-| `start.{ps1,sh}`   | same | spawn daemon (`OD_RESOURCE_ROOT=.raccoonui`, port 17456) → wait listen → open browser → sit on daemon process |
-| `update.{ps1,sh}`  | same | `git fetch origin && git pull --ff-only` → reinstall → rebuild |
+| `install.{ps1,sh}` | win / mac+linux | first-time setup — checks node 22+ / git / pnpm / native build toolchain (VS C++ on Win, Xcode CLT on mac, build-essential on Linux), installs deps. Also seeds `.raccoonui/` + builds dist for the legacy launcher path; the dev start path doesn't need either, but the seed/build are kept for `tools/pack` packaged release. |
+| `start.{ps1,sh}`   | same | spawn `pnpm tools-dev run` (daemon @ 17456 + web @ 17573, both from source) → wait web listen → `pnpm tools-dev start desktop` to attach Electron window → sit on tools-dev process. Reads SKILL.md / design-systems / craft directly from `creative/raccoonui/` so edits show up immediately. |
+| `update.{ps1,sh}`  | same | `git fetch origin && git pull --ff-only` → reinstall |
 | `install.cmd` / `start.cmd` / `update.cmd` | win | double-click wrappers around the `.ps1` scripts — for non-engineering coworkers who don't want to type `pwsh -File ...` |
 
 每個 script 開頭都有 OS guard — 跑錯 OS 會 print 引導訊息然後 exit 1，不會繼續炸。
@@ -54,9 +54,27 @@ pwsh -File scripts\raccoonui\start.ps1   # Win
 ./scripts/raccoonui/start.sh             # mac/linux
 ```
 
-Browser opens to `http://127.0.0.1:17456/`. Picker default is the
-**raccoonai** design system. Close the browser tab — the console window stays
-open running the daemon. Close the window (or Ctrl-C) to stop the daemon.
+An Electron desktop window opens automatically against the local web UI
+(`http://127.0.0.1:17573/`). Daemon API runs on `:17456`. Picker default
+is the **raccoonai** design system.
+
+The start script wraps `pnpm tools-dev run` (daemon + web from source) and
+then attaches `pnpm tools-dev start desktop` on top, so SKILL.md /
+design-systems / craft / prompt-templates edits in `creative/raccoonui/`
+are picked up on the next API request — no need to restart or re-seed
+`.raccoonui/`. The web UI is still reachable at the URL above if you want
+to open it in a browser tab as well.
+
+Close the Electron window — the console window stays open running daemon
++ web. **Close the console window (or Ctrl-C) to stop everything**
+(daemon + web + desktop).
+
+Override ports if 17456 / 17573 collide:
+
+```powershell
+$env:OD_PORT=17500;     $env:OD_WEB_PORT=17600; pwsh -File scripts\raccoonui\start.ps1
+OD_PORT=17500           OD_WEB_PORT=17600       ./scripts/raccoonui/start.sh
+```
 
 ## Updating
 
@@ -86,7 +104,10 @@ acceptable. **Do not paste an API key into a shared browser profile** and
 
 | Symptom | Fix |
 |--------|------|
-| `daemon 還沒 build` on `start` | run `install.{ps1,sh}` first |
+| `node_modules 不在` on `start` | run `install.{ps1,sh}` (or just `pnpm install`) first |
+| `daemon is already running in namespace default` | a prior tools-dev daemon is still listening on a different port — run `pnpm tools-dev stop` then re-run start |
 | `Could not locate the bindings file` for `better-sqlite3` | C++ build toolchain missing — see install instructions |
-| browser opens but daemon dies in < 30s | check console for errors; usually port collision (try `OD_PORT=17500 ./start.sh`) |
+| `desktop 啟動失敗` after web is up | Electron build missing — run `pnpm install` (or `install.{ps1,sh}`) again to rebuild the binary, then re-run start. Web is still reachable at `http://127.0.0.1:17573/` in the meantime. |
+| Electron window opens but stays blank | web hasn't finished compiling — wait ~10s; if still blank, check `pnpm tools-dev logs web` |
+| daemon dies in < 30s | check console for errors; usually port collision (try `OD_PORT=17500 ./start.sh`) |
 | `git pull` rejected during `update` | local commits diverged — contact kuku before forcing |
