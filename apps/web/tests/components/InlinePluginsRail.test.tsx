@@ -116,4 +116,33 @@ describe('InlinePluginsRail', () => {
     await waitFor(() => expect(screen.getByText('Other')).toBeTruthy());
     expect(screen.queryByText('Sample Plugin')).toBeNull();
   });
+
+  // Regression: when ChatComposer pins the rail to a single plugin id
+  // (because the project was created from PluginLoopHome with that
+  // plugin), every other installed plugin must be hidden so the
+  // composer reflects the user's pick instead of re-offering all
+  // installed plugins.
+  it('collapses the rail to a single plugin when pluginIds is supplied', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          plugins: [
+            PLUGIN_ROW,
+            { ...PLUGIN_ROW, id: 'code-migration', title: 'Code migration' },
+            { ...PLUGIN_ROW, id: 'figma-migration', title: 'Figma migration' },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    render(
+      <InlinePluginsRail
+        onApplied={() => undefined}
+        filter={{ pluginIds: ['sample-plugin'] }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText('Sample Plugin')).toBeTruthy());
+    expect(screen.queryByText('Code migration')).toBeNull();
+    expect(screen.queryByText('Figma migration')).toBeNull();
+  });
 });

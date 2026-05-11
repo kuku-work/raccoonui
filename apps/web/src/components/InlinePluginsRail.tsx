@@ -25,8 +25,18 @@ interface Props {
   // unspecified the daemon-wide list is shown. `kinds` is a whitelist
   // applied to `od.kind` so the ChatComposer rail can hide bundled
   // atoms (which only the pipeline calls) and only surface user-facing
-  // skill / scenario plugins.
-  filter?: { taskKind?: string; mode?: string; kinds?: string[] };
+  // skill / scenario plugins. `pluginIds` is a hard id whitelist used
+  // when the project is bound to a single applied plugin — the rail
+  // collapses to that one card so the composer reflects the choice
+  // the user made on Home instead of re-offering every installed
+  // plugin (the user reported "选了 new-generation, 结果 composer 显示
+  // 了多个 plugin").
+  filter?: {
+    taskKind?: string;
+    mode?: string;
+    kinds?: string[];
+    pluginIds?: string[];
+  };
   // Notification: a plugin was applied. The parent owns hydration of
   // the brief / inputs form / chip strip from `result`.
   onApplied: (record: InstalledPluginRecord, result: ApplyResult) => void;
@@ -50,6 +60,7 @@ export function InlinePluginsRail(props: Props) {
     props.filter?.taskKind,
     props.filter?.mode,
     props.filter?.kinds?.join(','),
+    props.filter?.pluginIds?.join(','),
   ]);
 
   const onClick = async (record: InstalledPluginRecord) => {
@@ -113,6 +124,12 @@ function filterPlugins(
 ): InstalledPluginRecord[] {
   if (!filter) return rows;
   return rows.filter((r) => {
+    // pluginIds is a hard whitelist — when present, every other filter
+    // becomes secondary. Used by ChatComposer to collapse the rail to
+    // the single plugin pinned to the project.
+    if (filter.pluginIds && filter.pluginIds.length > 0) {
+      if (!filter.pluginIds.includes(r.id)) return false;
+    }
     if (filter.taskKind && r.manifest?.od?.taskKind !== filter.taskKind) {
       return false;
     }

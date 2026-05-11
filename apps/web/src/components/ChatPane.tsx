@@ -183,6 +183,23 @@ export function ChatPane({
     savedChatScrollRef.current = null;
   }, [activeConversationId]);
 
+  // ChatComposer's internal `seededRef` latches after the first
+  // non-empty `initialDraft`, so a parent setting `initialDraft` back
+  // to `undefined` will not flow into the composer's draft state. When
+  // the parent does that transition (because the seed is now stale —
+  // e.g. ProjectView discovered the conversation already has a sent
+  // user message after a reload), reach into the composer and clear
+  // the textarea so the user does not see the prompt they already
+  // submitted.
+  const lastSeenInitialDraftRef = useRef<string | undefined>(initialDraft);
+  useEffect(() => {
+    const previous = lastSeenInitialDraftRef.current;
+    lastSeenInitialDraftRef.current = initialDraft;
+    if (previous && initialDraft === undefined) {
+      composerRef.current?.setDraft('');
+    }
+  }, [initialDraft]);
+
   useEffect(() => {
     const el = logRef.current;
     if (!el || didInitialScrollRef.current || messages.length === 0) return;
@@ -535,7 +552,7 @@ export function ChatPane({
             researchAvailable={researchAvailable}
             projectMetadata={projectMetadata}
             onProjectMetadataChange={onProjectMetadataChange}
-            hidePluginsRail={!!activePluginSnapshot}
+            pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
           />
         </>
       ) : null}

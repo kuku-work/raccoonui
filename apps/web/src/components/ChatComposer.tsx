@@ -69,11 +69,14 @@ interface Props {
   projectMetadata?: ProjectMetadata;
   onProjectMetadataChange?: (metadata: ProjectMetadata) => void;
   // Set when the project was created with a plugin already pinned
-  // (PluginLoopHome on Home). We suppress the in-composer plugin rail
-  // so the user is not re-prompted to pick a plugin they already chose;
-  // the active plugin shows up as a context chip on each user message
-  // (see UserMessage in ChatPane).
-  hidePluginsRail?: boolean;
+  // (PluginLoopHome on Home). When provided, the in-composer plugin
+  // rail collapses to the single pinned plugin so the user can see
+  // which plugin is active without being offered every other installed
+  // plugin (the user reported "选了 new-generation, 结果 composer 显
+  // 示了多个 plugin"). The active plugin still appears as an
+  // ActivePluginChip on each user message (see UserMessage in
+  // ChatPane). Pass `null` (or omit) to render the full rail.
+  pinnedPluginId?: string | null;
 }
 
 // Imperative handle so ancestors (e.g. example chips in ChatPane) can
@@ -117,7 +120,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       researchAvailable = false,
       projectMetadata,
       onProjectMetadataChange,
-      hidePluginsRail = false,
+      pinnedPluginId = null,
     },
     ref
   ) {
@@ -704,17 +707,22 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             brief, leaving the existing send / @-mention / staged
             attachment flows untouched.
 
-            Hidden when the project was created with a plugin pinned
-            (PluginLoopHome on Home): re-rendering the rail there would
-            re-prompt the user to pick a plugin they already chose. The
-            active plugin appears as a context chip on user messages
-            (UserMessage in ChatPane) instead.
+            When the project was created with a plugin pinned
+            (PluginLoopHome on Home), the rail is filtered to that
+            single plugin id so the composer reflects the pick the
+            user made on Home instead of re-offering every installed
+            plugin. The active plugin also appears as a context chip
+            on each user message (UserMessage in ChatPane).
           */}
-          {projectId && !hidePluginsRail ? (
+          {projectId ? (
             <PluginsSection
               projectId={projectId}
               variant="strip"
-              filter={{ kinds: ['skill', 'scenario', 'bundle'] }}
+              filter={
+                pinnedPluginId
+                  ? { pluginIds: [pinnedPluginId] }
+                  : { kinds: ['skill', 'scenario', 'bundle'] }
+              }
               onApplied={(brief) => {
                 if (typeof brief === 'string' && brief.length > 0 && draft.trim().length === 0) {
                   setDraft(brief);

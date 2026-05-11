@@ -8,6 +8,8 @@ import {
   listPlugins,
   renderPluginBriefTemplate,
 } from '../state/projects';
+import { Icon } from './Icon';
+import { PluginDetailsModal } from './PluginDetailsModal';
 
 export interface PluginLoopSubmit {
   prompt: string;
@@ -34,6 +36,8 @@ export function PluginLoopHome({ onSubmit }: Props) {
   const [active, setActive] = useState<ActivePlugin | null>(null);
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [detailsRecord, setDetailsRecord] =
+    useState<InstalledPluginRecord | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -78,7 +82,16 @@ export function PluginLoopHome({ onSubmit }: Props) {
     if (query) {
       setPrompt(renderPluginBriefTemplate(query, inputs));
     }
+    setDetailsRecord(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function openDetails(record: InstalledPluginRecord) {
+    setDetailsRecord(record);
+  }
+
+  function closeDetails() {
+    setDetailsRecord(null);
   }
 
   function clearActive() {
@@ -221,29 +234,50 @@ export function PluginLoopHome({ onSubmit }: Props) {
                   ) : null}
                   {p.manifest?.od?.kind ? <span>· {p.manifest.od.kind}</span> : null}
                 </div>
-                <button
-                  type="button"
-                  className="plugin-loop-home__card-action"
-                  onClick={() => void usePlugin(p)}
-                  disabled={isPending || pendingApplyId !== null}
-                  aria-busy={isPending ? 'true' : undefined}
-                  data-testid={`use-example-${p.id}`}
-                >
-                  {isPending
-                    ? 'Applying…'
-                    : hasQuery
-                      ? isActive
-                        ? 'Reload example query'
-                        : 'Use example query'
-                      : isActive
-                        ? 'Plugin active'
-                        : 'Use plugin'}
-                </button>
+                <div className="plugin-loop-home__card-actions">
+                  <button
+                    type="button"
+                    className="plugin-loop-home__card-details"
+                    onClick={() => openDetails(p)}
+                    aria-label={`View details for ${p.title}`}
+                    data-testid={`view-details-${p.id}`}
+                    title="View plugin details"
+                  >
+                    <Icon name="eye" size={12} />
+                    <span>Details</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="plugin-loop-home__card-action"
+                    onClick={() => void usePlugin(p)}
+                    disabled={isPending || pendingApplyId !== null}
+                    aria-busy={isPending ? 'true' : undefined}
+                    data-testid={`use-example-${p.id}`}
+                  >
+                    {isPending
+                      ? 'Applying…'
+                      : hasQuery
+                        ? isActive
+                          ? 'Reload example query'
+                          : 'Use example query'
+                        : isActive
+                          ? 'Plugin active'
+                          : 'Use plugin'}
+                  </button>
+                </div>
               </div>
             );
           })
         )}
       </div>
+      {detailsRecord ? (
+        <PluginDetailsModal
+          record={detailsRecord}
+          onClose={closeDetails}
+          onUse={(record) => void usePlugin(record)}
+          isApplying={pendingApplyId === detailsRecord.id}
+        />
+      ) : null}
     </div>
   );
 }

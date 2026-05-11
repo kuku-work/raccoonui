@@ -244,6 +244,14 @@ export function ProjectView({
   );
   const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // True once the initial DB read for the active conversation has settled.
+  // Auto-send gates on this so it can't fire before listMessages resolves and
+  // race-clobber the freshly-pushed user + assistant placeholder. Without
+  // this, the auto-send writes [user, assistant] into state, then the still
+  // in-flight listMessages PUT response arrives, runs setMessages(list), and
+  // wipes both — leaving the daemon's run with no client-side message to
+  // attach the runId to.
+  const [messagesInitialized, setMessagesInitialized] = useState(false);
   const [previewComments, setPreviewComments] = useState<PreviewComment[]>([]);
   const [attachedComments, setAttachedComments] = useState<PreviewComment[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -353,10 +361,14 @@ export function ProjectView({
   useEffect(() => {
     if (!activeConversationId) {
       setMessages([]);
+      setMessagesInitialized(false);
       setPreviewComments([]);
       setAttachedComments([]);
       return;
     }
+    // Reset the initialized flag so auto-send waits for the new
+    // conversation's DB read to settle before checking messages.length.
+    setMessagesInitialized(false);
     let cancelled = false;
     (async () => {
       const [list, comments] = await Promise.all([
@@ -365,6 +377,7 @@ export function ProjectView({
       ]);
       if (cancelled) return;
       setMessages(list);
+      setMessagesInitialized(true);
       setPreviewComments(comments);
       setAttachedComments([]);
       setArtifact(null);
@@ -655,6 +668,15 @@ export function ProjectView({
   const persistMessage = useCallback(
     (m: ChatMessage) => {
       if (!activeConversationId) return;
+      // Source-level guard against the "Working 24m+ / Waiting for first
+      // output" UI: never write a daemon assistant row that is still
+      // queued/running but has no runId. Until POST /api/runs returns the
+      // runId, the message is purely in-flight on the client; persisting it
+      // here creates a row that nothing can ever reattach to (daemon never
+      // saw the runId, client lost the response). Once onRunCreated assigns
+      // a runId — or the run finishes terminally — this guard lets the row
+      // through normally.
+      if (isPhantomDaemonRunMessage(m)) return;
       void saveMessage(project.id, activeConversationId, m);
     },
     [project.id, activeConversationId],
@@ -665,7 +687,9 @@ export function ProjectView({
       if (!activeConversationId) return;
       setMessages((curr) => {
         const found = curr.find((m) => m.id === messageId);
-        if (found) void saveMessage(project.id, activeConversationId, found);
+        if (found && !isPhantomDaemonRunMessage(found)) {
+          void saveMessage(project.id, activeConversationId, found);
+        }
         return curr;
       });
     },
@@ -682,7 +706,11 @@ export function ProjectView({
           saved = updated;
           return updated;
         });
-        if (persist && saved && activeConversationId) {
+        // Same phantom guard as persistMessage: skip writes for a daemon
+        // assistant row that is still in-flight (active runStatus, no runId).
+        // The runId-arriving update from onRunCreated passes through because
+        // the updater sets runId before this check runs.
+        if (persist && saved && activeConversationId && !isPhantomDaemonRunMessage(saved)) {
           void saveMessage(project.id, activeConversationId, saved);
         }
         return next;
@@ -1059,6 +1087,12 @@ export function ProjectView({
       savedArtifactRef.current = null;
       onTouchProject();
       persistMessage(userMsg);
+      // Intentionally do NOT persist `assistantMsg` here. In daemon mode it
+      // starts as runStatus='running' with no runId, which the source-level
+      // guard treats as a phantom — the first DB write happens inside
+      // `onRunCreated` (below) once POST /api/runs returns a runId. In API
+      // mode there is no runStatus, and the buffered text path will persist
+      // as soon as the first delta lands.
       persistMessage(assistantMsg);
       if (commentAttachments.length > 0) {
         void patchAttachedStatuses(commentAttachments, 'applying');
@@ -1774,14 +1808,46 @@ export function ProjectView({
   // ChatPane has remounted with the seed still available — we clear both
   // the local snapshot and the persisted pendingPrompt so future
   // conversation switches don't keep re-seeding the composer.
+  //
+  // Special case: when the project was created by PluginLoopHome with
+  // `autoSendFirstMessage`, app.tsx left a sessionStorage flag that
+  // tells us to fire the prompt as a real user message immediately.
+  // In that case we must NOT seed the composer with `pendingPrompt` —
+  // otherwise the textarea displays the prompt while the same prompt
+  // is also streaming as the first user message, and ChatComposer's
+  // local state never gets cleared (its `seededRef` latches on first
+  // render). The auto-send seed below captures the prompt independently
+  // so clearing `initialDraft` here does not lose it.
+  const autoSendSeedRef = useRef<string | null>(null);
+  if (autoSendSeedRef.current === null) {
+    let isAutoSend = false;
+    try {
+      isAutoSend = Boolean(
+        window.sessionStorage.getItem(`od:auto-send-first:${project.id}`),
+      );
+    } catch {
+      /* sessionStorage may be unavailable; treat as manual flow. */
+    }
+    autoSendSeedRef.current = isAutoSend ? (project.pendingPrompt ?? '') : '';
+  }
   const [initialDraft, setInitialDraft] = useState<string | undefined>(
-    project.pendingPrompt,
+    autoSendSeedRef.current ? undefined : project.pendingPrompt,
   );
   useEffect(() => {
     if (initialDraft && activeConversationId) {
       setInitialDraft(undefined);
     }
   }, [initialDraft, activeConversationId]);
+  // Defensive: if the conversation already has messages once they
+  // hydrate, the pendingPrompt that seeded the composer is stale (the
+  // user sent it earlier but onClearPendingPrompt did not get a chance
+  // to patch the server before the page reloaded). Drop the seed so the
+  // textarea does not echo a prompt the user already submitted.
+  useEffect(() => {
+    if (initialDraft && messages.length > 0) {
+      setInitialDraft(undefined);
+    }
+  }, [initialDraft, messages.length]);
 
   // §8.4 — when the project was created with a plugin pinned (the
   // PluginLoopHome → POST /api/projects path), fetch the immutable
@@ -1822,6 +1888,12 @@ export function ProjectView({
   useEffect(() => {
     if (autoSentRef.current) return;
     if (!activeConversationId) return;
+    // Wait for the initial listMessages DB read to land. Without this gate
+    // the auto-send fires before the in-flight DB response, which then
+    // arrives with `setMessages([])` and wipes the freshly-pushed user +
+    // assistant placeholder out of React state — leaving the daemon's run
+    // with no in-memory message to attach the runId to.
+    if (!messagesInitialized) return;
     if (streaming) return;
     if (messages.length > 0) return;
     let flag: string | null = null;
@@ -1833,7 +1905,16 @@ export function ProjectView({
       flag = null;
     }
     if (!flag) return;
-    const seed = (initialDraft ?? project.pendingPrompt ?? '').trim();
+    // Prefer the seed captured at mount (autoSendSeedRef) — it survives
+    // even after onClearPendingPrompt wipes project.pendingPrompt on the
+    // server. Fall back to the live values for any edge case where the
+    // ref was not populated (e.g. sessionStorage error path).
+    const seed = (
+      autoSendSeedRef.current ||
+      initialDraft ||
+      project.pendingPrompt ||
+      ''
+    ).trim();
     if (!seed) return;
     autoSentRef.current = true;
     try {
@@ -1844,6 +1925,7 @@ export function ProjectView({
     void handleSend(seed, [], []);
   }, [
     activeConversationId,
+    messagesInitialized,
     streaming,
     messages.length,
     project.id,
@@ -2022,6 +2104,21 @@ function isTerminalRunStatus(status: ChatMessage['runStatus']): boolean {
 
 function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
   return status === 'queued' || status === 'running';
+}
+
+// A daemon assistant message that is "queued/running" but has no runId yet
+// is in-flight on the client: POST /api/runs has not returned. Persisting it
+// in this state creates a phantom DB row that the reattach loop can never
+// recover (the daemon either never saw the request or the response was lost),
+// which is what produced the "Working 24m+" stuck UI. Treat the in-flight
+// window as ephemeral and only write to DB once a runId pins the row to a
+// real daemon run — or once the run reaches a terminal state.
+function isPhantomDaemonRunMessage(m: ChatMessage): boolean {
+  return (
+    m.role === 'assistant' &&
+    isActiveRunStatus(m.runStatus) &&
+    !m.runId
+  );
 }
 
 export function resolveSucceededRunStatus(status: ChatMessage['runStatus']): ChatMessage['runStatus'] {

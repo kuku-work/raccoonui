@@ -40,8 +40,15 @@ interface Props {
   // Filter the rail (Phase 2B). When unspecified the daemon-wide list
   // is shown. `kinds` whitelists `od.kind` values — used by the
   // ChatComposer mount to exclude bundled atoms from the in-project
-  // strip (atoms are pipeline-side, not user-applicable).
-  filter?: { taskKind?: string; mode?: string; kinds?: string[] };
+  // strip (atoms are pipeline-side, not user-applicable). `pluginIds`
+  // is a hard id whitelist — ChatComposer uses it when the project is
+  // pinned to a single plugin so the rail collapses to that one card.
+  filter?: {
+    taskKind?: string;
+    mode?: string;
+    kinds?: string[];
+    pluginIds?: string[];
+  };
   // Optional hooks — see file header.
   onApplied?: (brief: string, applied: ApplyResult) => void;
   onCleared?: () => void;

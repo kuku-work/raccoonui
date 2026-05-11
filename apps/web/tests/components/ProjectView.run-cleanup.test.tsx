@@ -16,6 +16,7 @@ const getTemplate = vi.fn();
 const fetchChatRunStatus = vi.fn();
 const listActiveChatRuns = vi.fn();
 const reattachDaemonRun = vi.fn();
+const streamViaDaemon = vi.fn();
 const saveMessage = vi.fn();
 const createConversation = vi.fn();
 const patchConversation = vi.fn();
@@ -34,7 +35,7 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
-  streamViaDaemon: vi.fn(),
+  streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
 
 vi.mock('../../src/providers/registry', () => ({
@@ -78,8 +79,12 @@ vi.mock('../../src/components/AvatarMenu', () => ({
   AvatarMenu: () => null,
 }));
 
+const chatPaneSpy = vi.fn();
 vi.mock('../../src/components/ChatPane', () => ({
-  ChatPane: () => null,
+  ChatPane: (props: Record<string, unknown>) => {
+    chatPaneSpy(props);
+    return null;
+  },
 }));
 
 vi.mock('../../src/components/FileWorkspace', () => ({
@@ -231,5 +236,277 @@ describe('ProjectView daemon cleanup', () => {
       expect(failedCall).toBeTruthy();
     });
     expect(reattachDaemonRun).not.toHaveBeenCalled();
+  });
+
+  // Regression: when a project is created via PluginLoopHome with the
+  // auto-send sessionStorage flag set, ProjectView used to seed
+  // ChatComposer.initialDraft with project.pendingPrompt. The composer
+  // latched that seed into local state, then auto-send fired the same
+  // text as a real user message — leaving the textarea populated while
+  // the run streamed. The user reported "好像发送了输入框的 query 还
+  // 没有清除". With the fix, auto-send projects must hand the composer
+  // an undefined initialDraft so the textarea stays empty; the seed
+  // still flows through autoSendSeedRef so the prompt is delivered.
+  it('does not seed composer initialDraft when auto-send sessionStorage flag is set', async () => {
+    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
+    listMessages.mockResolvedValue([]);
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+
+    chatPaneSpy.mockClear();
+    window.sessionStorage.setItem('od:auto-send-first:project-2', '1');
+
+    try {
+      render(
+        <ProjectView
+          project={{
+            id: 'project-2',
+            name: 'Project',
+            skillId: null,
+            designSystemId: null,
+            pendingPrompt: 'design a landing page for a coffee shop',
+          } as never}
+          routeFileName={null}
+          config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+          agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
+          skills={[]}
+          designSystems={[]}
+          daemonLive
+          onModeChange={() => {}}
+          onAgentChange={() => {}}
+          onAgentModelChange={() => {}}
+          onRefreshAgents={() => {}}
+          onOpenSettings={() => {}}
+          onBack={() => {}}
+          onClearPendingPrompt={() => {}}
+          onTouchProject={() => {}}
+          onProjectChange={() => {}}
+          onProjectsRefresh={() => {}}
+        />,
+      );
+
+      await waitFor(() => expect(chatPaneSpy).toHaveBeenCalled());
+      const lastProps = chatPaneSpy.mock.calls.at(-1)?.[0];
+      expect(lastProps?.initialDraft).toBeUndefined();
+    } finally {
+      window.sessionStorage.removeItem('od:auto-send-first:project-2');
+    }
+  });
+
+  // Sister check: without the auto-send flag, the composer should still
+  // seed from pendingPrompt so the user can edit before manually sending.
+  it('seeds composer initialDraft with pendingPrompt when auto-send flag is absent', async () => {
+    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
+    listMessages.mockResolvedValue([]);
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+
+    chatPaneSpy.mockClear();
+    window.sessionStorage.removeItem('od:auto-send-first:project-3');
+
+    render(
+      <ProjectView
+        project={{
+          id: 'project-3',
+          name: 'Project',
+          skillId: null,
+          designSystemId: null,
+          pendingPrompt: 'design a landing page for a coffee shop',
+        } as never}
+        routeFileName={null}
+        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
+        skills={[]}
+        designSystems={[]}
+        daemonLive
+        onModeChange={() => {}}
+        onAgentChange={() => {}}
+        onAgentModelChange={() => {}}
+        onRefreshAgents={() => {}}
+        onOpenSettings={() => {}}
+        onBack={() => {}}
+        onClearPendingPrompt={() => {}}
+        onTouchProject={() => {}}
+        onProjectChange={() => {}}
+        onProjectsRefresh={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(chatPaneSpy).toHaveBeenCalled());
+    // The first render — before activeConversationId resolves — must
+    // pass the seed through so ChatComposer can populate its draft.
+    const seedingCall = chatPaneSpy.mock.calls.find(
+      (call) => call[0]?.initialDraft === 'design a landing page for a coffee shop',
+    );
+    expect(seedingCall).toBeTruthy();
+  });
+
+  // Root-cause regression for the "Working 24m+ / Waiting for first output"
+  // stuck UI. The phantom was created at line `persistMessage(assistantMsg)`
+  // in handleSend: a daemon assistant row was written to DB with
+  // runStatus='running' BEFORE POST /api/runs returned a runId. If that POST
+  // never returned (slow daemon, network blip, component unmount mid-flight),
+  // the row was orphaned forever with no runId for the reattach loop to
+  // recover. The fix: persistMessage / persistMessageById / updateMessageById
+  // all refuse to write a daemon assistant row that is still active without
+  // a runId. The first DB write for that row only happens once onRunCreated
+  // pins the daemon's runId onto the message.
+  it('does not persist an assistant message before POST /api/runs returns a runId', async () => {
+    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
+    listMessages.mockResolvedValue([]);
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+
+    // streamViaDaemon: capture onRunCreated but never resolve, so the POST
+    // looks "in-flight" for the rest of the test. This is the exact window
+    // in which phantom rows used to be written.
+    let capturedOnRunCreated: ((runId: string) => void) | null = null;
+    streamViaDaemon.mockImplementation(async (options: { onRunCreated?: (runId: string) => void }) => {
+      capturedOnRunCreated = options.onRunCreated ?? null;
+      return new Promise<void>(() => {});
+    });
+
+    chatPaneSpy.mockClear();
+
+    render(
+      <ProjectView
+        project={{ id: 'project-phantom', name: 'Project', skillId: null, designSystemId: null } as never}
+        routeFileName={null}
+        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
+        skills={[]}
+        designSystems={[]}
+        daemonLive
+        onModeChange={() => {}}
+        onAgentChange={() => {}}
+        onAgentModelChange={() => {}}
+        onRefreshAgents={() => {}}
+        onOpenSettings={() => {}}
+        onBack={() => {}}
+        onClearPendingPrompt={() => {}}
+        onTouchProject={() => {}}
+        onProjectChange={() => {}}
+        onProjectsRefresh={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(chatPaneSpy).toHaveBeenCalled());
+    const sendProps = chatPaneSpy.mock.calls.at(-1)?.[0] as { onSend?: (prompt: string, attachments: unknown[], comments: unknown[]) => Promise<void> } | undefined;
+    expect(sendProps?.onSend).toBeTypeOf('function');
+
+    await sendProps!.onSend!('hello world', [], []);
+
+    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
+
+    // The user message must be persisted immediately — it is committed
+    // user intent and has no runId concept.
+    const userSave = saveMessage.mock.calls.find((call) => call[2]?.role === 'user');
+    expect(userSave?.[2]?.content).toBe('hello world');
+
+    // The assistant placeholder must NOT be persisted yet: runStatus
+    // is 'running' and the daemon has not returned a runId.
+    const phantomSave = saveMessage.mock.calls.find(
+      (call) =>
+        call[2]?.role === 'assistant' &&
+        call[2]?.runStatus === 'running' &&
+        !call[2]?.runId,
+    );
+    expect(phantomSave).toBeUndefined();
+
+    // Now simulate POST /api/runs returning a runId. The assistant row
+    // transitions to 'queued' with a runId — that's a non-phantom write
+    // that the guard lets through.
+    expect(capturedOnRunCreated).not.toBeNull();
+    capturedOnRunCreated!('run-pinned-xyz');
+
+    await waitFor(() => {
+      const pinnedSave = saveMessage.mock.calls.find(
+        (call) =>
+          call[2]?.role === 'assistant' &&
+          call[2]?.runId === 'run-pinned-xyz' &&
+          call[2]?.runStatus === 'queued',
+      );
+      expect(pinnedSave).toBeTruthy();
+    });
+  });
+
+  // Companion regression: if the user navigates away (component unmounts)
+  // BEFORE onRunCreated ever fires, the assistant placeholder must never
+  // appear in DB. This is the exact failure mode the user reported — the
+  // PluginLoopHome auto-send fired, the user moved on, and a phantom row
+  // sat forever in the project's conversation.
+  it('never persists a phantom assistant row when send aborts before runId', async () => {
+    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
+    listMessages.mockResolvedValue([]);
+    fetchPreviewComments.mockResolvedValue([]);
+    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
+    fetchProjectFiles.mockResolvedValue([]);
+    fetchLiveArtifacts.mockResolvedValue([]);
+    fetchSkill.mockResolvedValue(null);
+    fetchDesignSystem.mockResolvedValue(null);
+    getTemplate.mockResolvedValue(null);
+    listActiveChatRuns.mockResolvedValue([]);
+
+    streamViaDaemon.mockImplementation(async () => {
+      // Simulate a POST that never returns (network blip, daemon timeout).
+      return new Promise<void>(() => {});
+    });
+
+    chatPaneSpy.mockClear();
+
+    const view = render(
+      <ProjectView
+        project={{ id: 'project-aborted', name: 'Project', skillId: null, designSystemId: null } as never}
+        routeFileName={null}
+        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
+        skills={[]}
+        designSystems={[]}
+        daemonLive
+        onModeChange={() => {}}
+        onAgentChange={() => {}}
+        onAgentModelChange={() => {}}
+        onRefreshAgents={() => {}}
+        onOpenSettings={() => {}}
+        onBack={() => {}}
+        onClearPendingPrompt={() => {}}
+        onTouchProject={() => {}}
+        onProjectChange={() => {}}
+        onProjectsRefresh={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(chatPaneSpy).toHaveBeenCalled());
+    const sendProps = chatPaneSpy.mock.calls.at(-1)?.[0] as { onSend?: (prompt: string, attachments: unknown[], comments: unknown[]) => Promise<void> } | undefined;
+    await sendProps!.onSend!('quick send', [], []);
+    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+
+    const phantomSave = saveMessage.mock.calls.find(
+      (call) =>
+        call[2]?.role === 'assistant' &&
+        call[2]?.runStatus === 'running' &&
+        !call[2]?.runId,
+    );
+    expect(phantomSave).toBeUndefined();
   });
 });
