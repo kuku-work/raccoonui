@@ -106,7 +106,6 @@ import { decideAutoOpenAfterWrite } from './auto-open-file';
 import { FileWorkspace } from './FileWorkspace';
 import { Icon } from './Icon';
 import { CenteredLoader } from './Loading';
-import { ProjectActionsToolbar } from './ProjectActionsToolbar';
 import { Toast } from './Toast';
 import { useDesignMdState } from '../hooks/useDesignMdState';
 import { useFinalizeProject } from '../hooks/useFinalizeProject';
@@ -2780,14 +2779,9 @@ export function ProjectView({
           </div>
         </div>
       )}
-      <ProjectActionsToolbar
-        designMdState={designMdState}
-        finalizeStatus={finalize.status}
-        onFinalize={handleFinalize}
-        onCancelFinalize={handleCancelFinalize}
-        onContinueInCli={handleContinueInCli}
-        hidden={workspaceFocused}
-      />
+      {/* ProjectActionsToolbar removed per 00efdcba — hide finalize-design
+          toolbar from project header. Restore from cf1cd9bb if product
+          wants the Finalize + Continue-in-CLI buttons back in the chrome. */}
       <div
         ref={splitRef}
         className={[
