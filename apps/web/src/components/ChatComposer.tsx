@@ -701,6 +701,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             <PluginsSection
               projectId={projectId}
               variant="strip"
+              filter={{ kinds: ['skill', 'scenario', 'bundle'] }}
               onApplied={(brief) => {
                 if (typeof brief === 'string' && brief.length > 0 && draft.trim().length === 0) {
                   setDraft(brief);

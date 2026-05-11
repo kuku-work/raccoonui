@@ -22,8 +22,11 @@ interface Props {
   // ChatComposer overflow row.
   variant?: 'wide' | 'strip';
   // Filter the rail to a specific taskKind / mode (Phase 2B). When
-  // unspecified the daemon-wide list is shown.
-  filter?: { taskKind?: string; mode?: string };
+  // unspecified the daemon-wide list is shown. `kinds` is a whitelist
+  // applied to `od.kind` so the ChatComposer rail can hide bundled
+  // atoms (which only the pipeline calls) and only surface user-facing
+  // skill / scenario plugins.
+  filter?: { taskKind?: string; mode?: string; kinds?: string[] };
   // Notification: a plugin was applied. The parent owns hydration of
   // the brief / inputs form / chip strip from `result`.
   onApplied: (record: InstalledPluginRecord, result: ApplyResult) => void;
@@ -43,7 +46,11 @@ export function InlinePluginsRail(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [props.filter?.taskKind, props.filter?.mode]);
+  }, [
+    props.filter?.taskKind,
+    props.filter?.mode,
+    props.filter?.kinds?.join(','),
+  ]);
 
   const onClick = async (record: InstalledPluginRecord) => {
     setPendingId(record.id);
@@ -111,6 +118,10 @@ function filterPlugins(
     }
     if (filter.mode && r.manifest?.od?.mode !== filter.mode) {
       return false;
+    }
+    if (filter.kinds && filter.kinds.length > 0) {
+      const k = r.manifest?.od?.kind;
+      if (!k || !filter.kinds.includes(k)) return false;
     }
     return true;
   });

@@ -38,8 +38,10 @@ interface Props {
   // Inline rail layout: 'wide' on Home, 'strip' inside ChatComposer.
   variant?: 'wide' | 'strip';
   // Filter the rail (Phase 2B). When unspecified the daemon-wide list
-  // is shown.
-  filter?: { taskKind?: string; mode?: string };
+  // is shown. `kinds` whitelists `od.kind` values — used by the
+  // ChatComposer mount to exclude bundled atoms from the in-project
+  // strip (atoms are pipeline-side, not user-applicable).
+  filter?: { taskKind?: string; mode?: string; kinds?: string[] };
   // Optional hooks — see file header.
   onApplied?: (brief: string, applied: ApplyResult) => void;
   onCleared?: () => void;

@@ -49,7 +49,12 @@ export async function createProject(input: {
   designSystemId: string | null;
   pendingPrompt?: string;
   metadata?: ProjectMetadata;
-}): Promise<{ project: Project; conversationId: string } | null> {
+  // Plan §3.A1 / spec §11.5 — POST /api/projects accepts a pluginId
+  // (or pre-applied snapshot id) to resolve and pin a plugin to the new
+  // project. Used by the PluginLoopHome flow on Home.
+  pluginId?: string;
+  appliedPluginSnapshotId?: string;
+}): Promise<{ project: Project; conversationId: string; appliedPluginSnapshotId?: string } | null> {
   try {
     // `randomUUID` falls back to `crypto.getRandomValues` / `Math.random`
     // when `crypto.randomUUID` is unavailable. Open Design served over
@@ -64,7 +69,11 @@ export async function createProject(input: {
       body: JSON.stringify({ id, ...input }),
     });
     if (!resp.ok) return null;
-    return (await resp.json()) as { project: Project; conversationId: string };
+    return (await resp.json()) as {
+      project: Project;
+      conversationId: string;
+      appliedPluginSnapshotId?: string;
+    };
   } catch {
     return null;
   }

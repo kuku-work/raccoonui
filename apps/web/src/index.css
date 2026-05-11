@@ -14655,3 +14655,452 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
 .mcp-oauth-fallback .md-link:hover {
   text-decoration-thickness: 2px;
 }
+
+/* PluginLoopHome — the minimum-closed-loop Home entry: a single prompt
+   textarea + plugin grid with "Use example query" affordance. Replaces
+   the tabbed NewProjectPanel on Home until the plugin-first UX matures. */
+.plugin-loop-home {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  padding: 18px;
+  box-shadow: var(--shadow-xs);
+}
+.plugin-loop-home__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plugin-loop-home__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.plugin-loop-home__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.plugin-loop-home__subtitle kbd {
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-subtle);
+}
+.plugin-loop-home__active {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.plugin-loop-home__active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.plugin-loop-home__active-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.plugin-loop-home__active-clear {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+.plugin-loop-home__active-clear:hover {
+  color: var(--text);
+}
+.plugin-loop-home__context-summary {
+  color: var(--text-muted);
+}
+.plugin-loop-home__input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plugin-loop-home__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+}
+.plugin-loop-home__input:focus {
+  outline: 2px solid var(--accent-subtle, var(--accent));
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.plugin-loop-home__submit {
+  align-self: flex-end;
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.plugin-loop-home__submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.plugin-loop-home__error {
+  color: var(--danger, #c33);
+  font-size: 12px;
+}
+.plugin-loop-home__rail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+.plugin-loop-home__rail-count {
+  font-variant-numeric: tabular-nums;
+}
+.plugin-loop-home__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.plugin-loop-home__empty {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  padding: 8px 0;
+}
+.plugin-loop-home__empty code {
+  font-size: 11.5px;
+  background: var(--bg-subtle);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.plugin-loop-home__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 12px;
+  background: var(--bg);
+  font-size: 12.5px;
+}
+.plugin-loop-home__card.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.plugin-loop-home__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.plugin-loop-home__card-title {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-loop-home__card-trust {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.plugin-loop-home__card-trust.trust-bundled {
+  background: rgba(0, 120, 200, 0.08);
+  color: rgb(0, 100, 170);
+}
+.plugin-loop-home__card-trust.trust-trusted {
+  background: rgba(0, 160, 80, 0.1);
+  color: rgb(0, 110, 60);
+}
+.plugin-loop-home__card-trust.trust-restricted {
+  background: rgba(200, 120, 0, 0.1);
+  color: rgb(160, 90, 0);
+}
+.plugin-loop-home__card-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.plugin-loop-home__card-meta {
+  display: flex;
+  gap: 4px;
+  color: var(--text-faint, var(--text-muted));
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.plugin-loop-home__card-action {
+  appearance: none;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.plugin-loop-home__card-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plugin-loop-home__card-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Plugins section composite — wraps InlinePluginsRail + ContextChipStrip +
+   PluginInputsForm. Used inline on NewProjectPanel (wide variant) and
+   above ChatComposer (strip variant). Each variant is tuned for its
+   host: strip is a slim horizontal scroller, wide is a 2-column grid. */
+.plugins-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plugins-section__active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+/* Strip rail — single-row horizontal scroller, intended for the
+   ChatComposer mount where vertical space is precious. Cards collapse
+   to compact pills (title only). */
+.inline-plugins-rail--strip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding: 2px 0 6px;
+  max-height: 44px;
+}
+.inline-plugins-rail--strip::-webkit-scrollbar {
+  height: 6px;
+}
+.inline-plugins-rail--strip::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.inline-plugins-rail--strip .inline-plugins-rail__card {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.inline-plugins-rail--strip .inline-plugins-rail__card:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.inline-plugins-rail--strip .inline-plugins-rail__card:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.inline-plugins-rail--strip .inline-plugins-rail__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+/* Description + trust are hidden inside the strip rail — they live
+   in the marketplace detail page. Keeping the strip compact is the
+   only way the chat history stays visible. */
+.inline-plugins-rail--strip .inline-plugins-rail__desc,
+.inline-plugins-rail--strip .inline-plugins-rail__trust {
+  display: none;
+}
+
+/* Wide rail — used by NewProjectPanel (legacy) and any other host
+   that wants the full card layout. PluginLoopHome ships its own
+   `plugin-loop-home__grid` and does not use this. */
+.inline-plugins-rail--wide {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.inline-plugins-rail--wide .inline-plugins-rail__card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.inline-plugins-rail--wide .inline-plugins-rail__card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.inline-plugins-rail--wide .inline-plugins-rail__title {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.inline-plugins-rail--wide .inline-plugins-rail__desc {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.inline-plugins-rail--wide .inline-plugins-rail__trust {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.inline-plugins-rail__error {
+  flex: 0 0 100%;
+  font-size: 11.5px;
+  color: var(--danger, #c33);
+}
+
+/* Context chip strip — small pill list of typed context items the
+   active plugin contributed. Sits inside `.plugins-section__active`. */
+.context-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+}
+.context-chip-strip__empty {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.context-chip-strip__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text);
+  max-width: 220px;
+}
+.context-chip-strip__kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.context-chip-strip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-chip-strip__remove {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.context-chip-strip__remove:hover {
+  color: var(--text);
+}
+
+/* Plugin inputs form — appears when the active plugin declares
+   `od.inputs[]`. Compact stacked label/input pairs. */
+.plugin-inputs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plugin-inputs-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.plugin-inputs-form__label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.plugin-inputs-form__required {
+  color: var(--danger, #c33);
+  margin-left: 2px;
+}
+.plugin-inputs-form__input {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+}
+.plugin-inputs-form__input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+.plugin-inputs-form__input--textarea {
+  min-height: 56px;
+  resize: vertical;
+}

@@ -490,7 +490,14 @@ export function App() {
   );
 
   const handleCreateProject = useCallback(
-    async (input: CreateInput & { pendingPrompt?: string }) => {
+    async (
+      input: CreateInput & {
+        pendingPrompt?: string;
+        pluginId?: string;
+        appliedPluginSnapshotId?: string;
+        autoSendFirstMessage?: boolean;
+      },
+    ) => {
       // Honor an explicit `null` design system — the create panel defaults
       // to "None" for every kind now, and the user expects that to land
       // as a no-design-system project rather than silently inheriting the
@@ -501,8 +508,28 @@ export function App() {
         designSystemId: input.designSystemId,
         pendingPrompt: input.pendingPrompt,
         metadata: input.metadata,
+        ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+        ...(input.appliedPluginSnapshotId
+          ? { appliedPluginSnapshotId: input.appliedPluginSnapshotId }
+          : {}),
       });
       if (!result) return;
+      // PluginLoopHome flow: the user already typed (or accepted) the
+      // first message on Home. Mark this project so ProjectView fires
+      // sendMessage(pendingPrompt) once on mount instead of just
+      // pre-filling the composer. Scoped to sessionStorage so a page
+      // reload after the run has started does not refire.
+      if (input.autoSendFirstMessage && input.pendingPrompt) {
+        try {
+          window.sessionStorage.setItem(
+            `od:auto-send-first:${result.project.id}`,
+            '1',
+          );
+        } catch {
+          /* sessionStorage may be unavailable (e.g. SSR / private mode); fall
+             back to manual send. */
+        }
+      }
       setProjects((curr) => [
         result.project,
         ...curr.filter((p) => p.id !== result.project.id),

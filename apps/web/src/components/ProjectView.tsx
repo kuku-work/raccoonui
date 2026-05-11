@@ -1766,6 +1766,48 @@ export function ProjectView({
     if (project.pendingPrompt) onClearPendingPrompt();
   }, [project.pendingPrompt, onClearPendingPrompt]);
 
+  // PluginLoopHome auto-send: when the user submits on Home, app.tsx
+  // sets `sessionStorage['od:auto-send-first:<projectId>']` and routes
+  // through createProject. Once the conversation id resolves and the
+  // composer is mounted, fire handleSend(pendingPrompt) exactly once so
+  // the user lands inside a running pipeline without an extra click.
+  // We gate on `messages.length === 0` so a refresh after the run is
+  // mid-flight never double-fires; the sessionStorage flag is cleared
+  // immediately after the first dispatch.
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (autoSentRef.current) return;
+    if (!activeConversationId) return;
+    if (streaming) return;
+    if (messages.length > 0) return;
+    let flag: string | null = null;
+    try {
+      flag = window.sessionStorage.getItem(
+        `od:auto-send-first:${project.id}`,
+      );
+    } catch {
+      flag = null;
+    }
+    if (!flag) return;
+    const seed = (initialDraft ?? project.pendingPrompt ?? '').trim();
+    if (!seed) return;
+    autoSentRef.current = true;
+    try {
+      window.sessionStorage.removeItem(`od:auto-send-first:${project.id}`);
+    } catch {
+      /* ignore */
+    }
+    void handleSend(seed, [], []);
+  }, [
+    activeConversationId,
+    streaming,
+    messages.length,
+    project.id,
+    initialDraft,
+    project.pendingPrompt,
+    handleSend,
+  ]);
+
   return (
     <div className="app">
       <AppChromeHeader

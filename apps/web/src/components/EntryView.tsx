@@ -26,6 +26,7 @@ import { Icon } from './Icon';
 import { LanguageMenu } from './LanguageMenu';
 import { CenteredLoader } from './Loading';
 import { NewProjectPanel, type CreateInput } from './NewProjectPanel';
+import { PluginLoopHome, type PluginLoopSubmit } from './PluginLoopHome';
 import {
   fetchConnectors,
   fetchConnectorStatuses,
@@ -55,7 +56,14 @@ interface Props {
   designSystemsLoading?: boolean;
   projectsLoading?: boolean;
   promptTemplatesLoading?: boolean;
-  onCreateProject: (input: CreateInput & { pendingPrompt?: string }) => void;
+  onCreateProject: (
+    input: CreateInput & {
+      pendingPrompt?: string;
+      pluginId?: string;
+      appliedPluginSnapshotId?: string;
+      autoSendFirstMessage?: boolean;
+    },
+  ) => void;
   onImportClaudeDesign: (file: File) => Promise<void> | void;
   onImportFolder?: (baseDir: string) => Promise<void> | void;
   onOpenProject: (id: string) => void;
@@ -303,6 +311,38 @@ export function EntryView({
     onCreateProject(input);
   }
 
+  // Plan §3.F5 — PluginLoopHome minimum closed loop.
+  // The prompt textarea is the canonical entry: the user picks a plugin
+  // (which calls /api/plugins/:id/apply and binds a snapshot), edits the
+  // rendered example query if any, then presses Enter. We derive a
+  // project name from the active plugin (or prompt head), forward the
+  // pluginId so POST /api/projects pins the snapshot to project +
+  // conversation, and request auto-send of the first message so the
+  // user lands inside a running pipeline.
+  function handlePluginLoopSubmit(payload: PluginLoopSubmit) {
+    const head = payload.prompt.trim().split(/\s+/).slice(0, 8).join(' ');
+    const fallbackName = head.length > 0 ? head : 'Untitled';
+    const name =
+      payload.pluginTitle && payload.pluginTitle.trim().length > 0
+        ? payload.pluginTitle.trim()
+        : fallbackName;
+    const metadata: ProjectMetadata = {
+      kind: 'prototype',
+    };
+    onCreateProject({
+      name,
+      skillId: null,
+      designSystemId: null,
+      metadata,
+      pendingPrompt: payload.prompt,
+      ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
+      ...(payload.appliedPluginSnapshotId
+        ? { appliedPluginSnapshotId: payload.appliedPluginSnapshotId }
+        : {}),
+      autoSendFirstMessage: true,
+    });
+  }
+
   const startWidthRef = useRef(0);
   const startXRef = useRef(0);
 
@@ -467,21 +507,7 @@ export function EntryView({
         }}
       >
       <aside className="entry-side" style={{ width: sidebarWidth }}>
-        <NewProjectPanel
-          skills={skills}
-          designSystems={designSystems}
-          defaultDesignSystemId={defaultDesignSystemId}
-          templates={templates}
-          promptTemplates={promptTemplates}
-          onCreate={handleCreate}
-          onImportClaudeDesign={onImportClaudeDesign}
-          onImportFolder={onImportFolder}
-          mediaProviders={config.mediaProviders}
-          connectors={connectors}
-          connectorsLoading={connectorsLoading}
-          onOpenConnectorsTab={() => onOpenSettings('composio')}
-          loading={skillsLoading || designSystemsLoading}
-        />
+        <PluginLoopHome onSubmit={handlePluginLoopSubmit} />
         <div className="entry-side-foot">
           <button
             type="button"
