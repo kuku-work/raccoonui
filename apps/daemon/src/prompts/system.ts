@@ -102,6 +102,12 @@ export interface ComposeInput {
   // (letter-spacing, accent caps, anti-slop) cover everything below.
   craftBody?: string | undefined;
   craftSections?: string[] | undefined;
+  // Markdown built from the user's auto-memory store
+  // (<dataDir>/memory/*.md). Folded in before the active design system so
+  // tone/voice/preferences extracted from past chats win over the
+  // built-in identity charter but still defer to the brand's hard tokens
+  // and the active skill's workflow. Empty/undefined skips the block.
+  memoryBody?: string | undefined;
   // Project-level metadata captured by the new-project panel. Drives the
   // agent's understanding of artifact kind, fidelity, speaker-notes intent
   // and animation intent. Missing fields here are exactly what the
@@ -143,6 +149,7 @@ export function composeSystemPrompt({
   designSystemTitle,
   craftBody,
   craftSections,
+  memoryBody,
   metadata,
   template,
   critique,
@@ -160,6 +167,12 @@ export function composeSystemPrompt({
     '\n\n---\n\n# Identity and workflow charter (background)\n\n',
     BASE_SYSTEM_PROMPT,
   ];
+
+  if (memoryBody && memoryBody.trim().length > 0) {
+    parts.push(
+      `\n\n## Personal memory (auto-extracted from past chats)\n\nThe following facts have been sedimented from this user's previous conversations and edited in the settings panel. Treat them as preferences and context, NOT hard rules: when they collide with the active design system tokens, the brand wins; when they collide with the active skill's workflow, the skill wins. They are still authoritative for tone, voice, terminology, and what the user already told you about themselves and their goals — never re-ask the user about something already captured here.\n\n${memoryBody.trim()}`,
+    );
+  }
 
   if (designSystemBody && designSystemBody.trim().length > 0) {
     parts.push(
