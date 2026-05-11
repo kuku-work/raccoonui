@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ToolCard } from "./ToolCard";
+import { FileOpsSummary } from "./FileOpsSummary";
 import { renderMarkdown } from "../runtime/markdown";
 import { projectFileUrl } from "../providers/registry";
 import {
@@ -9,6 +10,7 @@ import {
 import { QuestionFormView, parseSubmittedAnswers } from "./QuestionForm";
 import { Icon } from "./Icon";
 import { useT } from "../i18n";
+import { deriveFileOps } from "../runtime/file-ops";
 import { unfinishedTodosFromEvents, type TodoItem } from "../runtime/todos";
 import type { Dict } from "../i18n/types";
 import { agentDisplayName, exactAgentDisplayName } from "../utils/agentLabels";
@@ -67,6 +69,7 @@ export function AssistantMessage({
   const t = useT();
   const events = message.events ?? [];
   const blocks = buildBlocks(events);
+  const fileOps = useMemo(() => deriveFileOps(events), [events]);
   const usage = events.find((e) => e.kind === "usage") as
     | Extract<AgentEvent, { kind: "usage" }>
     | undefined;
@@ -95,6 +98,14 @@ export function AssistantMessage({
           <WaitingPill
             startedAt={message.startedAt}
             latestStatus={latestStatusLabel(events)}
+          />
+        ) : null}
+        {fileOps.length > 0 ? (
+          <FileOpsSummary
+            entries={fileOps}
+            streaming={streaming}
+            projectFileNames={projectFileNames}
+            onRequestOpenFile={onRequestOpenFile}
           />
         ) : null}
         {blocks.map((b, i) => {
