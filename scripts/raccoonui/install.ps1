@@ -44,6 +44,7 @@ function Fail {
 $RaccoonUIResources = @(
     @{ src = 'design-systems';        dst = 'design-systems' },
     @{ src = 'skills';                dst = 'skills' },
+    @{ src = 'design-templates';      dst = 'design-templates' },
     @{ src = 'craft';                 dst = 'craft' },
     @{ src = 'assets/frames';         dst = 'frames' },
     @{ src = 'assets/community-pets'; dst = 'community-pets' },

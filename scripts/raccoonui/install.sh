@@ -33,6 +33,7 @@ fail() {
 RACCOONUI_RESOURCES=(
     "design-systems:design-systems"
     "skills:skills"
+    "design-templates:design-templates"
     "craft:craft"
     "assets/frames:frames"
     "assets/community-pets:community-pets"
