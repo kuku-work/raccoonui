@@ -17,6 +17,7 @@ import type {
   MediaAspect,
   ProjectKind,
   ProjectMetadata,
+  ProjectPlatform,
   ProjectTemplate,
   MediaProviderCredentials,
   PromptTemplateSummary,
@@ -78,6 +79,45 @@ type PromptTemplatePick = {
 };
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
+
+type NewProjectPlatform = Exclude<ProjectPlatform, 'auto'>;
+
+const DESIGN_PLATFORMS: Array<{
+  value: NewProjectPlatform;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: 'responsive',
+    label: 'Responsive web',
+    hint: 'One web experience adapted for desktop, tablet, and mobile browsers',
+  },
+  {
+    value: 'web-desktop',
+    label: 'Desktop web',
+    hint: 'Browser-first product or landing page',
+  },
+  {
+    value: 'mobile-ios',
+    label: 'iOS app',
+    hint: 'iPhone frames and iOS interaction rules',
+  },
+  {
+    value: 'mobile-android',
+    label: 'Android app',
+    hint: 'Pixel frames and Material interaction rules',
+  },
+  {
+    value: 'tablet',
+    label: 'Tablet app',
+    hint: 'Native-style tablet experience with split views',
+  },
+  {
+    value: 'desktop-app',
+    label: 'Desktop app',
+    hint: 'macOS/Windows app chrome',
+  },
+];
 
 export type CreateTab = 'prototype' | 'live-artifact' | 'deck' | 'template' | 'image' | 'video' | 'audio' | 'other';
 
@@ -205,6 +245,9 @@ export function NewProjectPanel({
   const [fidelity, setFidelity] = useState<'wireframe' | 'high-fidelity'>(
     'high-fidelity',
   );
+  const [platformTargets, setPlatformTargets] = useState<NewProjectPlatform[]>(['responsive']);
+  const [includeLandingPage, setIncludeLandingPage] = useState(false);
+  const [includeOsWidgets, setIncludeOsWidgets] = useState(false);
   const [speakerNotes, setSpeakerNotes] = useState(false);
   const [animations, setAnimations] = useState(false);
   const [templateId, setTemplateId] = useState<string | null>(null);
@@ -212,6 +255,7 @@ export function NewProjectPanel({
   const [imageAspect, setImageAspect] = useState<MediaAspect>('1:1');
   const [imageStyle, setImageStyle] = useState('');
   const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
+  const [videoModelTouched, setVideoModelTouched] = useState(false);
   const [videoAspect, setVideoAspect] = useState<MediaAspect>('16:9');
   const [videoLength, setVideoLength] = useState(5);
   const [audioKind, setAudioKind] = useState<AudioKind>('speech');
@@ -319,12 +363,76 @@ export function NewProjectPanel({
     }
     if (tab === 'image' || tab === 'video' || tab === 'audio') {
       const list = skills.filter((s) => s.mode === tab || s.surface === tab);
+      // The HyperFrames-HTML render path lives in the `hyperframes` skill.
+      // When the user has chosen `hyperframes-html` (via dropdown or template),
+      // pin the project to that skill explicitly — otherwise this branch falls
+      // back to `list[0]`, which is unsorted (apps/daemon/src/skills.ts builds
+      // the list from `readdir()`), so the project could route through
+      // `video-shortform` while metadata still says `videoModel: 'hyperframes-html'`.
+      if (tab === 'video' && videoModel === 'hyperframes-html') {
+        const hyper = list.find((s) => s.id === 'hyperframes');
+        if (hyper) return hyper.id;
+      }
       return list.find((s) => s.defaultFor.includes(tab))?.id
         ?? list[0]?.id
         ?? null;
     }
     return null;
-  }, [tab, skills]);
+  }, [tab, skills, videoModel]);
+
+  // When the user picks a curated prompt template, propagate the template's
+  // declared `model` and `aspect` onto the actual project state. Without
+  // this the user picks (e.g.) a HyperFrames template but `videoModel`
+  // stays on the default seedance — the agent then dispatches the wrong
+  // model and the render path mismatches the prompt.
+  function handleImagePromptTemplate(pick: PromptTemplatePick | null) {
+    setImagePromptTemplate(pick);
+    const m = pick?.summary.model;
+    if (m && IMAGE_MODELS.some((x) => x.id === m)) setImageModel(m);
+    const a = pick?.summary.aspect;
+    if (a && (MEDIA_ASPECTS as readonly string[]).includes(a)) {
+      setImageAspect(a as MediaAspect);
+    }
+  }
+  function handleVideoPromptTemplate(pick: PromptTemplatePick | null) {
+    setVideoPromptTemplate(pick);
+    const m = pick?.summary.model;
+    if (m && VIDEO_MODELS.some((x) => x.id === m)) {
+      setVideoModel(m);
+      setVideoModelTouched(true);
+    }
+    const a = pick?.summary.aspect;
+    if (a && (MEDIA_ASPECTS as readonly string[]).includes(a)) {
+      setVideoAspect(a as MediaAspect);
+    }
+  }
+  function handleVideoModel(id: string) {
+    setVideoModel(id);
+    setVideoModelTouched(true);
+  }
+
+  // The HyperFrames skill renders HTML compositions through a local
+  // `npx hyperframes render` path, which dispatches under the
+  // `hyperframes-html` model — not seedance/veo/sora. When the resolved
+  // skill for the video tab is hyperframes, default `videoModel` so the
+  // model dropdown matches the actual render path. Once the user has
+  // explicitly chosen a model (via the dropdown or by picking a template
+  // that declares a model), `videoModelTouched` latches and this effect
+  // becomes a no-op for the rest of the panel session — re-entering the
+  // Video tab no longer silently rewrites their override back to
+  // hyperframes-html.
+  useEffect(() => {
+    if (tab !== 'video') return;
+    if (skillIdForTab !== 'hyperframes') return;
+    if (videoModelTouched) return;
+    if (videoPromptTemplate) return;
+    if (!VIDEO_MODELS.some((m) => m.id === 'hyperframes-html')) return;
+    setVideoModel('hyperframes-html');
+    // Intentionally leaving videoPromptTemplate / videoModel out of deps
+    // so this only fires when the user toggles the tab or the skill
+    // resolution shifts — not whenever the user changes the dropdown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, skillIdForTab, videoModelTouched]);
 
   // Slug validation — only when non-empty (empty = use auto-generated id).
   const slugTrimmed = slug.trim();
@@ -396,6 +504,9 @@ export function NewProjectPanel({
     const metadata = buildMetadata({
       tab,
       fidelity,
+      platformTargets,
+      includeLandingPage,
+      includeOsWidgets,
       speakerNotes,
       animations,
       templateId,
@@ -582,7 +693,7 @@ export function NewProjectPanel({
             surface="image"
             templates={promptTemplates}
             value={imagePromptTemplate}
-            onChange={setImagePromptTemplate}
+            onChange={handleImagePromptTemplate}
           />
         ) : null}
 
@@ -591,7 +702,21 @@ export function NewProjectPanel({
             surface="video"
             templates={promptTemplates}
             value={videoPromptTemplate}
-            onChange={setVideoPromptTemplate}
+            onChange={handleVideoPromptTemplate}
+          />
+        ) : null}
+
+        {tab === 'prototype' || tab === 'live-artifact' || tab === 'template' || tab === 'other' ? (
+          <PlatformPicker value={platformTargets} onChange={setPlatformTargets} />
+        ) : null}
+
+        {tab === 'prototype' || tab === 'live-artifact' || tab === 'template' || tab === 'other' ? (
+          <SurfaceOptions
+            includeLandingPage={includeLandingPage}
+            includeOsWidgets={includeOsWidgets}
+            osWidgetsAvailable={platformTargetsSupportOsWidgets(platformTargets)}
+            onIncludeLandingPage={setIncludeLandingPage}
+            onIncludeOsWidgets={setIncludeOsWidgets}
           />
         ) : null}
 
@@ -652,7 +777,7 @@ export function NewProjectPanel({
             videoAspect={videoAspect}
             videoLength={videoLength}
             mediaProviders={mediaProviders}
-            onVideoModel={setVideoModel}
+            onVideoModel={handleVideoModel}
             onVideoAspect={setVideoAspect}
             onVideoLength={setVideoLength}
           />
@@ -755,6 +880,88 @@ export function NewProjectPanel({
           onDismiss={() => setImportFolderError(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function PlatformPicker({
+  value,
+  onChange,
+}: {
+  value: NewProjectPlatform[];
+  onChange: (v: NewProjectPlatform[]) => void;
+}) {
+  function togglePlatform(next: NewProjectPlatform) {
+    const active = value.includes(next);
+    const updated = active
+      ? value.filter((item) => item !== next)
+      : [...value, next];
+    onChange(updated.length > 0 ? updated : ['responsive']);
+  }
+
+  return (
+    <div className="newproj-section">
+      <label className="newproj-label">Target platforms</label>
+      <p className="platform-picker-hint">
+        Pick one or more. Responsive web covers browser breakpoints only; add iOS,
+        Android, tablet app, or desktop app for native cross-platform variants.
+      </p>
+      <div className="platform-grid">
+        {DESIGN_PLATFORMS.map((option) => {
+          const active = value.includes(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`newproj-card platform-card${active ? ' active' : ''}`}
+              onClick={() => togglePlatform(option.value)}
+              title={option.hint}
+              aria-pressed={active}
+            >
+              <span className="platform-card-title">{option.label}</span>
+              <span className="platform-card-hint">{option.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SurfaceOptions({
+  includeLandingPage,
+  includeOsWidgets,
+  osWidgetsAvailable,
+  onIncludeLandingPage,
+  onIncludeOsWidgets,
+}: {
+  includeLandingPage: boolean;
+  includeOsWidgets: boolean;
+  osWidgetsAvailable: boolean;
+  onIncludeLandingPage: (v: boolean) => void;
+  onIncludeOsWidgets: (v: boolean) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="newproj-section surface-options">
+      <label className="newproj-label">{t('newproj.surfaceOptionsLabel')}</label>
+      <ToggleRow
+        label={t('newproj.includeLandingPage')}
+        hint={t('newproj.includeLandingPageHint')}
+        checked={includeLandingPage}
+        onChange={onIncludeLandingPage}
+      />
+      <ToggleRow
+        label={t('newproj.includeOsWidgets')}
+        hint={
+          osWidgetsAvailable
+            ? t('newproj.includeOsWidgetsHint')
+            : t('newproj.includeOsWidgetsDisabledHint')
+        }
+        checked={osWidgetsAvailable && includeOsWidgets}
+        disabled={!osWidgetsAvailable}
+        onChange={onIncludeOsWidgets}
+      />
     </div>
   );
 }
@@ -953,18 +1160,21 @@ function ToggleRow({
   hint,
   checked,
   onChange,
+  disabled,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
     <button
       type="button"
-      className={`toggle-row${checked ? ' on' : ''}`}
-      onClick={() => onChange(!checked)}
+      className={`toggle-row${checked ? ' on' : ''}${disabled ? ' disabled' : ''}`}
+      onClick={() => { if (!disabled) onChange(!checked); }}
       aria-pressed={checked}
+      disabled={disabled}
     >
       <div className="toggle-row-text">
         <span className="toggle-row-label">{label}</span>
@@ -2008,6 +2218,9 @@ function OptionCards<T extends string | number>({
 function buildMetadata(input: {
   tab: CreateTab;
   fidelity: 'wireframe' | 'high-fidelity';
+  platformTargets: NewProjectPlatform[];
+  includeLandingPage: boolean;
+  includeOsWidgets: boolean;
   speakerNotes: boolean;
   animations: boolean;
   templateId: string | null;
@@ -2026,12 +2239,25 @@ function buildMetadata(input: {
   promptTemplate: PromptTemplatePick | null;
 }): ProjectMetadata {
   const kind: ProjectKind = input.tab === 'live-artifact' ? 'prototype' : input.tab;
+  const selectedPlatforms = normalizeSelectedPlatforms(input.platformTargets);
+  const concreteTargets = platformTargetsFor(selectedPlatforms);
+  const canIncludeOsWidgets = platformTargetsSupportOsWidgets(concreteTargets);
+  const surfaceOptions = {
+    ...(input.includeLandingPage ? { includeLandingPage: true } : {}),
+    ...(input.includeOsWidgets && canIncludeOsWidgets ? { includeOsWidgets: true } : {}),
+  };
+  const base = {
+    platform: selectedPlatforms[0],
+    platformTargets: concreteTargets,
+    ...surfaceOptions,
+  };
   const inspirations = input.inspirationIds.length > 0
     ? { inspirationDesignSystemIds: input.inspirationIds }
     : {};
   if (input.tab === 'prototype' || input.tab === 'live-artifact') {
     return {
       kind,
+      ...base,
       fidelity: input.fidelity,
       ...(input.tab === 'live-artifact' ? { intent: 'live-artifact' as const } : {}),
       ...inspirations,
@@ -2042,13 +2268,14 @@ function buildMetadata(input: {
   }
   if (input.tab === 'template') {
     if (input.templateId == null) {
-      return { kind, animations: input.animations, ...inspirations };
+      return { kind, ...base, animations: input.animations, ...inspirations };
     }
     const tpl = input.templates.find((x) => x.id === input.templateId);
     // The fallback label is consumed by the agent prompt rather than the
     // UI, so we keep it in English to match the rest of the prompt corpus.
     return {
       kind,
+      ...base,
       animations: input.animations,
       templateId: input.templateId,
       templateLabel: tpl?.name ?? 'Saved template',
@@ -2085,7 +2312,56 @@ function buildMetadata(input: {
       ...inspirations,
     };
   }
-  return { kind: 'other', ...inspirations };
+  return { kind: 'other', ...base, ...inspirations };
+}
+
+function normalizeSelectedPlatforms(platforms: NewProjectPlatform[]): NewProjectPlatform[] {
+  const seen = new Set<NewProjectPlatform>();
+  for (const platform of platforms) {
+    if (DESIGN_PLATFORMS.some((option) => option.value === platform)) {
+      seen.add(platform);
+    }
+  }
+  return seen.size > 0 ? [...seen] : ['responsive'];
+}
+
+function platformTargetsSupportOsWidgets(platforms: ProjectPlatform[] | NewProjectPlatform[]): boolean {
+  return platforms.some((platform) =>
+    platform === 'mobile-ios'
+    || platform === 'mobile-android'
+    || platform === 'tablet',
+  );
+}
+
+function platformTargetsFor(platforms: NewProjectPlatform[]): ProjectPlatform[] {
+  const targets = new Set<ProjectPlatform>();
+  for (const platform of platforms) {
+    switch (platform) {
+      case 'responsive':
+        targets.add('responsive');
+        break;
+      case 'web-desktop':
+        targets.add('web-desktop');
+        break;
+      case 'mobile-ios':
+        targets.add('mobile-ios');
+        break;
+      case 'mobile-android':
+        targets.add('mobile-android');
+        break;
+      case 'tablet':
+        targets.add('tablet');
+        break;
+      case 'desktop-app':
+        targets.add('desktop-app');
+        break;
+      default: {
+        const exhaustive: never = platform;
+        targets.add(exhaustive);
+      }
+    }
+  }
+  return targets.size > 0 ? [...targets] : ['responsive'];
 }
 
 function buildPromptTemplateMetadata(

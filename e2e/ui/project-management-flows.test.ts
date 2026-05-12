@@ -123,7 +123,8 @@ test('new project tabs switch visible form sections and preserve drafts', async 
   await expect(page.locator('.newproj-title')).toContainText('New prototype');
   await expect(page.getByTestId('new-project-name')).toHaveValue('Prototype draft survives');
 
-  await page.getByRole('button', { name: 'Scroll project types right' }).click();
+  // Playwright auto-scrolls the tab into view; the explicit scroll-arrow
+  // button was removed when the newproj tabs adopted the folder-tab pattern.
   await page.getByTestId('new-project-tab-image').click();
   await expect(page.getByTestId('new-project-tab-image')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.newproj-title')).toContainText('New image');
@@ -365,6 +366,49 @@ test('change pet opens pet settings and updates the custom companion draft', asy
   await expect(dialog).toHaveCount(0);
 });
 
+test.skip('project actions toolbar enables Continue in CLI after DESIGN.md and surfaces stale provenance fallback', async ({ page }) => {
+  // Skipped: the project-actions toolbar (Finalize design package + Continue
+  // in CLI) was removed from the project header. Reinstate this test once
+  // those entry points have a new home.
+  await page.goto('/');
+  await createProject(page, `Project actions toolbar flow ${Date.now()}`);
+  await expectWorkspaceReady(page);
+
+  await expect(page.getByRole('button', { name: 'Finalize design package' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue in CLI' })).toBeDisabled();
+  await expect(page.locator('.project-actions-disabled-hint')).toContainText(
+    'Finalize the design package first.',
+  );
+
+  const { projectId } = getProjectContextFromUrl(page);
+  await seedProjectFile(page, projectId, 'DESIGN.md', malformedProvenanceDesignMd());
+
+  await page.reload();
+  await expectWorkspaceReady(page);
+
+  const continueButton = page.getByRole('button', { name: 'Continue in CLI' });
+  await expect(continueButton).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Re-finalize (spec is stale)' })).toBeVisible();
+  await expect(page.locator('.project-actions-chip')).toContainText(
+    'Spec freshness unknown — regenerate to refresh signal',
+  );
+
+  const expectedDir = await fetchResolvedProjectDir(page, projectId);
+  await continueButton.click();
+
+  const toast = page.locator('.od-toast');
+  await expect(toast).toBeVisible();
+  if (expectedDir) {
+    await expect(toast).toContainText(
+      `Open your terminal at ${expectedDir}, run \`claude\`, and paste the prompt.`,
+    );
+  } else {
+    await expect(toast).toContainText(
+      'Working directory unavailable. Update the daemon to enable Continue in CLI.',
+    );
+  }
+});
+
 async function createProject(
   page: Page,
   projectName: string,
@@ -489,6 +533,31 @@ async function listProjectFiles(page: Page, projectId: string) {
   return body.files;
 }
 
+async function seedProjectFile(
+  page: Page,
+  projectId: string,
+  name: string,
+  content: string,
+) {
+  const response = await page.request.post(`/api/projects/${projectId}/files`, {
+    data: { name, content },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
+async function fetchResolvedProjectDir(
+  page: Page,
+  projectId: string,
+): Promise<string | null> {
+  const response = await page.request.get(`/api/projects/${projectId}`);
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as {
+    resolvedDir?: string | null;
+    project?: { metadata?: { baseDir?: string | null } };
+  };
+  return body.resolvedDir ?? body.project?.metadata?.baseDir ?? null;
+}
+
 function getProjectContextFromUrl(page: Page) {
   const url = new URL(page.url());
   const [, projectId] = url.pathname.match(/\/projects\/([^/]+)/) ?? [];
@@ -498,6 +567,19 @@ function getProjectContextFromUrl(page: Page) {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function malformedProvenanceDesignMd(): string {
+  return `# DESIGN.md
+
+## Provenance
+
+- Project ID: qa-project
+- Design system: nexu-soft-tech
+- Current artifact: mock-artifact.html
+- Transcript message count: 7
+- Generated UTC timestamp: not-a-real-date
+`;
 }
 
 function skillSummary(
