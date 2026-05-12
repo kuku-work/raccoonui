@@ -38,6 +38,21 @@ export interface PreviewSidebar {
   contentKey?: string | number;
 }
 
+// Optional accent CTA rendered on the left side of the action row,
+// before Sidebar/Fullscreen/Share. Used by the plugin detail
+// wrappers to surface a "Use plugin" action without having to fork
+// the whole modal layout. Stays optional so existing callers
+// (DesignSystemPreviewModal, ExamplesTab) can keep their current
+// chrome unchanged.
+export interface PreviewPrimaryAction {
+  label: string;
+  onClick: () => void;
+  busy?: boolean;
+  busyLabel?: string;
+  disabled?: boolean;
+  testId?: string;
+}
+
 interface Props {
   title: string;
   subtitle?: string;
@@ -61,6 +76,15 @@ interface Props {
   // into a half-broken responsive breakpoint. Defaults to 1280 — wide
   // enough that desktop-shaped showcases keep their intended layout.
   designWidth?: number;
+  // Accent CTA rendered before the ghost actions (Sidebar / Fullscreen /
+  // Share / Close). Plugin detail wrappers use this to expose "Use plugin".
+  primaryAction?: PreviewPrimaryAction;
+  // Optional extra controls rendered after Share and before the Close
+  // button — used by plugin detail wrappers to surface the
+  // PluginShareMenu (copy install command / share link / etc.) so the
+  // affordance reads consistently across HTML / design-system / media
+  // variants.
+  headerExtras?: ReactNode;
 }
 
 // A full-screen overlay that renders an iframe of arbitrary HTML, with an
@@ -77,6 +101,8 @@ export function PreviewModal({
   onClose,
   sidebar,
   designWidth = 1280,
+  primaryAction,
+  headerExtras,
 }: Props) {
   const t = useT();
   const initial = initialViewId && views.some((v) => v.id === initialViewId)
@@ -281,6 +307,22 @@ export function PreviewModal({
             <span aria-hidden="true" />
           )}
           <div className="ds-modal-actions">
+            {primaryAction ? (
+              <button
+                type="button"
+                className="ds-modal-primary-action"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled || primaryAction.busy}
+                aria-busy={primaryAction.busy ? 'true' : undefined}
+                {...(primaryAction.testId
+                  ? { 'data-testid': primaryAction.testId }
+                  : {})}
+              >
+                {primaryAction.busy
+                  ? primaryAction.busyLabel ?? primaryAction.label
+                  : primaryAction.label}
+              </button>
+            ) : null}
             {sidebar ? (
               <button
                 className={`ghost ${sidebarOpen ? 'is-active' : ''}`}
@@ -367,6 +409,7 @@ export function PreviewModal({
                 </div>
               ) : null}
             </div>
+            {headerExtras}
             <button
               className="ghost"
               onClick={onClose}

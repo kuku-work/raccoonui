@@ -3857,8 +3857,8 @@ export async function startServer({
   //
   // Two flavours wrap the same sandboxed-HTML envelope as `/asset/*`:
   //   - `/preview` serves the plugin's preview entry (declared via
-  //     `od.preview.entry`, with fallbacks to `preview/index.html`
-  //     and `index.html`).
+  //     `od.preview.entry`, with fallbacks that walk the plugin's
+  //     own context.assets[] HTMLs, examples/*.html and assets/*.html).
   //   - `/example/:name` serves an entry from `od.useCase.exampleOutputs[]`,
   //     matched by basename or by index. Both reuse the same
   //     traversal / containment guards as the asset route.
@@ -3867,16 +3867,99 @@ export async function startServer({
   // inside an `<iframe sandbox="allow-scripts">`. The §9.2 CSP keeps
   // the preview from reaching back into /api/* even if its scripts
   // try to fetch.
+  //
+  // Some bundled plugins (`example-guizang-ppt`, `example-html-ppt`,
+  // …) declare `od.preview.entry: "./index.html"` but actually ship
+  // the renderable HTML under `assets/example-slides.html` or
+  // `assets/template.html`. Returning 404 in that case lit up white
+  // tiles in the home gallery, so the candidates list always extends
+  // past the declared entry to walk a curated fallback chain.
+  function collectPluginPreviewCandidates(plugin: unknown): string[] {
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+    function push(rel: unknown): void {
+      if (typeof rel !== 'string') return;
+      const trimmed = rel.replace(/^\.\//, '');
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      candidates.push(trimmed);
+    }
+
+    const manifest =
+      ((plugin as { manifest?: unknown }).manifest ?? {}) as Record<string, unknown>;
+    const od = (manifest.od ?? {}) as Record<string, unknown>;
+    const preview = (od.preview ?? {}) as Record<string, unknown>;
+
+    push(preview.entry);
+
+    const ctx = (od.context ?? {}) as Record<string, unknown>;
+    const assets = Array.isArray(ctx.assets) ? ctx.assets : [];
+    for (const a of assets) {
+      const rel = typeof a === 'string' ? a : null;
+      if (rel && /\.html?$/i.test(rel)) push(rel);
+    }
+
+    const useCase = (od.useCase ?? {}) as Record<string, unknown>;
+    const exampleOutputs = Array.isArray(useCase.exampleOutputs)
+      ? useCase.exampleOutputs
+      : [];
+    for (const ex of exampleOutputs) {
+      const p = (ex as { path?: unknown })?.path;
+      if (typeof p === 'string' && /\.html?$/i.test(p)) push(p);
+    }
+
+    push('preview/index.html');
+    push('index.html');
+    push('examples/index.html');
+    push('assets/index.html');
+    push('assets/preview.html');
+    push('assets/example.html');
+    push('assets/example-slides.html');
+    push('assets/template.html');
+    push('public/index.html');
+    push('dist/index.html');
+    return candidates;
+  }
+
+  // Last-resort discovery for plugins whose bundle ships HTML but
+  // doesn't match any of the conventional paths. We scan the plugin
+  // root and a handful of common subfolders (assets/, public/, dist/,
+  // examples/, preview/, templates/) for any `*.html` and surface
+  // the first one. The scan is shallow to avoid pathological large
+  // bundles, and the same containment guard inside
+  // servePluginSandboxedHtml validates each candidate before reading.
+  async function discoverPluginHtmlAssets(pluginFsPath: string): Promise<string[]> {
+    const path = await import('node:path');
+    const fsp = await import('node:fs/promises');
+    const dirs = ['', 'assets', 'public', 'dist', 'examples', 'preview', 'templates'];
+    const found: string[] = [];
+    for (const dir of dirs) {
+      const abs = path.resolve(pluginFsPath, dir);
+      try {
+        const entries = await fsp.readdir(abs, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isFile()) continue;
+          if (!/\.html?$/i.test(ent.name)) continue;
+          found.push(dir ? `${dir}/${ent.name}` : ent.name);
+        }
+      } catch {
+        // dir missing — skip
+      }
+    }
+    return found;
+  }
+
   app.get('/api/plugins/:id/preview', async (req, res) => {
     await servePluginSandboxedHtml(req, res, async (plugin) => {
-      const declared =
-        typeof (plugin as { manifest?: { od?: { preview?: { entry?: unknown } } } }).manifest?.od?.preview?.entry === 'string'
-          ? ((plugin as { manifest: { od: { preview: { entry: string } } } }).manifest.od.preview.entry as string)
-          : null;
-      const candidates = declared
-        ? [declared]
-        : ['preview/index.html', 'index.html'];
-      return candidates;
+      const curated = collectPluginPreviewCandidates(plugin);
+      const fsPath = (plugin as { fsPath?: unknown }).fsPath;
+      if (typeof fsPath !== 'string') return curated;
+      const discovered = await discoverPluginHtmlAssets(fsPath);
+      const seen = new Set(curated);
+      for (const rel of discovered) {
+        if (!seen.has(rel)) curated.push(rel);
+      }
+      return curated;
     });
   });
 

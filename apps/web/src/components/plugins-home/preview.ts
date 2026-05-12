@@ -36,6 +36,14 @@ export interface HtmlPreviewSpec {
   src: string;
   /** Display label used in the chrome strip of the preview frame. */
   label: string;
+  /**
+   * Discriminates which daemon endpoint the preview comes from so
+   * the detail modal can rebuild the same fetch via fetchPlugin*Html
+   * helpers without re-parsing the URL.
+   */
+  source: 'preview' | 'example';
+  /** Example stem when `source === 'example'`, otherwise undefined. */
+  exampleStem?: string;
 }
 
 export interface DesignPreviewSpec {
@@ -167,6 +175,7 @@ export function inferPluginPreview(
         kind: 'html',
         src: `/api/plugins/${encodeURIComponent(record.id)}/preview`,
         label: entry.replace(/^\.\//, '').split(/[\\/]/).pop() ?? entry,
+        source: 'preview',
       };
     }
   }
@@ -180,6 +189,8 @@ export function inferPluginPreview(
         kind: 'html',
         src: `/api/plugins/${encodeURIComponent(record.id)}/example/${encodeURIComponent(stem)}`,
         label: title,
+        source: 'example',
+        exampleStem: stem,
       };
     }
   }

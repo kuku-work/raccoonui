@@ -10822,6 +10822,37 @@ button.ghost.mcp-copy-btn:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
 }
+/* Accent CTA used by plugin detail wrappers to surface a "Use plugin"
+   action without forking the whole modal layout. Sits before the
+   ghost actions, mirroring the accent button used in NewProjectModal
+   so the affordance reads consistently across surfaces. */
+.ds-modal-primary-action {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease,
+    transform 120ms ease;
+}
+.ds-modal-primary-action:hover:not(:disabled) {
+  background: var(--accent-strong, var(--accent));
+  border-color: var(--accent-strong, var(--accent));
+}
+.ds-modal-primary-action:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.ds-modal-primary-action:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
 
 /* DESIGN.md side panel — monospace source view with light syntax tints,
    echoing the styles.refero.design "compact" markdown source pane. */
@@ -15140,9 +15171,13 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px 14px;
+  padding: 22px 22px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 7%, var(--bg-panel)) 0%,
+    var(--bg-panel) 100%
+  );
 }
 .plugin-details-modal__head-titles {
   flex: 1;
@@ -15159,9 +15194,10 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
 }
 .plugin-details-modal__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
   color: var(--text);
 }
 .plugin-details-modal__trust {
@@ -15914,6 +15950,556 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
     border-radius: 0;
     border: none;
   }
+}
+
+/* ==================================================================
+   Plugin detail — premium chrome
+   ------------------------------------------------------------------
+   Shared visual language for the four detail variants:
+   - Smooth scale-in entry (used by every detail backdrop + modal)
+   - Trust-tinted byline strip (PluginByline) reused across surfaces
+   - Share popover (PluginShareMenu) reused across surfaces
+   - Cinematic media detail layout
+   The goal: detail modals feel like curated content viewers users
+   want to share, not like internal admin inspectors.
+   ================================================================== */
+
+@keyframes plugin-detail-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes plugin-detail-rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.plugin-details-modal-backdrop,
+.plugin-media-detail-backdrop,
+.ds-modal-backdrop,
+.prompt-template-modal-backdrop {
+  animation: plugin-detail-fade 160ms ease-out;
+}
+.plugin-details-modal,
+.plugin-media-detail,
+.ds-modal,
+.prompt-template-modal {
+  animation: plugin-detail-rise 220ms cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+.plugin-details-modal__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* PluginShareMenu — popover trigger that doubles as a regular ghost
+   pill in the PreviewModal action row, or a softer brand chip when
+   it stands alone next to the close button on a detail modal. */
+.plugin-share-menu {
+  position: relative;
+  display: inline-flex;
+}
+.plugin-share-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease,
+    border-color 120ms ease;
+}
+.plugin-share-trigger--solo {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+.plugin-share-trigger--solo:hover,
+.plugin-share-trigger--solo[aria-expanded='true'] {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plugin-share-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 220px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: plugin-detail-rise 140ms ease-out;
+}
+.plugin-share-popover__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plugin-share-popover__divider {
+  height: 1px;
+  margin: 4px 4px;
+  background: var(--border);
+  opacity: 0.6;
+}
+.plugin-share-item {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.plugin-share-item:hover,
+.plugin-share-item:focus-visible {
+  background: var(--bg-subtle);
+  outline: none;
+}
+
+/* PluginByline — author avatar + name + trust tier + version chip,
+   shared by media + scenario variants, lives just under the modal
+   title bar. The compact variant collapses the secondary link row
+   when used inside dark/gradient headers. */
+.plugin-byline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.plugin-byline--compact {
+  padding: 8px 16px;
+  border-bottom: none;
+  background: transparent;
+}
+.plugin-byline__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  overflow: hidden;
+  object-fit: cover;
+}
+.plugin-byline__avatar--fallback {
+  background: linear-gradient(
+    135deg,
+    var(--accent-tint) 0%,
+    var(--bg-subtle) 100%
+  );
+  color: var(--accent);
+}
+.plugin-byline__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.plugin-byline__primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plugin-byline__by {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-transform: lowercase;
+}
+.plugin-byline__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.plugin-byline__trust {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.plugin-byline__trust.trust-bundled {
+  background: rgba(0, 120, 200, 0.1);
+  color: rgb(0, 100, 170);
+}
+.plugin-byline__trust.trust-trusted {
+  background: rgba(0, 160, 80, 0.12);
+  color: rgb(0, 110, 60);
+}
+.plugin-byline__trust.trust-restricted {
+  background: rgba(200, 120, 0, 0.12);
+  color: rgb(160, 90, 0);
+}
+.plugin-byline__version {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.plugin-byline__secondary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.plugin-byline__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.plugin-byline__link:hover {
+  color: var(--accent);
+}
+
+/* Cinematic media detail — bigger asset, gradient hero,
+   tags strip, sticky CTA. Drives the visual identity for image and
+   video template plugins so they read as showcase content rather
+   than configuration dialogs. */
+.plugin-media-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(12, 11, 14, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.plugin-media-detail {
+  width: 100%;
+  max-width: 880px;
+  max-height: calc(100vh - 64px);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 36px 100px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.plugin-media-detail__head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 22px 16px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 9%, var(--bg-panel)) 0%,
+    var(--bg-panel) 100%
+  );
+}
+.plugin-media-detail__head-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plugin-media-detail__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.plugin-media-detail__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.plugin-media-detail__surface {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.plugin-media-detail__surface.is-video {
+  background: rgba(180, 70, 200, 0.12);
+  color: rgb(140, 50, 160);
+}
+.plugin-media-detail__surface.is-image {
+  background: rgba(220, 110, 50, 0.12);
+  color: rgb(180, 80, 30);
+}
+.plugin-media-detail__chip {
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.plugin-media-detail__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  color: var(--text);
+}
+.plugin-media-detail__description {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 60ch;
+}
+.plugin-media-detail__close {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease,
+    border-color 120ms ease;
+}
+.plugin-media-detail__close:hover,
+.plugin-media-detail__close:focus-visible {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text);
+  outline: none;
+}
+.plugin-media-detail__tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 22px 12px;
+}
+.plugin-media-detail__tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.plugin-media-detail__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.plugin-media-detail__asset {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0b0a0d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 520px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+.plugin-media-detail__asset img,
+.plugin-media-detail__asset video {
+  width: 100%;
+  max-height: 520px;
+  display: block;
+  object-fit: contain;
+}
+.plugin-media-detail__asset-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: zoom-in;
+  display: block;
+  width: 100%;
+  line-height: 0;
+}
+.plugin-media-detail__asset-trigger img {
+  transition: transform 320ms ease;
+}
+.plugin-media-detail__asset-trigger:hover img,
+.plugin-media-detail__asset-trigger:focus-visible img {
+  transform: scale(1.015);
+}
+.plugin-media-detail__asset-expand {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0.78;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.plugin-media-detail__asset:hover .plugin-media-detail__asset-expand,
+.plugin-media-detail__asset-expand:hover,
+.plugin-media-detail__asset-expand:focus-visible {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.74);
+}
+.plugin-media-detail__prompt {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+}
+.plugin-media-detail__prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.plugin-media-detail__prompt-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.plugin-media-detail__prompt-copy {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.plugin-media-detail__prompt-copy:hover,
+.plugin-media-detail__prompt-copy:focus-visible {
+  background: var(--bg-panel);
+  color: var(--accent);
+  outline: none;
+}
+.plugin-media-detail__prompt-body {
+  margin: 0;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: 320px;
+  overflow: auto;
+}
+.plugin-media-detail__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  position: sticky;
+  bottom: 0;
+}
+.plugin-media-detail__foot-meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.plugin-media-detail__license {
+  padding: 1px 6px;
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+.plugin-media-detail__primary {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease,
+    transform 120ms ease;
+}
+.plugin-media-detail__primary:hover:not(:disabled) {
+  background: var(--accent-strong, var(--accent));
+  border-color: var(--accent-strong, var(--accent));
+}
+.plugin-media-detail__primary:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.plugin-media-detail__primary:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@media (max-width: 640px) {
+  .plugin-media-detail-backdrop { padding: 0; }
+  .plugin-media-detail {
+    max-width: none;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+  }
+  .plugin-media-detail__head { padding: 16px 16px 12px; }
+  .plugin-media-detail__title { font-size: 19px; }
+  .plugin-media-detail__tags { padding: 0 16px 10px; }
+  .plugin-media-detail__body { padding: 0 16px 16px; }
+  .plugin-media-detail__foot { padding: 12px 16px; }
 }
 
 /* Plugins section composite — wraps InlinePluginsRail + ContextChipStrip +

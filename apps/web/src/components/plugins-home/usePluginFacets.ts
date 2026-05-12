@@ -22,6 +22,7 @@ import {
   type FacetCatalog,
   type FacetSelection,
 } from './facets';
+import { sortByVisualAppeal } from './visualScore';
 
 export type FilterMode = 'all' | 'featured';
 
@@ -55,9 +56,16 @@ export function usePluginFacets(args: UsePluginFacetsArgs): UsePluginFacetsResul
 
   // Atoms are infrastructure pieces (`code-import`, `patch-edit`) that
   // are not user-facing on the home grid; the original section already
-  // filtered them out and we preserve that contract.
+  // filtered them out and we preserve that contract. We immediately
+  // sort by visual-appeal score so the first viewport leads with the
+  // cinematic decks / image / video templates rather than alphabetical
+  // bundled noise. Featured plugins get a +1000 score boost inside the
+  // sort so they stay anchored to the front of every facet view.
   const visiblePlugins = useMemo(
-    () => args.plugins.filter((p) => p.manifest?.od?.kind !== 'atom'),
+    () =>
+      sortByVisualAppeal(
+        args.plugins.filter((p) => p.manifest?.od?.kind !== 'atom'),
+      ),
     [args.plugins],
   );
 
@@ -68,6 +76,10 @@ export function usePluginFacets(args: UsePluginFacetsArgs): UsePluginFacetsResul
 
   const catalog = useMemo(() => buildFacetCatalog(visiblePlugins), [visiblePlugins]);
 
+  // The visual-appeal sort is applied at `visiblePlugins` derivation
+  // (above), so any downstream `applyFacetSelection` slice preserves
+  // the ranking. We do not re-sort here because filter + featured
+  // override should both remain stable across selections.
   const filtered = useMemo(() => {
     if (mode === 'featured') return featuredList;
     return applyFacetSelection(visiblePlugins, selection);
