@@ -52,6 +52,8 @@ export function PluginsHomeSection({
     hasActiveFacet,
     mode,
     setMode,
+    query,
+    setQuery,
     totalVisible,
   } = usePluginFacets({ plugins });
 
@@ -64,9 +66,12 @@ export function PluginsHomeSection({
             Things you can do and tasks to complete — packaged as plugins. Pick one to load a starter prompt, or type freely above.
           </p>
         </div>
-        <span className="plugins-home__count">
-          {loading ? '…' : `${filtered.length} of ${totalVisible}`}
-        </span>
+        <div className="plugins-home__head-tools">
+          <SearchInput value={query} onChange={setQuery} />
+          <span className="plugins-home__count">
+            {loading ? '…' : `${filtered.length} of ${totalVisible}`}
+          </span>
+        </div>
       </header>
 
       {loading ? (
@@ -291,5 +296,46 @@ function FacetPill({ axis, slug, label, count, active, variant, onPick }: FacetP
       <span>{label}</span>
       <span className="plugins-home__pill-count">{count}</span>
     </button>
+  );
+}
+
+interface SearchInputProps {
+  value: string;
+  onChange: (next: string) => void;
+}
+
+// Compact search field that lives in the section head. Search composes
+// with the facet selection via AND inside the hook, so a query narrows
+// whatever Surface / Type / Scenario the user has already picked rather
+// than discarding the facet context. We keep the UI a single text input
+// with an optional clear button so it sits inside the existing head row
+// without a heavyweight toolbar.
+function SearchInput({ value, onChange }: SearchInputProps) {
+  return (
+    <div className="plugins-home__search">
+      <Icon name="search" size={12} className="plugins-home__search-icon" />
+      <input
+        type="search"
+        className="plugins-home__search-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search plugins…"
+        aria-label="Search plugins"
+        data-testid="plugins-home-search"
+        spellCheck={false}
+        autoComplete="off"
+      />
+      {value ? (
+        <button
+          type="button"
+          className="plugins-home__search-clear"
+          onClick={() => onChange('')}
+          aria-label="Clear search"
+          data-testid="plugins-home-search-clear"
+        >
+          <Icon name="close" size={11} />
+        </button>
+      ) : null}
+    </div>
   );
 }

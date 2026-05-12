@@ -120,6 +120,13 @@ const TYPE_LABELS: Record<string, string> = {
   scenario: 'Scenario',
 };
 
+// Type-axis pinning order. The catalog skews toward Design-system entries
+// by raw count, but the home filter should foreground the *creative*
+// scenarios users come to Open Design for first — Decks and Prototypes
+// over data-modelling design systems. Anything outside this list still
+// sorts by count desc / alpha after the pinned three.
+const TYPE_PRIORITY: readonly string[] = ['deck', 'prototype', 'design-system'];
+
 const SCENARIO_LABELS: Record<string, string> = {
   engineering: 'Engineering',
   product: 'Product',
@@ -250,7 +257,16 @@ function buildAxis(
     }
   }
   return [...counts.entries()]
-    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+    .sort((a, b) => {
+      if (axis === 'type') {
+        const ai = TYPE_PRIORITY.indexOf(a[0]);
+        const bi = TYPE_PRIORITY.indexOf(b[0]);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+      }
+      return (b[1] - a[1]) || a[0].localeCompare(b[0]);
+    })
     .map(([slug, count]) => ({ slug, label: labelFor(axis, slug), count }));
 }
 
@@ -288,4 +304,56 @@ export function applyFacetSelection(
 export function isFeaturedPlugin(record: InstalledPluginRecord): boolean {
   const od = (record.manifest?.od ?? {}) as Record<string, unknown>;
   return od.featured === true;
+}
+
+// Free-text search across the obvious user-facing surface area: title,
+// description, id, and tags. We compose this with the facet selection
+// via AND in the hook so the search narrows whatever the user has
+// already filtered to. Multi-word queries are required to all match
+// somewhere in the haystack so phrase fragments like "design slides"
+// don't surface unrelated plugins.
+export function filterByQuery(
+  plugins: InstalledPluginRecord[],
+  query: string,
+): InstalledPluginRecord[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return plugins;
+  const terms = q.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return plugins;
+  return plugins.filter((p) => {
+    const haystack = [
+      p.title ?? '',
+      p.id,
+      p.manifest?.description ?? '',
+      (p.manifest?.tags ?? []).join(' '),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return terms.every((t) => haystack.includes(t));
+  });
+}
+
+// Smart default selection. The Plugins home shipped with no preselection,
+// which left first-time visitors staring at an unfiltered grid mixing
+// design-system patches with cinematic decks. We now nudge them into the
+// most representative slice (Web surface + Deck type) when both exist in
+// the live catalog. We deliberately fall back to no default when either
+// slug is missing so test fixtures and degraded catalogs render cleanly.
+export const PREFERRED_DEFAULT_SELECTION: FacetSelection = {
+  surface: 'web',
+  type: 'deck',
+  scenario: null,
+};
+
+export function resolveDefaultSelection(catalog: FacetCatalog): FacetSelection {
+  const wantSurface = PREFERRED_DEFAULT_SELECTION.surface;
+  const wantType = PREFERRED_DEFAULT_SELECTION.type;
+  const hasSurface = wantSurface
+    ? catalog.surface.some((o) => o.slug === wantSurface)
+    : true;
+  const hasType = wantType
+    ? catalog.type.some((o) => o.slug === wantType)
+    : true;
+  if (hasSurface && hasType) return PREFERRED_DEFAULT_SELECTION;
+  return { surface: null, type: null, scenario: null };
 }

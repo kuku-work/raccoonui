@@ -18,6 +18,7 @@ import type {
 } from '@open-design/contracts';
 import { useT } from '../../i18n';
 import { Icon } from '../Icon';
+import { PluginMetaSections } from './PluginMetaSections';
 import { PluginByline } from './PluginByline';
 import { PluginShareMenu } from './PluginShareMenu';
 
@@ -189,7 +190,7 @@ export function PluginMediaDetail({
                 aria-label={t('common.close')}
                 title={t('preview.closeTitle')}
               >
-                <Icon name="close" size={14} />
+                <Icon name="close" size={18} />
               </button>
             </div>
           </header>
@@ -265,6 +266,18 @@ export function PluginMediaDetail({
                 <pre className="plugin-media-detail__prompt-body">{query}</pre>
               </div>
             ) : null}
+
+            {/* Plugin-common metadata — workflow, context bundles, connectors,
+                file paths, source provenance, etc. The hero already renders
+                the description, surface chip, model, aspect, tags, byline,
+                and prompt body, so we hide those duplicates from the meta
+                surface and keep everything else (workflow, context, source). */}
+            <div className="plugin-media-detail__meta-wrap">
+              <PluginMetaSections
+                record={record}
+                omit={{ description: true, query: true, byline: true }}
+              />
+            </div>
           </div>
 
           <footer className="plugin-media-detail__foot">

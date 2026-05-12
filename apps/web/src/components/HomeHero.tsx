@@ -112,7 +112,7 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
             title={canSubmit ? 'Run' : 'Type something to run'}
             aria-label="Run"
           >
-            <Icon name="arrow-up" size={14} />
+            <Icon name="arrow-up" size={18} />
           </button>
         </div>
       </div>

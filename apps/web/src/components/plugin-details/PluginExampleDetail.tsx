@@ -15,6 +15,7 @@ import {
 } from '../../providers/registry';
 import { PreviewModal } from '../PreviewModal';
 import { PluginShareMenu } from './PluginShareMenu';
+import { PluginMetaSections } from './PluginMetaSections';
 
 interface Props {
   record: InstalledPluginRecord;
@@ -86,6 +87,27 @@ export function PluginExampleDetail({
       onView={onView}
       exportTitleFor={() => record.title}
       onClose={onClose}
+      sidebar={{
+        // Surface every plugin-common manifest field — workflow, context
+        // bundles, connectors, file paths, source provenance — alongside
+        // the rendered HTML preview, so the example modal carries the
+        // same inspector depth the scenario fallback already shows.
+        // Default open so users see the metadata without an extra click;
+        // the iframe stage scales down to fit and Fullscreen still gives
+        // them an immersive view when needed.
+        label: 'Plugin info',
+        defaultOpen: true,
+        contentKey: record.id,
+        content: (
+          <div className="plugin-info-pane">
+            <PluginMetaSections
+              record={record}
+              omit={{ description: true }}
+              compact
+            />
+          </div>
+        ),
+      }}
       primaryAction={{
         label: 'Use plugin',
         onClick: () => onUse(record),

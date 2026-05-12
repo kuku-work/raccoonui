@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../i18n';
 import { exportAsHtml, exportAsPdf, exportAsZip, openSandboxedPreviewInNewTab } from '../runtime/exports';
 import { buildSrcdoc } from '../runtime/srcdoc';
+import { Icon } from './Icon';
 
 export interface PreviewView {
   id: string;
@@ -285,139 +286,144 @@ export function PreviewModal({
     <div className="ds-modal-backdrop" role="dialog" aria-modal="true" aria-label={`${title} preview`}>
       <div className={`ds-modal ${fullscreen ? 'ds-modal-fullscreen' : ''}`}>
         <header className="ds-modal-header">
-          <div className="ds-modal-title-block">
-            <div className="ds-modal-title">{title}</div>
-            {subtitle ? <div className="ds-modal-subtitle">{subtitle}</div> : null}
-          </div>
-          {showTabs ? (
-            <div className="ds-modal-tabs" role="tablist">
-              {views.map((v) => (
-                <button
-                  key={v.id}
-                  role="tab"
-                  aria-selected={activeId === v.id}
-                  className={`ds-modal-tab ${activeId === v.id ? 'active' : ''}`}
-                  onClick={() => setActiveId(v.id)}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <span aria-hidden="true" />
-          )}
-          <div className="ds-modal-actions">
-            {primaryAction ? (
-              <button
-                type="button"
-                className="ds-modal-primary-action"
-                onClick={primaryAction.onClick}
-                disabled={primaryAction.disabled || primaryAction.busy}
-                aria-busy={primaryAction.busy ? 'true' : undefined}
-                {...(primaryAction.testId
-                  ? { 'data-testid': primaryAction.testId }
-                  : {})}
-              >
-                {primaryAction.busy
-                  ? primaryAction.busyLabel ?? primaryAction.label
-                  : primaryAction.label}
-              </button>
-            ) : null}
-            {sidebar ? (
-              <button
-                className={`ghost ${sidebarOpen ? 'is-active' : ''}`}
-                onClick={() => setSidebarOpen((v) => !v)}
-                aria-pressed={sidebarOpen}
-                title={sidebar.label}
-              >
-                {sidebar.label}
-              </button>
-            ) : null}
-            <button
-              className="ghost"
-              onClick={fullscreen ? exitFullscreen : enterFullscreen}
-              title={
-                fullscreen
-                  ? t('common.exitFullscreen')
-                  : t('common.fullscreen')
-              }
-            >
-              {fullscreen ? t('preview.exit') : t('preview.fullscreen')}
-            </button>
-            <div className="share-menu" ref={shareRef}>
-              <button
-                className="ghost"
-                aria-haspopup="menu"
-                aria-expanded={shareOpen}
-                onClick={() => setShareOpen((v) => !v)}
-                disabled={!activeHtml}
-              >
-                {t('preview.shareMenu')}
-              </button>
-              {shareOpen ? (
-                <div className="share-menu-popover" role="menu">
-                  <button
-                    type="button"
-                    className="share-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setShareOpen(false);
-                      if (activeHtml) exportAsPdf(activeHtml, exportTitle, { deck: activeDeck });
-                    }}
-                  >
-                    <span className="share-menu-icon">📄</span>
-                    <span>{t('common.exportPdf')}</span>
-                  </button>
-                  <div className="share-menu-divider" />
-                  <button
-                    type="button"
-                    className="share-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setShareOpen(false);
-                      if (activeHtml) exportAsZip(activeHtml, exportTitle);
-                    }}
-                  >
-                    <span className="share-menu-icon">🗜</span>
-                    <span>{t('common.exportZip')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="share-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setShareOpen(false);
-                      if (activeHtml) exportAsHtml(activeHtml, exportTitle);
-                    }}
-                  >
-                    <span className="share-menu-icon">🌐</span>
-                    <span>{t('common.exportHtml')}</span>
-                  </button>
-                  <div className="share-menu-divider" />
-                  <button
-                    type="button"
-                    className="share-menu-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setShareOpen(false);
-                      openInNewTab();
-                    }}
-                  >
-                    <span className="share-menu-icon">↗</span>
-                    <span>{t('preview.openInNewTab')}</span>
-                  </button>
-                </div>
+          <div className="ds-modal-header-top">
+            <div className="ds-modal-title-block">
+              <div className="ds-modal-title">{title}</div>
+              {subtitle ? (
+                <div className="ds-modal-subtitle">{subtitle}</div>
               ) : null}
             </div>
-            {headerExtras}
             <button
-              className="ghost"
+              type="button"
+              className="ds-modal-close"
               onClick={onClose}
               title={t('preview.closeTitle')}
               aria-label={t('common.close')}
             >
-              ✕
+              <Icon name="close" size={18} />
             </button>
+          </div>
+          <div className="ds-modal-header-toolbar">
+            {showTabs ? (
+              <div className="ds-modal-tabs" role="tablist">
+                {views.map((v) => (
+                  <button
+                    key={v.id}
+                    role="tab"
+                    aria-selected={activeId === v.id}
+                    className={`ds-modal-tab ${activeId === v.id ? 'active' : ''}`}
+                    onClick={() => setActiveId(v.id)}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="ds-modal-actions">
+              {primaryAction ? (
+                <button
+                  type="button"
+                  className="ds-modal-primary-action"
+                  onClick={primaryAction.onClick}
+                  disabled={primaryAction.disabled || primaryAction.busy}
+                  aria-busy={primaryAction.busy ? 'true' : undefined}
+                  {...(primaryAction.testId
+                    ? { 'data-testid': primaryAction.testId }
+                    : {})}
+                >
+                  {primaryAction.busy
+                    ? primaryAction.busyLabel ?? primaryAction.label
+                    : primaryAction.label}
+                </button>
+              ) : null}
+              {sidebar ? (
+                <button
+                  className={`ghost ${sidebarOpen ? 'is-active' : ''}`}
+                  onClick={() => setSidebarOpen((v) => !v)}
+                  aria-pressed={sidebarOpen}
+                  title={sidebar.label}
+                >
+                  {sidebar.label}
+                </button>
+              ) : null}
+              <button
+                className="ghost"
+                onClick={fullscreen ? exitFullscreen : enterFullscreen}
+                title={
+                  fullscreen
+                    ? t('common.exitFullscreen')
+                    : t('common.fullscreen')
+                }
+              >
+                {fullscreen ? t('preview.exit') : t('preview.fullscreen')}
+              </button>
+              <div className="share-menu" ref={shareRef}>
+                <button
+                  className="ghost"
+                  aria-haspopup="menu"
+                  aria-expanded={shareOpen}
+                  onClick={() => setShareOpen((v) => !v)}
+                  disabled={!activeHtml}
+                >
+                  {t('preview.shareMenu')}
+                </button>
+                {shareOpen ? (
+                  <div className="share-menu-popover" role="menu">
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareOpen(false);
+                        if (activeHtml) exportAsPdf(activeHtml, exportTitle, { deck: activeDeck });
+                      }}
+                    >
+                      <span className="share-menu-icon">📄</span>
+                      <span>{t('common.exportPdf')}</span>
+                    </button>
+                    <div className="share-menu-divider" />
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareOpen(false);
+                        if (activeHtml) exportAsZip(activeHtml, exportTitle);
+                      }}
+                    >
+                      <span className="share-menu-icon">🗜</span>
+                      <span>{t('common.exportZip')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareOpen(false);
+                        if (activeHtml) exportAsHtml(activeHtml, exportTitle);
+                      }}
+                    >
+                      <span className="share-menu-icon">🌐</span>
+                      <span>{t('common.exportHtml')}</span>
+                    </button>
+                    <div className="share-menu-divider" />
+                    <button
+                      type="button"
+                      className="share-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareOpen(false);
+                        openInNewTab();
+                      }}
+                    >
+                      <span className="share-menu-icon">↗</span>
+                      <span>{t('preview.openInNewTab')}</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              {headerExtras}
+            </div>
           </div>
         </header>
         <div

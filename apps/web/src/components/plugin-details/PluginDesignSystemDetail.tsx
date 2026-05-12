@@ -23,6 +23,7 @@ import {
 import { DesignSpecView } from '../DesignSpecView';
 import { PreviewModal, type PreviewView } from '../PreviewModal';
 import { PluginShareMenu } from './PluginShareMenu';
+import { PluginMetaSections } from './PluginMetaSections';
 
 interface Props {
   record: InstalledPluginRecord;
@@ -134,11 +135,26 @@ export function PluginDesignSystemDetail({
         defaultOpen: true,
         onToggle: handleSidebarToggle,
         contentKey: record.id,
+        // DESIGN.md sits at the top so the spec is the first thing users
+        // read; the plugin-common metadata (workflow / context bundles /
+        // connectors / file paths / source provenance) stacks below in
+        // the same scroll container so the design-system modal carries
+        // the full inspector depth the scenario fallback already does.
         content: (
-          <DesignSpecView
-            source={specBody}
-            loadingLabel={t('ds.specLoading')}
-          />
+          <div className="plugin-design-sidebar">
+            <DesignSpecView
+              source={specBody}
+              loadingLabel={t('ds.specLoading')}
+            />
+            <div className="plugin-info-pane plugin-design-sidebar__meta">
+              <div className="plugin-design-sidebar__divider">Plugin info</div>
+              <PluginMetaSections
+                record={record}
+                omit={{ description: true }}
+                compact
+              />
+            </div>
+          </div>
         ),
       }}
       primaryAction={{
