@@ -111,13 +111,13 @@ export function buildAgentGuideMarkdown(options: AgentGuideOptions = {}): string
 
 function renderSection(section: GuideSection, daemonUrl: string): string[] {
   const lines: string[] = [];
-  lines.push(`## ${section.heading}`);
+  lines.push(`## ${substituteDaemonUrl(section.heading, daemonUrl)}`);
   lines.push('');
-  lines.push(section.intro);
+  lines.push(substituteDaemonUrl(section.intro, daemonUrl));
   lines.push('');
   if (section.bullets.length > 0) {
     for (const bullet of section.bullets) {
-      lines.push(`- ${bullet}`);
+      lines.push(`- ${substituteDaemonUrl(bullet, daemonUrl)}`);
     }
     lines.push('');
   }
@@ -125,7 +125,7 @@ function renderSection(section: GuideSection, daemonUrl: string): string[] {
     lines.push(...renderSnippet(snippet, daemonUrl));
   }
   if (section.footer) {
-    lines.push(`> ${section.footer}`);
+    lines.push(`> ${substituteDaemonUrl(section.footer, daemonUrl)}`);
     lines.push('');
   }
   return lines;
@@ -133,7 +133,7 @@ function renderSection(section: GuideSection, daemonUrl: string): string[] {
 
 function renderSnippet(snippet: CodeSnippet, daemonUrl: string): string[] {
   const lines: string[] = [];
-  lines.push(`### ${snippet.label}`);
+  lines.push(`### ${substituteDaemonUrl(snippet.label, daemonUrl)}`);
   lines.push('');
   lines.push('```' + snippet.language);
   lines.push(substituteDaemonUrl(snippet.body, daemonUrl));

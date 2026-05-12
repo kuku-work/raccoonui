@@ -162,6 +162,8 @@ export const tr: Dict = {
   'entry.openSettingsAria': 'Ayarları aç',
   'entry.resizeAria': 'Yan çubuğu yeniden boyutlandır',
   'entry.loadingWorkspace': 'Çalışma alanı yükleniyor…',
+  'entry.useEverywhereTitle': 'Her yerde kullan',
+  'entry.useEverywhereAria': '“Her yerde kullan” kılavuzunu aç (CLI, MCP, HTTP, Skills)',
   'entry.navNewProject': 'Yeni proje',
   'entry.navHome': 'Ana sayfa',
   'entry.navProjects': 'Projeler',

@@ -494,6 +494,7 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 8px 10px;
   font-size: 12.5px;
   text-align: left;
@@ -502,8 +503,17 @@ code {
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text);
+  text-decoration: none;
 }
 .avatar-item:hover { background: var(--bg-subtle); }
+/* `<a>` items inside the popover need explicit color + decoration
+   resets — the user-agent stylesheet otherwise paints them blue
+   and underlined, which reads as misalignment next to the button
+   rows that share the same `.avatar-item` class. */
+a.avatar-item,
+a.avatar-item:visited {
+  color: var(--text);
+}
 .avatar-item .avatar-item-icon {
   width: 18px; text-align: center; color: var(--text-muted); flex-shrink: 0;
 }

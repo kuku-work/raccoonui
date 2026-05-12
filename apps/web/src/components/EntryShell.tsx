@@ -25,12 +25,14 @@ import type {
   PromptTemplateSummary,
   SkillSummary,
 } from '../types';
+import { apiProtocolLabel } from '../utils/apiProtocol';
 import { CenteredLoader } from './Loading';
 import { DesignsTab } from './DesignsTab';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { DesignSystemsTab } from './DesignSystemsTab';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
 import { GithubStarBadge } from './GithubStarBadge';
+import { formatStars, GITHUB_REPO_URL, useGithubStars } from './useGithubStars';
 import { HomeView } from './HomeView';
 import { Icon } from './Icon';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
@@ -38,6 +40,13 @@ import { NewProjectModal } from './NewProjectModal';
 import type { CreateInput } from './NewProjectPanel';
 import type { PluginLoopSubmit } from './PluginLoopHome';
 import { UseEverywhereModal } from './UseEverywhereModal';
+
+// The topbar chips (GitHub star, model switcher, Use everywhere)
+// collapse into the settings dropdown when the viewport gets
+// narrow. The transition is driven entirely by CSS @media queries
+// in `entry-layout.css` so server and client render identical
+// markup — both surfaces are always present, and CSS toggles
+// `display` based on `--compact-topbar` breakpoint (900px).
 
 // Default scenario plugin for each project kind. The modal-based
 // create flow no longer surfaces a plugin picker — every submission
@@ -57,6 +66,47 @@ const DEFAULT_SCENARIO_PLUGIN_BY_KIND: Record<ProjectKind, string | null> = {
 
 function defaultPluginIdForKind(metadata: ProjectMetadata): string | null {
   return DEFAULT_SCENARIO_PLUGIN_BY_KIND[metadata.kind] ?? null;
+}
+
+type Translator = ReturnType<typeof useT>;
+
+// Mirrors the chip text the InlineModelSwitcher renders, so the
+// collapsed menu item inside the settings dropdown can advertise
+// the same active mode/agent/model without duplicating the
+// labelling logic. Returned as a structured tuple so the menu can
+// style the primary text and meta independently.
+function describeModelChip(
+  config: AppConfig,
+  agents: AgentInfo[],
+  t: Translator,
+): { mode: string; primary: string; model: string } {
+  const currentAgent = agents.find((a) => a.id === config.agentId) ?? null;
+  const currentChoice =
+    (config.agentId && config.agentModels?.[config.agentId]) || {};
+  const currentModelId =
+    currentChoice.model ?? currentAgent?.models?.[0]?.id ?? null;
+  const currentModelLabel =
+    currentAgent?.models?.find((m) => m.id === currentModelId)?.label ?? null;
+
+  if (config.mode === 'daemon') {
+    return {
+      mode: t('inlineSwitcher.chipCli'),
+      primary: currentAgent?.name ?? t('inlineSwitcher.noAgent'),
+      model:
+        currentModelLabel && currentModelId !== 'default'
+          ? currentModelLabel
+          : t('inlineSwitcher.modelDefault'),
+    };
+  }
+  const apiProtocol = config.apiProtocol ?? 'anthropic';
+  // KNOWN_PROVIDERS is consulted indirectly via apiProtocolLabel —
+  // looking it up here for the menu meta would diverge from the
+  // chip, so we keep the surface identical to InlineModelSwitcher.
+  return {
+    mode: t('inlineSwitcher.chipByok'),
+    primary: apiProtocolLabel(apiProtocol),
+    model: config.model.trim() || t('inlineSwitcher.modelDefault'),
+  };
 }
 
 interface Props {
@@ -156,6 +206,15 @@ export function EntryShell({
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [useEverywhereOpen, setUseEverywhereOpen] = useState(false);
   const avatarMenuRef = useRef<HTMLDivElement | null>(null);
+  // Star count + active-model summary are kept in render scope so
+  // the dropdown's collapsed rows can mirror what the chips show
+  // when CSS unhides them on narrow viewports. Both surfaces are
+  // always rendered; only `display` flips per the media query.
+  const starCount = useGithubStars();
+  const modelSummary = useMemo(
+    () => describeModelChip(config, agents, t),
+    [config, agents, t],
+  );
 
   // The agent-handoff guide substitutes 127.0.0.1:7456 in every snippet
   // with whatever URL the user actually has open, so the curl examples
@@ -261,6 +320,52 @@ export function EntryShell({
       </button>
       {avatarMenuOpen ? (
         <div className="avatar-popover" role="menu">
+          {/* Collapsed-topbar rows. Always rendered so SSR and the
+              client agree on the markup; CSS @media (max-width: 900px)
+              flips their `display` so they only show when the
+              matching topbar chips are themselves hidden. */}
+          <a
+            className="avatar-item avatar-item--compact-only"
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={() => setAvatarMenuOpen(false)}
+            data-testid="entry-avatar-github"
+          >
+            <span className="avatar-item-icon" aria-hidden>
+              <Icon name="github" size={14} />
+            </span>
+            <span>{t('entry.githubStarLabel')}</span>
+            <span className="avatar-item-meta">
+              {starCount === null ? '—' : formatStars(starCount)}
+            </span>
+          </a>
+          <button
+            type="button"
+            className="avatar-item avatar-item--compact-only"
+            onClick={() => {
+              setAvatarMenuOpen(false);
+              onOpenSettings('execution');
+            }}
+            data-testid="entry-avatar-model"
+            title={t('inlineSwitcher.chipTitle')}
+          >
+            <span className="avatar-item-icon" aria-hidden>
+              <Icon name="sparkles" size={14} />
+            </span>
+            <span className="avatar-item-stack">
+              <span className="avatar-item-stack__top">
+                {modelSummary.mode} · {modelSummary.primary}
+              </span>
+              <span className="avatar-item-stack__sub">
+                {modelSummary.model}
+              </span>
+            </span>
+          </button>
+          <div
+            className="avatar-popover__divider avatar-popover__divider--compact-only"
+            aria-hidden
+          />
           <a
             className="avatar-item"
             href="https://x.com/nexudotio"
@@ -330,7 +435,7 @@ export function EntryShell({
             data-testid="entry-avatar-use-everywhere"
           >
             <span className="avatar-item-icon" aria-hidden>
-              <Icon name="link" size={14} />
+              <Icon name="hammer" size={14} />
             </span>
             <span>{t('entry.useEverywhereTitle')}</span>
           </button>
@@ -362,33 +467,35 @@ export function EntryShell({
         />
         <main className="entry-main entry-main--scroll">
           <div className="entry-main__topbar">
-            <GithubStarBadge />
-            <InlineModelSwitcher
-              config={config}
-              agents={agents}
-              daemonLive={daemonLive}
-              onModeChange={onModeChange}
-              onAgentChange={onAgentChange}
-              onAgentModelChange={onAgentModelChange}
-              onApiProtocolChange={onApiProtocolChange}
-              onApiModelChange={onApiModelChange}
-              onOpenSettings={onOpenSettings}
-            />
-            <button
-              type="button"
-              className="use-everywhere-chip"
-              onClick={() => setUseEverywhereOpen(true)}
-              title={t('entry.useEverywhereTitle')}
-              aria-label={t('entry.useEverywhereAria')}
-              data-testid="entry-use-everywhere-button"
-            >
-              <span className="use-everywhere-chip__icon" aria-hidden>
-                <Icon name="link" size={13} />
-              </span>
-              <span className="use-everywhere-chip__label">
-                {t('entry.useEverywhereTitle')}
-              </span>
-            </button>
+            <div className="entry-main__topbar-chips">
+              <GithubStarBadge />
+              <InlineModelSwitcher
+                config={config}
+                agents={agents}
+                daemonLive={daemonLive}
+                onModeChange={onModeChange}
+                onAgentChange={onAgentChange}
+                onAgentModelChange={onAgentModelChange}
+                onApiProtocolChange={onApiProtocolChange}
+                onApiModelChange={onApiModelChange}
+                onOpenSettings={onOpenSettings}
+              />
+              <button
+                type="button"
+                className="use-everywhere-chip"
+                onClick={() => setUseEverywhereOpen(true)}
+                title={t('entry.useEverywhereTitle')}
+                aria-label={t('entry.useEverywhereAria')}
+                data-testid="entry-use-everywhere-button"
+              >
+                <span className="use-everywhere-chip__icon" aria-hidden>
+                  <Icon name="hammer" size={13} />
+                </span>
+                <span className="use-everywhere-chip__label">
+                  {t('entry.useEverywhereTitle')}
+                </span>
+              </button>
+            </div>
             {avatarMenu}
           </div>
           <div

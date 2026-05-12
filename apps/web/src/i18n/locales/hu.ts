@@ -168,6 +168,8 @@ export const hu: Dict = {
   'entry.openSettingsAria': 'Beállítások megnyitása',
   'entry.resizeAria': 'Oldalsáv átméretezése',
   'entry.loadingWorkspace': 'Munkaterület betöltése…',
+  'entry.useEverywhereTitle': 'Használat bárhol',
+  'entry.useEverywhereAria': '„Használat bárhol” útmutató megnyitása (CLI, MCP, HTTP, Skills)',
   'entry.navNewProject': 'Új projekt',
   'entry.navHome': 'Kezdőlap',
   'entry.navProjects': 'Projektek',

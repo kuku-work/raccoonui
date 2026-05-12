@@ -168,6 +168,8 @@ export const fa: Dict = {
   'entry.openSettingsAria': 'باز کردن تنظیمات',
   'entry.resizeAria': 'تغییر اندازه نوار کناری',
   'entry.loadingWorkspace': 'در حال بارگذاری فضای کاری…',
+  'entry.useEverywhereTitle': 'استفاده در همه‌جا',
+  'entry.useEverywhereAria': 'باز کردن راهنمای «استفاده در همه‌جا» (CLI، MCP، HTTP، Skills)',
   'entry.navNewProject': 'پروژه جدید',
   'entry.navHome': 'خانه',
   'entry.navProjects': 'پروژه‌ها',

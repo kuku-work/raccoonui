@@ -165,6 +165,8 @@ export const ru: Dict = {
   'entry.openSettingsAria': 'Открыть настройки',
   'entry.resizeAria': 'Изменить размер боковой панели',
   'entry.loadingWorkspace': 'Загрузка рабочего пространства…',
+  'entry.useEverywhereTitle': 'Использовать везде',
+  'entry.useEverywhereAria': 'Открыть руководство «Использовать везде» (CLI, MCP, HTTP, Skills)',
   'entry.navNewProject': 'Новый проект',
   'entry.navHome': 'Главная',
   'entry.navProjects': 'Проекты',

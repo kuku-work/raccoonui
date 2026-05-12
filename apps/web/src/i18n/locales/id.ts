@@ -260,6 +260,8 @@ export const id: Dict = {
   'entry.openSettingsAria': 'Buka pengaturan',
   'entry.resizeAria': 'Ubah ukuran sidebar',
   'entry.loadingWorkspace': 'Memuat workspace...',
+  'entry.useEverywhereTitle': 'Gunakan di mana saja',
+  'entry.useEverywhereAria': 'Buka panduan “Gunakan di mana saja” (CLI, MCP, HTTP, Skills)',
   'entry.navNewProject': 'Proyek baru',
   'entry.navHome': 'Beranda',
   'entry.navProjects': 'Proyek',

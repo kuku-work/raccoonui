@@ -168,6 +168,8 @@ export const pl: Dict = {
   'entry.openSettingsAria': 'Otwórz ustawienia',
   'entry.resizeAria': 'Zmień rozmiar paska bocznego',
   'entry.loadingWorkspace': 'Ładowanie obszaru roboczego…',
+  'entry.useEverywhereTitle': 'Używaj wszędzie',
+  'entry.useEverywhereAria': 'Otwórz przewodnik „Używaj wszędzie” (CLI, MCP, HTTP, Skills)',
   'entry.navNewProject': 'Nowy projekt',
   'entry.navHome': 'Strona główna',
   'entry.navProjects': 'Projekty',

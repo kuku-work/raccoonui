@@ -168,6 +168,8 @@ export const ar: Dict = {
   'entry.openSettingsAria': 'فتح الإعدادات',
   'entry.resizeAria': 'تغيير حجم الشريط الجانبي',
   'entry.loadingWorkspace': 'جاري تحميل مساحة العمل...',
+  'entry.useEverywhereTitle': 'استخدمه في كل مكان',
+  'entry.useEverywhereAria': 'افتح دليل «استخدمه في كل مكان» (CLI، MCP، HTTP، Skills)',
   'entry.navNewProject': 'مشروع جديد',
   'entry.navHome': 'الرئيسية',
   'entry.navProjects': 'المشاريع',

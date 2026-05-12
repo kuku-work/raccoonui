@@ -182,10 +182,14 @@ export function InlineModelSwitcher({
                 }
                 disabled={!daemonLive && config.mode !== 'daemon'}
                 onClick={() => {
-                  onModeChange('daemon');
+                  // Optional-call so a transient Fast Refresh state where a
+                  // parent has not yet re-rendered with the new prop signature
+                  // does not crash the entire entry view. The same defensive
+                  // pattern is applied to every callback below.
+                  onModeChange?.('daemon');
                   if (!daemonLive) {
                     setOpen(false);
-                    onOpenSettings('execution');
+                    onOpenSettings?.('execution');
                   }
                 }}
                 title={
@@ -204,7 +208,7 @@ export function InlineModelSwitcher({
                   'inline-switcher__seg-btn' +
                   (config.mode === 'api' ? ' is-active' : '')
                 }
-                onClick={() => onModeChange('api')}
+                onClick={() => onModeChange?.('api')}
                 title={t('inlineSwitcher.useByok')}
               >
                 {t('inlineSwitcher.chipByok')}
@@ -239,7 +243,7 @@ export function InlineModelSwitcher({
                             'inline-switcher__agent' +
                             (active ? ' is-active' : '')
                           }
-                          onClick={() => onAgentChange(a.id)}
+                          onClick={() => onAgentChange?.(a.id)}
                           title={a.version ? `${a.name} · ${a.version}` : a.name}
                         >
                           <AgentIcon id={a.id} size={20} />
@@ -264,7 +268,7 @@ export function InlineModelSwitcher({
                     className="inline-switcher__select"
                     value={currentModelId ?? ''}
                     onChange={(e) =>
-                      onAgentModelChange(currentAgent.id, {
+                      onAgentModelChange?.(currentAgent.id, {
                         model: e.target.value,
                       })
                     }
@@ -299,7 +303,7 @@ export function InlineModelSwitcher({
                           'inline-switcher__chip-tab' +
                           (active ? ' is-active' : '')
                         }
-                        onClick={() => onApiProtocolChange(tab.id)}
+                        onClick={() => onApiProtocolChange?.(tab.id)}
                       >
                         {tab.title}
                       </button>
@@ -316,7 +320,7 @@ export function InlineModelSwitcher({
                   <select
                     className="inline-switcher__select"
                     value={config.model}
-                    onChange={(e) => onApiModelChange(e.target.value)}
+                    onChange={(e) => onApiModelChange?.(e.target.value)}
                   >
                     {apiModelOptions.map((id) => (
                       <option key={id} value={id}>
@@ -350,7 +354,7 @@ export function InlineModelSwitcher({
             className="inline-switcher__more"
             onClick={() => {
               setOpen(false);
-              onOpenSettings('execution');
+              onOpenSettings?.('execution');
             }}
           >
             <Icon name="settings" size={13} />

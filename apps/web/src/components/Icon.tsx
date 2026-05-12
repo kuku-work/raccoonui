@@ -23,6 +23,7 @@ type IconName =
   | 'folder'
   | 'github'
   | 'grid'
+  | 'hammer'
   | 'help-circle'
   | 'history'
   | 'home'
@@ -235,6 +236,18 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, ...rest }: Props) {
           <rect x="14" y="3" width="7" height="7" rx="1" />
           <rect x="3" y="14" width="7" height="7" rx="1" />
           <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      );
+    case 'hammer':
+      // Lucide-style hammer — a slanted head plus diagonal handle, used
+      // to signal "tool / functionality" affordances. Pairs with the
+      // entry topbar's Use everywhere chip where a chain link would
+      // misleadingly read as a hyperlink instead of a callable tool.
+      return (
+        <svg {...common}>
+          <path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9" />
+          <path d="m18 15 4-4" />
+          <path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5" />
         </svg>
       );
     case 'help-circle':

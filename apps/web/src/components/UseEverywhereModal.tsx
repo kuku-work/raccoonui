@@ -77,10 +77,20 @@ export function UseEverywhereModal({
     [guideOptions],
   );
 
-  const activeSection = useMemo(
-    () => GUIDE_SECTIONS.find((s) => s.id === activeId) ?? GUIDE_SECTIONS[0],
-    [activeId],
-  );
+  // GUIDE_SECTIONS is non-empty by construction (`sections.ts` ships the
+  // five tab definitions) but TS narrows `GUIDE_SECTIONS[0]` to a
+  // possibly-undefined value under strict index access. Resolve the
+  // active section through an explicit lookup that never returns
+  // `undefined` so callsites can assume a present section.
+  const activeSection = useMemo<GuideSection>(() => {
+    const found = GUIDE_SECTIONS.find((s) => s.id === activeId);
+    if (found) return found;
+    const first = GUIDE_SECTIONS[0];
+    if (!first) {
+      throw new Error('GUIDE_SECTIONS must define at least one section');
+    }
+    return first;
+  }, [activeId]);
 
   async function copyText(text: string): Promise<CopyState> {
     if (typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -230,14 +240,18 @@ function SectionView({
       data-testid={`use-everywhere-section-${section.id}`}
     >
       <header className="use-everywhere-section__head">
-        <h3 className="use-everywhere-section__heading">{section.heading}</h3>
-        <p className="use-everywhere-section__intro">{section.intro}</p>
+        <h3 className="use-everywhere-section__heading">
+          {applyDaemonUrl(section.heading, daemonUrl)}
+        </h3>
+        <p className="use-everywhere-section__intro">
+          {applyDaemonUrl(section.intro, daemonUrl)}
+        </p>
       </header>
 
       {section.bullets.length > 0 ? (
         <ul className="use-everywhere-section__bullets">
           {section.bullets.map((bullet) => (
-            <li key={bullet}>{bullet}</li>
+            <li key={bullet}>{applyDaemonUrl(bullet, daemonUrl)}</li>
           ))}
         </ul>
       ) : null}
@@ -275,7 +289,9 @@ function SectionView({
       </div>
 
       {section.footer ? (
-        <p className="use-everywhere-section__footer">{section.footer}</p>
+        <p className="use-everywhere-section__footer">
+          {applyDaemonUrl(section.footer, daemonUrl)}
+        </p>
       ) : null}
     </section>
   );
