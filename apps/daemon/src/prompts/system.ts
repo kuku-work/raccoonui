@@ -99,6 +99,22 @@ export interface ComposeInput {
     | undefined;
   designSystemBody?: string | undefined;
   designSystemTitle?: string | undefined;
+  // Compiled (machine-readable) form of the active brand's design system,
+  // shipped as sibling files to DESIGN.md when available. Both fields are
+  // optional and only injected when the daemon is running with the
+  // `OD_DESIGN_TOKEN_CHANNEL` env flag enabled (today's experimental
+  // gate). When present they are appended AFTER the DESIGN.md block so
+  // prose still sets the high-level voice and the structured form
+  // disambiguates token names + worked component shapes.
+  //
+  // - `designSystemTokensCss`    — verbatim `tokens.css` :root contract
+  //                                that the agent pastes into the
+  //                                artifact's <style>.
+  // - `designSystemFixtureHtml`  — verbatim `components.html` reference
+  //                                fixture demonstrating button / card /
+  //                                type-scale shapes wired to the tokens.
+  designSystemTokensCss?: string | undefined;
+  designSystemFixtureHtml?: string | undefined;
   // Craft references the active skill opted into via `od.craft.requires`.
   // The daemon resolves the slug list to file contents and concatenates
   // them with section headers; we inject them between the DESIGN.md and
@@ -141,6 +157,13 @@ export interface ComposeInput {
   // confuses the user.
   connectedExternalMcp?: ReadonlyArray<{ id: string; label?: string | undefined }>
     | undefined;
+  // Free-form instructions the user set at the global (user-level)
+  // settings panel. Injected after personal memory and before the
+  // project-level instructions.
+  userInstructions?: string | undefined;
+  // Free-form instructions the user set on this specific project.
+  // Injected after user-level instructions and before the design system.
+  projectInstructions?: string | undefined;
 }
 
 export function composeSystemPrompt({
@@ -151,6 +174,8 @@ export function composeSystemPrompt({
   skillMode,
   designSystemBody,
   designSystemTitle,
+  designSystemTokensCss,
+  designSystemFixtureHtml,
   craftBody,
   craftSections,
   memoryBody,
@@ -161,6 +186,8 @@ export function composeSystemPrompt({
   critiqueSkill,
   connectedExternalMcp,
   streamFormat,
+  userInstructions,
+  projectInstructions,
 }: ComposeInput): string {
   // Discovery + philosophy goes FIRST so its hard rules ("emit a form on
   // turn 1", "branch on brand on turn 2", "TodoWrite on turn 3", run
@@ -193,9 +220,42 @@ export function composeSystemPrompt({
     );
   }
 
+  if (userInstructions && userInstructions.trim().length > 0) {
+    parts.push(
+      `\n\n## Custom instructions (user-level)\n\nThe user has set the following persistent instructions. Apply them as defaults to every project. When a project-level instruction below contradicts a point here, the project-level version wins.\n\n${userInstructions.trim()}`,
+    );
+  }
+
+  if (projectInstructions && projectInstructions.trim().length > 0) {
+    parts.push(
+      `\n\n## Custom instructions (project-level)\n\nThe user has set the following instructions for this specific project. They take precedence over user-level custom instructions whenever both address the same topic (e.g. if user-level says "use spaces" but project-level says "use tabs", use tabs).\n\n${projectInstructions.trim()}`,
+    );
+  }
+
   if (designSystemBody && designSystemBody.trim().length > 0) {
     parts.push(
       `\n\n## Active design system${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nTreat the following DESIGN.md as authoritative for color, typography, spacing, and component rules. Do not invent tokens outside this palette. When you copy the active skill's seed template, bind these tokens into its \`:root\` block before generating any layout.\n\n${designSystemBody.trim()}`,
+    );
+  }
+
+  // Structured (compiled) form of the active brand. The DESIGN.md above
+  // sets voice and intent; the tokens.css block below is the SAME
+  // contract in machine-readable form — names + values the agent pastes
+  // verbatim instead of re-deriving from prose. The components.html
+  // fixture grounds the token vocabulary in worked component shapes
+  // (button / card / type roles) so the agent can copy fragments
+  // directly. Both blocks are individually gated: missing files (today,
+  // every brand except `default` and `kami`) skip silently, preserving
+  // the legacy DESIGN.md-only behaviour for the other ~138 brands.
+  if (designSystemTokensCss && designSystemTokensCss.trim().length > 0) {
+    parts.push(
+      `\n\n## Active design system tokens${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nThe block below is this brand's tokens.css contract — every \`:root\` custom property and any scoped override (e.g. \`:root[lang=...]\`) the brand defines. **Paste the unscoped \`:root { ... }\` block verbatim into the artifact's first \`<style>\`** so every \`var(--*)\` reference resolves at runtime.\n\nDo not invent new tokens. Do not redefine these values. Do not write raw hex outside this :root block. The DESIGN.md above is prose; this is the binding contract.\n\n\`\`\`css\n${designSystemTokensCss.trim()}\n\`\`\``,
+    );
+  }
+
+  if (designSystemFixtureHtml && designSystemFixtureHtml.trim().length > 0) {
+    parts.push(
+      `\n\n## Reference fixture${designSystemTitle ? ` — ${designSystemTitle}` : ''}\n\nA self-contained worked artifact in this design system. Match its component shapes (button structure, card structure, type-scale rhythm, focus ring, spacing cadence) when generating new artifacts. Copying fragments is encouraged as long as you keep the \`var(--*)\` references intact — they are already wired to the tokens above.\n\n\`\`\`html\n${designSystemFixtureHtml.trim()}\n\`\`\``,
     );
   }
 
