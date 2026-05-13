@@ -74,15 +74,19 @@ export const HOME_HERO_CHIPS: ReadonlyArray<HomeHeroChip> = [
     label: 'Prototype',
     icon: 'palette',
     group: 'create',
+    // Prototype now binds to the bundled `example-web-prototype` plugin,
+    // which ships `assets/template.html` (single-file HTML prototype
+    // seed), `references/layouts.md` (paste-ready section layouts), and
+    // a P0 checklist. The previous routing to the generic
+    // od-new-generation router left the agent to invent every section's
+    // CSS, producing inconsistent type scales and density between turns.
+    // Web-prototype's manifest has no `inputs` field, so the
+    // chip-supplied inputs tuned for od-new-generation's
+    // `{{artifactKind}} / {{audience}} / {{topic}}` template are dropped.
     action: {
       kind: 'apply-scenario',
-      pluginId: 'od-new-generation',
+      pluginId: 'example-web-prototype',
       projectKind: 'prototype',
-      inputs: {
-        artifactKind: 'interactive prototype',
-        audience: 'product teams',
-        topic: 'a new product experience',
-      },
     },
   },
   {
@@ -91,20 +95,15 @@ export const HOME_HERO_CHIPS: ReadonlyArray<HomeHeroChip> = [
     icon: 'pencil',
     group: 'create',
     hint: 'Build an interactive HTML/CSS/JS artifact you can preview live.',
-    // No dedicated scenario plugin yet — the live-artifact authoring
-    // flow shares od-new-generation's pipeline (file-write + live-
-    // artifact atoms). We still surface it as a separate chip so the
-    // user can pick their target surface up front instead of routing
-    // through Prototype + a metadata flip.
+    // Live artifact shares web-prototype's seed today — the difference
+    // is intent (interactive HTML/CSS/JS) vs static prototype, not the
+    // underlying template. The chip keeps a distinct id so active-state
+    // tracking + analytics see "user picked live-artifact" rather than
+    // "user picked prototype".
     action: {
       kind: 'apply-scenario',
-      pluginId: 'od-new-generation',
+      pluginId: 'example-web-prototype',
       projectKind: 'prototype',
-      inputs: {
-        artifactKind: 'live HTML artifact',
-        audience: 'product teams',
-        topic: 'an interactive product concept',
-      },
     },
   },
   {
@@ -112,15 +111,20 @@ export const HOME_HERO_CHIPS: ReadonlyArray<HomeHeroChip> = [
     label: 'Slide deck',
     icon: 'present',
     group: 'create',
+    // Slide deck binds to `example-simple-deck`, which ships a 353-line
+    // `assets/template.html` (the 1920×1080 + scale-to-fit + nav + print
+    // framework paired with proven slide CSS), 8 paste-ready layouts in
+    // `references/layouts.md` (cover, body, big-stat, three-point,
+    // pipeline, dark quote, before/after, closing), and a P0/P1/P2
+    // checklist that catches overflow at 1280×800 / 1440×900. The
+    // previous routing to od-new-generation gave the agent only the
+    // generic deck-framework directive — which fixed nav but not slide
+    // layout — so density bugs (168px headline + absolute footer
+    // collision) shipped on default decks.
     action: {
       kind: 'apply-scenario',
-      pluginId: 'od-new-generation',
+      pluginId: 'example-simple-deck',
       projectKind: 'deck',
-      inputs: {
-        artifactKind: 'slide deck',
-        audience: 'stakeholders',
-        topic: 'a product strategy',
-      },
     },
   },
   {

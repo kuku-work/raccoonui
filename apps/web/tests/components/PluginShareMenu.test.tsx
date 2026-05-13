@@ -174,25 +174,55 @@ describe('PluginShareMenu', () => {
     openPopover();
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
-    ) as HTMLButtonElement[];
+    ) as HTMLElement[];
     expect(items.some((b) => b.textContent?.includes('Open source on GitHub'))).toBe(
       true,
     );
+    const sourceLink = container.querySelector<HTMLAnchorElement>(
+      'a.plugin-share-item[href="https://github.com/owner/repo"]',
+    );
+    expect(sourceLink).toBeTruthy();
   });
 
   it('surfaces the homepage link when manifest.homepage is set', () => {
     renderMenu(
       make({
         id: 'with-homepage',
+        sourceKind: 'local',
         homepage: 'https://example.test/plugin-home',
       }),
     );
     openPopover();
     const items = Array.from(
       container.querySelectorAll('.plugin-share-item'),
-    ) as HTMLButtonElement[];
+    ) as HTMLElement[];
     expect(items.some((b) => b.textContent?.includes('Open homepage'))).toBe(
       true,
     );
+    const homepageLink = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>('a.plugin-share-item'),
+    ).find((link) => link.textContent?.includes('Open homepage'));
+    expect(homepageLink).toBeTruthy();
+    expect(homepageLink?.getAttribute('href')).toBe('https://example.test/plugin-home');
+  });
+
+  it('renders official bundled repo links as anchors', () => {
+    renderMenu(
+      make({
+        id: 'official-plugin',
+        sourceKind: 'bundled',
+        source: 'plugins/_official/scenarios/official-plugin',
+      }),
+    );
+    openPopover();
+    const repoLinks = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>(
+        'a.plugin-share-item[href="https://github.com/nexu-io/open-design"]',
+      ),
+    );
+    expect(repoLinks.length).toBeGreaterThan(0);
+    expect(
+      repoLinks.some((link) => link.textContent?.includes('Open source on GitHub')),
+    ).toBe(true);
   });
 });

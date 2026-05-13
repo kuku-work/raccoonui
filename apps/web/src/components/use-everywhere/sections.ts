@@ -53,6 +53,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       'MCP server — wires Open Design as a Model Context Protocol server so any MCP-capable agent can list skills, run scenarios, and read artifacts.',
       'HTTP API — `http://127.0.0.1:7456/api/*` REST + SSE endpoints; the same surface the web UI uses.',
       'Skills — drop-in `SKILL.md` packs (Claude-compatible) that any agent already on your PATH can invoke without Open Design at all.',
+      'Standard artifacts — seed real HTML projects from Skills, bundled default plugins, and community plugin examples before the daemon starts.',
     ],
     snippets: [
       {
@@ -64,6 +65,15 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         label: 'Confirm it is reachable',
         language: 'bash',
         body: 'curl -s http://127.0.0.1:7456/api/health | jq',
+      },
+      {
+        label: 'Ingest standard artifacts before boot',
+        language: 'bash',
+        body:
+          'pnpm seed:test-projects --offline --data-dir ./.od \\\n' +
+          '  --decks 2 --webs 2 --default-plugins 3 --community-plugins 3\n' +
+          '# Then start Open Design in the shell you normally use for dev:\n' +
+          'pnpm tools-dev',
       },
     ],
     footer:
@@ -112,6 +122,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         label: 'Inventory locally available skills and design systems',
         language: 'bash',
         body: 'od skills list --json\nod design-systems list --json',
+      },
+      {
+        label: 'Check seeded artifacts through the CLI',
+        language: 'bash',
+        body:
+          'od project list --daemon-url http://127.0.0.1:7456\n' +
+          'od files list <seed-project-id> --daemon-url http://127.0.0.1:7456\n' +
+          'od files read <seed-project-id> index.html --daemon-url http://127.0.0.1:7456 | head',
       },
       {
         label: 'Verify environment + detected agents (Claude, Codex, Cursor, …)',
@@ -238,6 +256,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       'Symlink one skill into multiple projects to share it without copying.',
       'Each skill can declare connectors, atoms, design-system requirements, and a `preview` example output for the gallery.',
       'Headless: an agent with `od` on its PATH can call `od skills list` then run any skill; the daemon is optional for read-only flows.',
+      '`pnpm seed:test-projects` exercises the same artifact shape with default plugin examples and community plugin examples, then stores the resulting `index.html` projects as reusable test data.',
     ],
     snippets: [
       {
@@ -273,6 +292,18 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         label: 'Headless: list skills the daemon sees right now',
         language: 'bash',
         body: 'od skills list --json | jq \'.skills[].name\'',
+      },
+      {
+        label: 'Headless artifact fixture bundle',
+        language: 'bash',
+        body:
+          'pnpm seed:test-projects --offline --data-dir ./.od \\\n' +
+          '  --decks 2 --webs 2 \\\n' +
+          '  --default-plugins 3 --community-plugins 3\n' +
+          '# Shell 1: start Open Design after ingesting.\n' +
+          'pnpm tools-dev\n' +
+          '# Shell 2: inspect the produced projects.\n' +
+          'od project list --json --daemon-url http://127.0.0.1:7456',
       },
     ],
     footer:

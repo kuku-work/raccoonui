@@ -15,8 +15,11 @@ import {
 describe('defaultScenarioPluginIdForKind', () => {
   it('maps every supported ProjectKind to a bundled scenario id', () => {
     const expected: Record<string, string> = {
-      prototype: 'od-new-generation',
-      deck:      'od-new-generation',
+      // Surfaces with a battle-tested seed template + layouts +
+      // checklist bind to the specialised example plugin, not the
+      // generic od-new-generation router. See scenario-defaults.ts.
+      prototype: 'example-web-prototype',
+      deck:      'example-simple-deck',
       template:  'od-new-generation',
       image:     'od-media-generation',
       video:     'od-media-generation',

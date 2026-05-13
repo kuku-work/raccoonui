@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ApplyResult, InstalledPluginRecord, PluginSourceKind } from '@open-design/contracts';
+import {
+  PLUGIN_SHARE_ACTION_PLUGIN_IDS,
+  type ApplyResult,
+  type InstalledPluginRecord,
+  type PluginSourceKind,
+} from '@open-design/contracts';
 import {
   applyPlugin,
   installPluginSource,
@@ -40,6 +45,39 @@ const PLUGINS_TABS: ReadonlyArray<{
   { id: 'team', label: 'Team / Enterprise', hint: 'Coming soon' },
 ];
 
+const PLUGIN_SHARE_DETAILS: Record<PluginShareAction, {
+  eyebrow: string;
+  fallbackTitle: string;
+  fallbackDescription: string;
+  confirmLabel: string;
+  steps: string[];
+}> = {
+  'publish-github': {
+    eyebrow: 'GitHub repository',
+    fallbackTitle: 'Publish Plugin to GitHub',
+    fallbackDescription:
+      'Creates a public GitHub repository for this local Open Design plugin.',
+    confirmLabel: 'Start publishing',
+    steps: [
+      'Create a new Open Design project for the publish workflow.',
+      'Copy this plugin into that project as isolated source context.',
+      'Run the official publish action plugin against the local daemon.',
+    ],
+  },
+  'contribute-open-design': {
+    eyebrow: 'Open Design pull request',
+    fallbackTitle: 'Contribute Plugin to Open Design',
+    fallbackDescription:
+      'Opens a pull request that adds this plugin to the Open Design community catalog.',
+    confirmLabel: 'Start contribution',
+    steps: [
+      'Create a new Open Design project for the contribution workflow.',
+      'Copy this plugin into that project as isolated source context.',
+      'Run the official contribution action plugin against the local daemon.',
+    ],
+  },
+};
+
 interface PluginsViewProps {
   onCreatePlugin?: (goal?: string) => void;
   onCreatePluginShareProject?: (
@@ -69,6 +107,11 @@ export function PluginsView({
     result: ApplyResult;
   } | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<InstalledPluginRecord | null>(null);
+  const [shareConfirm, setShareConfirm] = useState<{
+    sourceRecord: InstalledPluginRecord;
+    action: PluginShareAction;
+    actionRecord: InstalledPluginRecord | null;
+  } | null>(null);
   const [notice, setNotice] = useState<PluginInstallOutcome | { ok: boolean; message: string } | null>(null);
 
   async function refresh() {
@@ -135,18 +178,29 @@ export function PluginsView({
         ok: false,
         message: 'Plugin sharing is not available in this shell.',
       });
+      setShareConfirm(null);
       return;
     }
     setPendingShareAction({ pluginId: record.id, action });
     setNotice(null);
     const outcome = await onCreatePluginShareProject(record.id, action, locale);
     setPendingShareAction(null);
+    setShareConfirm(null);
     if (!outcome.ok) {
       setNotice({
         ok: false,
         message: outcome.message,
       });
     }
+  }
+
+  function requestPluginShareTask(
+    record: InstalledPluginRecord,
+    action: PluginShareAction,
+  ) {
+    const actionRecord =
+      plugins.find((plugin) => plugin.id === PLUGIN_SHARE_ACTION_PLUGIN_IDS[action]) ?? null;
+    setShareConfirm({ sourceRecord: record, action, actionRecord });
   }
 
   return (
@@ -256,7 +310,7 @@ export function PluginsView({
             onUse={(record) => void handleUsePlugin(record)}
             onOpenDetails={setDetailsRecord}
             onPluginShareAction={(record, action) =>
-              void handleCreatePluginShareTask(record, action)
+              requestPluginShareTask(record, action)
             }
             onCreatePlugin={onCreatePlugin}
             title="My plugins"
@@ -280,6 +334,26 @@ export function PluginsView({
           isApplying={pendingApplyId === detailsRecord.id}
         />
       ) : null}
+      {shareConfirm ? (
+        <PluginShareConfirmModal
+          sourceRecord={shareConfirm.sourceRecord}
+          action={shareConfirm.action}
+          actionRecord={shareConfirm.actionRecord}
+          pending={
+            pendingShareAction?.pluginId === shareConfirm.sourceRecord.id &&
+            pendingShareAction.action === shareConfirm.action
+          }
+          onClose={() => {
+            if (!pendingShareAction) setShareConfirm(null);
+          }}
+          onConfirm={() =>
+            void handleCreatePluginShareTask(
+              shareConfirm.sourceRecord,
+              shareConfirm.action,
+            )
+          }
+        />
+      ) : null}
       {importOpen ? (
         <PluginImportModal
           onClose={() => setImportOpen(false)}
@@ -289,6 +363,168 @@ export function PluginsView({
         />
       ) : null}
     </section>
+  );
+}
+
+function PluginShareConfirmModal({
+  sourceRecord,
+  action,
+  actionRecord,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  sourceRecord: InstalledPluginRecord;
+  action: PluginShareAction;
+  actionRecord: InstalledPluginRecord | null;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const details = PLUGIN_SHARE_DETAILS[action];
+  const actionTitle = actionRecord?.title ?? details.fallbackTitle;
+  const actionDescription =
+    actionRecord?.manifest?.description ?? details.fallbackDescription;
+  const actionQuery = readLocalizedUseCaseQuery(actionRecord);
+  const stagedPath = `plugin-source/${pluginShareSlug(sourceRecord.id)}`;
+
+  return (
+    <div
+      className="plugin-details-modal-backdrop plugin-share-confirm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${actionTitle} for ${sourceRecord.title}`}
+      onClick={(event) => {
+        if (!pending && event.target === event.currentTarget) onClose();
+      }}
+      data-testid="plugin-share-confirm-modal"
+    >
+      <div className="plugin-details-modal plugin-share-confirm__panel">
+        <header className="plugin-details-modal__head">
+          <div className="plugin-details-modal__head-titles">
+            <div className="plugin-details-modal__head-row">
+              <h2 className="plugin-details-modal__title">{actionTitle}</h2>
+              <span className="plugin-details-modal__trust trust-bundled">
+                Action plugin
+              </span>
+            </div>
+            <div className="plugin-details-modal__meta">
+              <span>{details.eyebrow}</span>
+              <span>· for {sourceRecord.title}</span>
+              {actionRecord ? <span>· v{actionRecord.version}</span> : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="plugin-details-modal__close"
+            onClick={onClose}
+            disabled={pending}
+            aria-label="Close share confirmation"
+            title="Close"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </header>
+
+        <div className="plugin-details-modal__body">
+          <section className="plugin-details-modal__section">
+            <div className="plugin-details-modal__section-head">
+              <h3 className="plugin-details-modal__section-title">
+                What this starts
+              </h3>
+            </div>
+            <p className="plugin-details-modal__description">
+              {actionDescription}
+            </p>
+            <ol className="plugin-share-confirm__steps">
+              {details.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="plugin-details-modal__section">
+            <div className="plugin-details-modal__section-head">
+              <h3 className="plugin-details-modal__section-title">
+                Source plugin
+              </h3>
+            </div>
+            <dl className="plugin-share-confirm__facts">
+              <div>
+                <dt>Plugin</dt>
+                <dd>{sourceRecord.title}</dd>
+              </div>
+              <div>
+                <dt>ID</dt>
+                <dd>
+                  <code>{sourceRecord.id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Copied to</dt>
+                <dd>
+                  <code>{stagedPath}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Trust</dt>
+                <dd>{sourceRecord.trust}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {actionQuery ? (
+            <section className="plugin-details-modal__section">
+              <div className="plugin-details-modal__section-head">
+                <h3 className="plugin-details-modal__section-title">
+                  Action prompt
+                </h3>
+              </div>
+              <pre className="plugin-details-modal__query">{actionQuery}</pre>
+            </section>
+          ) : null}
+        </div>
+
+        <footer className="plugin-details-modal__foot">
+          <button
+            type="button"
+            className="plugin-details-modal__secondary"
+            onClick={onClose}
+            disabled={pending}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="plugin-details-modal__primary"
+            onClick={onConfirm}
+            disabled={pending}
+            aria-busy={pending ? 'true' : undefined}
+            data-testid="plugin-share-confirm-start"
+          >
+            {pending ? 'Starting…' : details.confirmLabel}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function readLocalizedUseCaseQuery(record: InstalledPluginRecord | null): string | null {
+  const query = record?.manifest?.od?.useCase?.query;
+  if (typeof query === 'string' && query.trim()) return query.trim();
+  if (!query || typeof query !== 'object') return null;
+  const dict = query as Record<string, unknown>;
+  const preferred = dict.en ?? Object.values(dict).find((value) => typeof value === 'string');
+  return typeof preferred === 'string' && preferred.trim() ? preferred.trim() : null;
+}
+
+function pluginShareSlug(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/(^[-._]+|[-._]+$)/g, '') || 'open-design-plugin'
   );
 }
 

@@ -49,6 +49,13 @@ interface ShareItem {
   copies?: boolean;
 }
 
+interface ShareLinkItem {
+  key: string;
+  label: string;
+  icon: 'github' | 'external-link' | 'eye';
+  href: string;
+}
+
 function buildInstallCommand(record: InstalledPluginRecord): string {
   // The daemon's install resolver accepts the raw `record.source`
   // shape for every kind (github:owner/repo[@ref][/sub], https URL,
@@ -145,17 +152,18 @@ export function PluginShareMenu({ record, variant = 'default' }: Props) {
     },
   ];
 
-  // Open-in-tab actions only render when the underlying URL exists.
-  const openItems: ShareItem[] = [];
-  if (links.sourceUrl && record.sourceKind === 'github') {
+  // Open-in-tab actions are real anchors so users can right-click,
+  // copy the link address, or open in a new tab from browser chrome.
+  const openItems: ShareLinkItem[] = [];
+  if (links.sourceUrl) {
     openItems.push({
-      key: 'github',
-      label: 'Open source on GitHub',
-      icon: 'github',
-      onSelect: () => {
-        window.open(links.sourceUrl!, '_blank', 'noopener,noreferrer');
-        setOpen(false);
-      },
+      key: 'source',
+      label:
+        record.sourceKind === 'github' || links.sourceUrl.includes('github.com/')
+          ? 'Open source on GitHub'
+          : 'Open source',
+      icon: links.sourceUrl.includes('github.com/') ? 'github' : 'external-link',
+      href: links.sourceUrl,
     });
   }
   if (links.homepageUrl) {
@@ -163,20 +171,14 @@ export function PluginShareMenu({ record, variant = 'default' }: Props) {
       key: 'homepage',
       label: 'Open homepage',
       icon: 'external-link',
-      onSelect: () => {
-        window.open(links.homepageUrl!, '_blank', 'noopener,noreferrer');
-        setOpen(false);
-      },
+      href: links.homepageUrl,
     });
   }
   openItems.push({
     key: 'marketplace',
     label: 'Open in marketplace',
     icon: 'eye',
-    onSelect: () => {
-      window.open(buildShareUrl(record), '_blank', 'noopener,noreferrer');
-      setOpen(false);
-    },
+    href: buildShareUrl(record),
   });
 
   const triggerClass =
@@ -225,16 +227,18 @@ export function PluginShareMenu({ record, variant = 'default' }: Props) {
           <div className="plugin-share-popover__divider" />
           <div className="plugin-share-popover__group">
             {openItems.map((item) => (
-              <button
+              <a
                 key={item.key}
-                type="button"
                 role="menuitem"
                 className="plugin-share-item"
-                onClick={() => void item.onSelect()}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setOpen(false)}
               >
                 <Icon name={item.icon} size={12} />
                 <span>{item.label}</span>
-              </button>
+              </a>
             ))}
           </div>
         </div>

@@ -63,6 +63,25 @@ const HIDDEN_DEFAULT_PLUGIN = {
   },
 };
 
+// The Prototype / Live-artifact chips now bind to the bundled
+// `example-web-prototype` plugin (which ships its own seed +
+// layouts + checklist) instead of the generic od-new-generation
+// router. Mirror that here so the chip-applies test can find a
+// matching plugin record and the apply call resolves to the new id.
+const WEB_PROTOTYPE_PLUGIN = {
+  ...DEFAULT_PLUGIN,
+  id: 'example-web-prototype',
+  title: 'Web Prototype',
+  source: '/tmp/web-prototype',
+  fsPath: '/tmp/web-prototype',
+  manifest: {
+    ...DEFAULT_PLUGIN.manifest,
+    name: 'example-web-prototype',
+    title: 'Web Prototype',
+    description: 'General-purpose desktop web prototype.',
+  },
+};
+
 const AUTHORING_APPLY_RESULT = {
   query: 'Create a plugin.',
   contextItems: [],
@@ -285,10 +304,10 @@ describe('HomeView prompt handoff', () => {
     }));
   });
 
-  it('applies Home rail scenario chips with required default inputs', async () => {
+  it('applies Home rail Prototype chip against the bundled web-prototype scenario plugin', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
-        return new Response(JSON.stringify({ plugins: [DEFAULT_PLUGIN] }), {
+        return new Response(JSON.stringify({ plugins: [WEB_PROTOTYPE_PLUGIN] }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -319,18 +338,18 @@ describe('HomeView prompt handoff', () => {
     fireEvent.click(await screen.findByTestId('home-hero-rail-prototype'));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/plugins/od-new-generation/apply',
+      '/api/plugins/example-web-prototype/apply',
       expect.anything(),
     ));
+    // web-prototype's manifest has no `inputs` field, so the chip
+    // doesn't carry artifactKind/audience/topic anymore. The apply
+    // body's `inputs` map should be empty (chip passes no inputs and
+    // the plugin defines none).
     const applyCall = fetchMock.mock.calls.find(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-new-generation/apply')
+      typeof url === 'string' && url.includes('/api/plugins/example-web-prototype/apply')
     ));
     expect(JSON.parse(String((applyCall?.[1] as RequestInit).body))).toMatchObject({
-      inputs: {
-        artifactKind: 'interactive prototype',
-        audience: 'product teams',
-        topic: 'a new product experience',
-      },
+      inputs: {},
     });
     expect(screen.queryByRole('alert')).toBeNull();
   });

@@ -19,10 +19,9 @@ Use this workflow when the active project contains a copied plugin folder and th
 
 1. Read the active plugin inputs. `plugin_context_path` is the copied plugin folder relative to the project working directory.
 2. Inspect `open-design.json`, `SKILL.md`, and any compatibility metadata in the copied folder.
-3. Verify `gh auth status --hostname github.com`. If authentication is missing, stop with the exact command the user needs to run.
-4. Create a clean temporary git repository from the copied plugin folder. Do not include project wrapper files or unrelated artifacts.
-5. Commit with a concise message such as `Publish <plugin title> plugin`.
-6. Create a public repository with `gh repo create <repo-name> --public --source <temp-repo> --push`.
-7. Report the final repository URL, commit hash, and any validation performed.
+3. Call the local daemon endpoint instead of hand-rolling GitHub commands:
+   `curl -sS -X POST "$OD_DAEMON_URL/api/projects/$OD_PROJECT_ID/plugins/publish-github" -H 'content-type: application/json' -d '{"path":"<plugin_context_path>"}'`
+4. Read the JSON response. If `ok` is true, report the final repository URL and any useful log/validation summary.
+5. If the endpoint fails, report its `message`, `code`, and useful log lines. When authentication is missing, tell the user to run `gh auth login --hostname github.com`.
 
 Prefer the manifest `name` as the repository slug. If that repository already exists, choose the next clear slug and mention the rename.

@@ -19,11 +19,9 @@ Use this workflow when the active project contains a copied plugin folder and th
 
 1. Read the active plugin inputs. `plugin_context_path` is the copied plugin folder relative to the project working directory.
 2. Inspect the copied plugin's manifest, skill instructions, examples, and compatibility metadata.
-3. Verify `gh auth status --hostname github.com`. If authentication is missing, stop with the exact command the user needs to run.
-4. Fork or reuse a fork of `nexu-io/open-design`, then clone a clean working copy.
-5. Create a branch named like `plugin/<source_plugin_id>`.
-6. Copy the staged plugin folder into `plugins/community/<source_plugin_id>` in that working copy. Create parent directories when needed.
-7. Commit only that plugin folder, push the branch to the user's fork, and run `gh pr create --repo nexu-io/open-design --base main`.
-8. Report the PR URL, branch name, and any validation performed.
+3. Call the local daemon endpoint instead of hand-rolling GitHub commands:
+   `curl -sS -X POST "$OD_DAEMON_URL/api/projects/$OD_PROJECT_ID/plugins/contribute-open-design" -H 'content-type: application/json' -d '{"path":"<plugin_context_path>"}'`
+4. Read the JSON response. If `ok` is true, report the PR URL, branch name when present in the log, and any useful validation summary.
+5. If the endpoint fails, report its `message`, `code`, and useful log lines. When authentication is missing, tell the user to run `gh auth login --hostname github.com`.
 
 Keep the pull request focused. Do not modify unrelated Open Design files unless a manifest validation issue requires a tiny supporting change.

@@ -117,9 +117,13 @@ describe('HomeHero intent rail', () => {
     expect(findChip('audio')?.action).toMatchObject({ pluginId: 'od-media-generation', projectKind: 'audio' });
   });
 
-  it('non-media scenario chips route to od-new-generation', () => {
-    expect(findChip('prototype')?.action).toMatchObject({ pluginId: 'od-new-generation', projectKind: 'prototype' });
-    expect(findChip('deck')?.action).toMatchObject({ pluginId: 'od-new-generation', projectKind: 'deck' });
+  it('prototype and slide-deck chips route to their specialised bundled scenario plugin', () => {
+    // Prototype now binds to web-prototype's seed template instead of
+    // the generic od-new-generation router. Same for Slide deck →
+    // simple-deck. See packages/contracts/src/plugins/scenario-defaults.ts
+    // for the rationale (battle-tested seed + layouts + checklist).
+    expect(findChip('prototype')?.action).toMatchObject({ pluginId: 'example-web-prototype', projectKind: 'prototype' });
+    expect(findChip('deck')?.action).toMatchObject({ pluginId: 'example-simple-deck', projectKind: 'deck' });
   });
 
   it('specialised category chips route to their bundled scenario plugin', () => {
@@ -131,12 +135,13 @@ describe('HomeHero intent rail', () => {
       pluginId: 'example-hyperframes',
       projectKind: 'video',
     });
-    // Live artifact reuses od-new-generation's pipeline today but
-    // keeps a distinct chip id + label so the rail's active state
-    // tracks user intent independently from the Prototype chip.
+    // Live artifact shares web-prototype's seed (interactive HTML/CSS/JS
+    // is a flavour of prototype) but keeps a distinct chip id + label
+    // so the rail's active state tracks user intent independently from
+    // the Prototype chip.
     expect(findChip('live-artifact')?.action).toMatchObject({
       kind: 'apply-scenario',
-      pluginId: 'od-new-generation',
+      pluginId: 'example-web-prototype',
       projectKind: 'prototype',
     });
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord, PluginSourceKind, TrustTier } from '@open-design/contracts';
 import { PluginsView } from '../../src/components/PluginsView';
@@ -9,6 +9,7 @@ import {
   installPluginSource,
   listPluginMarketplaces,
   listPlugins,
+  type PluginShareProjectOutcome,
   uploadPluginFolder,
   uploadPluginZip,
 } from '../../src/state/projects';
@@ -32,10 +33,12 @@ function makePlugin(
   id: string,
   sourceKind: PluginSourceKind,
   trust: TrustTier,
+  title = id === 'official-plugin' ? 'Official Plugin' : 'User Plugin',
+  description = `${id} description`,
 ): InstalledPluginRecord {
   return {
     id,
-    title: id === 'official-plugin' ? 'Official Plugin' : 'User Plugin',
+    title,
     version: '1.0.0',
     sourceKind,
     source: '/tmp',
@@ -45,7 +48,7 @@ function makePlugin(
       name: id,
       version: '1.0.0',
       title: id,
-      description: `${id} description`,
+      description,
       od: {
         kind: 'scenario',
         mode: 'prototype',
@@ -206,5 +209,77 @@ describe('PluginsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
     await waitFor(() => expect(mockedUploadPluginFolder).toHaveBeenCalledWith([folderFile]));
     expect(await screen.findByText('Installed Folder Plugin.')).toBeTruthy();
+  });
+
+  it('confirms a plugin share action before starting the GitHub repo task', async () => {
+    mockedListPlugins.mockResolvedValue([
+      makePlugin('official-plugin', 'bundled', 'bundled'),
+      makePlugin('user-plugin', 'github', 'restricted'),
+      makePlugin(
+        'od-plugin-publish-github',
+        'bundled',
+        'bundled',
+        'Publish Plugin to GitHub',
+        'Creates a public GitHub repository for a local Open Design plugin using the GitHub CLI.',
+      ),
+      makePlugin(
+        'od-plugin-contribute-open-design',
+        'bundled',
+        'bundled',
+        'Contribute Plugin to Open Design',
+        'Opens a pull request that adds a local Open Design plugin to the Open Design community catalog.',
+      ),
+    ]);
+    const onCreatePluginShareProject = vi.fn(async (): Promise<PluginShareProjectOutcome> => ({
+      ok: true as const,
+      project: {
+        id: 'share-project',
+        name: 'Publish to GitHub: User Plugin',
+        skillId: null,
+        designSystemId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        pendingPrompt: 'Publish it',
+        metadata: { kind: 'prototype' },
+      },
+      conversationId: 'conversation-1',
+      appliedPluginSnapshotId: 'snapshot-1',
+      actionPluginId: 'od-plugin-publish-github',
+      sourcePluginId: 'user-plugin',
+      stagedPath: 'plugin-source/user-plugin',
+      prompt: 'Publish it',
+      message: 'Created a Publish to GitHub task.',
+    }));
+
+    render(
+      <PluginsView
+        onCreatePluginShareProject={onCreatePluginShareProject}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('plugins-tab-mine'));
+    const publish = await screen.findByTestId('plugins-home-publish-github-user-plugin');
+    expect(publish.textContent).toContain('Publish');
+    fireEvent.click(publish);
+
+    const dialog = await screen.findByRole('dialog', {
+      name: /Publish Plugin to GitHub for User Plugin/i,
+    });
+    expect(dialog.textContent).toContain('Creates a public GitHub repository');
+    expect(dialog.textContent).toContain('plugin-source/user-plugin');
+    expect(onCreatePluginShareProject).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByTestId('plugin-share-confirm-start'));
+
+    await waitFor(() =>
+      expect(onCreatePluginShareProject).toHaveBeenCalledWith(
+        'user-plugin',
+        'publish-github',
+        'en',
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('plugin-share-confirm-modal')).toBeNull(),
+    );
   });
 });

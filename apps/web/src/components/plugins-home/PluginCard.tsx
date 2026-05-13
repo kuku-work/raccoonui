@@ -153,14 +153,15 @@ export function PluginCard({
                 onClick={() => onShareAction(record, 'publish-github')}
                 disabled={pendingAny || shareBusy}
                 aria-busy={sharePendingAction === 'publish-github' ? 'true' : undefined}
-                title="Publish as a GitHub repository"
+                aria-label={`Publish ${record.title} as a GitHub repository`}
+                title="Publish plugin as a GitHub repository"
                 data-testid={`plugins-home-publish-github-${record.id}`}
               >
                 <Icon
                   name={sharePendingAction === 'publish-github' ? 'spinner' : 'github'}
                   size={12}
                 />
-                <span>{sharePendingAction === 'publish-github' ? 'Starting…' : 'Repo'}</span>
+                <span>{sharePendingAction === 'publish-github' ? 'Starting…' : 'Publish'}</span>
               </button>
               <button
                 type="button"
@@ -168,14 +169,15 @@ export function PluginCard({
                 onClick={() => onShareAction(record, 'contribute-open-design')}
                 disabled={pendingAny || shareBusy}
                 aria-busy={sharePendingAction === 'contribute-open-design' ? 'true' : undefined}
-                title="Open an Open Design pull request"
+                aria-label={`Contribute ${record.title} to Open Design`}
+                title="Contribute plugin to Open Design with a pull request"
                 data-testid={`plugins-home-contribute-open-design-${record.id}`}
               >
                 <Icon
                   name={sharePendingAction === 'contribute-open-design' ? 'spinner' : 'share'}
                   size={12}
                 />
-                <span>{sharePendingAction === 'contribute-open-design' ? 'Starting…' : 'PR'}</span>
+                <span>{sharePendingAction === 'contribute-open-design' ? 'Starting…' : 'Contribute'}</span>
               </button>
             </div>
           ) : null}

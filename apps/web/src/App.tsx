@@ -621,13 +621,19 @@ export function App() {
         // If sessionStorage is unavailable, the project still opens with
         // the prepared prompt in the composer.
       }
+      const project = outcome.appliedPluginSnapshotId
+        ? {
+            ...outcome.project,
+            appliedPluginSnapshotId: outcome.appliedPluginSnapshotId,
+          }
+        : outcome.project;
       setProjects((curr) => [
-        outcome.project,
-        ...curr.filter((p) => p.id !== outcome.project.id),
+        project,
+        ...curr.filter((p) => p.id !== project.id),
       ]);
       navigate({
         kind: 'project',
-        projectId: outcome.project.id,
+        projectId: project.id,
         fileName: null,
       });
       return outcome;

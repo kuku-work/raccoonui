@@ -217,7 +217,7 @@ describe('Plan §8 e2e-3 (entry slice) — headless install → project → run'
     await fetch(`${baseUrl}/api/runs/${encodeURIComponent(runBody.runId)}/cancel`, { method: 'POST' });
   });
 
-  it('creates a share project for publishing a user plugin to GitHub', async () => {
+  it('creates share projects for publishing and contributing a user plugin', async () => {
     const installResp = await fetch(`${baseUrl}/api/plugins/install`, {
       method:  'POST',
       headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
@@ -249,7 +249,8 @@ describe('Plan §8 e2e-3 (entry slice) — headless install → project → run'
     expect(shareBody.appliedPluginSnapshotId).toBeTruthy();
     expect(shareBody.stagedPath).toBe('plugin-source/sample-plugin');
     expect(shareBody.prompt).toContain('Publish the local Open Design plugin');
-    expect(shareBody.prompt).toContain('gh');
+    expect(shareBody.prompt).toContain('/api/projects/$OD_PROJECT_ID/plugins/publish-github');
+    expect(shareBody.prompt).toContain('plugin-source/sample-plugin');
     expect(shareBody.project.pendingPrompt).toBe(shareBody.prompt);
 
     const filesResp = await fetch(
@@ -274,6 +275,127 @@ describe('Plan §8 e2e-3 (entry slice) — headless install → project → run'
       source_plugin_id: 'sample-plugin',
       plugin_context_path: 'plugin-source/sample-plugin',
     });
+
+    const contributeResp = await fetch(`${baseUrl}/api/plugins/sample-plugin/share-project`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify({ action: 'contribute-open-design', locale: 'en' }),
+    });
+    expect(contributeResp.status).toBe(200);
+    const contributeBody = (await contributeResp.json()) as {
+      ok: boolean;
+      project: { id: string };
+      appliedPluginSnapshotId?: string;
+      actionPluginId: string;
+      sourcePluginId: string;
+      stagedPath: string;
+      prompt: string;
+    };
+    expect(contributeBody.ok).toBe(true);
+    expect(contributeBody.actionPluginId).toBe('od-plugin-contribute-open-design');
+    expect(contributeBody.sourcePluginId).toBe('sample-plugin');
+    expect(contributeBody.appliedPluginSnapshotId).toBeTruthy();
+    expect(contributeBody.stagedPath).toBe('plugin-source/sample-plugin');
+    expect(contributeBody.prompt).toContain('/api/projects/$OD_PROJECT_ID/plugins/contribute-open-design');
+
+    const locator = process.platform === 'win32' ? 'where' : 'which';
+    const realGit = ((await execFileP(locator, ['git'])).stdout as string)
+      .split(/\r?\n/)
+      .find(Boolean)
+      ?.trim();
+    expect(realGit).toBeTruthy();
+    const previousRealGit = process.env.OD_REAL_GIT;
+    process.env.OD_REAL_GIT = realGit;
+    try {
+      await withFakeAgent(
+        'gh',
+        `
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+function ok(text) {
+  if (text) process.stdout.write(text + '\\n');
+  process.exit(0);
+}
+if (args[0] === '--version') ok('gh version 2.0.0');
+if (args[0] === 'auth' && args[1] === 'status') ok('Logged in to github.com as test-user');
+if (args[0] === 'api' && args[1] === 'user') ok('test-user');
+if (args[0] === 'repo' && args[1] === 'create') ok('https://github.com/test-user/' + args[2]);
+if (args[0] === 'repo' && args[1] === 'view') ok('https://github.com/test-user/' + path.basename(process.cwd()));
+if (args[0] === 'repo' && args[1] === 'fork') ok('forked nexu-io/open-design');
+if (args[0] === 'repo' && args[1] === 'clone') {
+  const dest = args[3] || path.basename(args[2]);
+  fs.mkdirSync(dest, { recursive: true });
+  const init = spawnSync(process.env.OD_REAL_GIT, ['init'], { cwd: dest, stdio: 'inherit' });
+  process.exit(init.status ?? 0);
+}
+if (args[0] === 'pr' && args[1] === 'create') ok('https://github.com/nexu-io/open-design/pull/123');
+console.error('unexpected gh command: ' + args.join(' '));
+process.exit(1);
+`,
+        async () => {
+          await withFakeAgent(
+            'git',
+            `
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'push') {
+  console.log('pushed');
+  process.exit(0);
+}
+const result = spawnSync(process.env.OD_REAL_GIT, args, {
+  cwd: process.cwd(),
+  env: process.env,
+  encoding: 'utf8',
+});
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+process.exit(result.status ?? 0);
+`,
+            async () => {
+              const publishEndpointResp = await fetch(
+                `${baseUrl}/api/projects/${encodeURIComponent(shareBody.project.id)}/plugins/publish-github`,
+                {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ path: shareBody.stagedPath }),
+                },
+              );
+              expect(publishEndpointResp.status).toBe(200);
+              const publishEndpointBody = (await publishEndpointResp.json()) as {
+                ok: boolean;
+                url?: string;
+              };
+              expect(publishEndpointBody.ok).toBe(true);
+              expect(publishEndpointBody.url).toBe('https://github.com/test-user/sample-plugin');
+
+              const contributeEndpointResp = await fetch(
+                `${baseUrl}/api/projects/${encodeURIComponent(contributeBody.project.id)}/plugins/contribute-open-design`,
+                {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ path: contributeBody.stagedPath }),
+                },
+              );
+              expect(contributeEndpointResp.status).toBe(200);
+              const contributeEndpointBody = (await contributeEndpointResp.json()) as {
+                ok: boolean;
+                url?: string;
+              };
+              expect(contributeEndpointBody.ok).toBe(true);
+              expect(contributeEndpointBody.url).toBe('https://github.com/nexu-io/open-design/pull/123');
+            },
+          );
+        },
+      );
+    } finally {
+      if (previousRealGit === undefined) {
+        delete process.env.OD_REAL_GIT;
+      } else {
+        process.env.OD_REAL_GIT = previousRealGit;
+      }
+    }
   });
 
   it('runs the CLI install → project create → plugin run path with query and local SKILL.md in the agent prompt', async () => {
