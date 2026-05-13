@@ -7,7 +7,8 @@
 // composed with the recent-projects strip and plugins section
 // without owning their data lifecycles.
 
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { InstalledPluginRecord } from '@open-design/contracts';
 import { Icon } from './Icon';
 import {
@@ -59,6 +60,7 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
   ref,
 ) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const composingRef = useRef(false);
   const canSubmit = prompt.trim().length > 0 && !submitDisabled;
   const placeholder = activePluginTitle
     ? 'Edit the example query or write your own…'
@@ -135,7 +137,14 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
             onPromptChange(e.target.value);
             setSelectedIndex(0);
           }}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
           onKeyDown={(e) => {
+            if (isImeComposing(e, composingRef.current)) return;
             if (pickerOpen && pickerOptions.length > 0) {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -290,6 +299,11 @@ function replaceMentionToken(value: string, mention: PluginMention): string | nu
   const after = value.slice(mention.end).trimStart();
   const next = [before, after].filter(Boolean).join(' ').trim();
   return next.length > 0 ? next : null;
+}
+
+function isImeComposing(event: ReactKeyboardEvent<HTMLTextAreaElement>, composing: boolean): boolean {
+  const nativeEvent = event.nativeEvent as KeyboardEvent & { keyCode?: number };
+  return composing || nativeEvent.isComposing || nativeEvent.keyCode === 229;
 }
 
 function getPluginSourceLabel(plugin: InstalledPluginRecord): string {
