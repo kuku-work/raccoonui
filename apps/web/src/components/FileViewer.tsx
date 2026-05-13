@@ -4,6 +4,7 @@ import { APP_CHROME_FILE_ACTIONS_ID } from './AppChromeHeader';
 import {
   anonymizeArtifactId,
   artifactKindToTracking,
+  type TrackingProjectKind,
 } from '@open-design/contracts/analytics';
 import { useAnalytics } from '../analytics/provider';
 import {
@@ -486,6 +487,7 @@ function setSlideStateCached(key: string, state: SlideState) {
 
 interface Props {
   projectId: string;
+  projectKind: TrackingProjectKind;
   file: ProjectFile;
   liveHtml?: string;
   isDeck?: boolean;
@@ -500,6 +502,7 @@ interface Props {
 
 export function FileViewer({
   projectId,
+  projectKind,
   file,
   liveHtml,
   isDeck,
@@ -536,13 +539,16 @@ export function FileViewer({
         rendererId: rendererMatch?.renderer.id ?? null,
         fileKind: file.kind ?? null,
       }),
+      project_id: projectId,
+      project_kind: projectKind,
     });
-  }, [projectId, file.name, file.kind, rendererMatch?.renderer.id, analytics.track]);
+  }, [projectId, projectKind, file.name, file.kind, rendererMatch?.renderer.id, analytics.track]);
 
   if (rendererMatch?.renderer.id === 'html' || rendererMatch?.renderer.id === 'deck-html') {
     return (
       <HtmlViewer
         projectId={projectId}
+        projectKind={projectKind}
         file={file}
         liveHtml={liveHtml}
         isDeck={rendererMatch.renderer.id === 'deck-html'}
@@ -3366,6 +3372,7 @@ function DocumentPreviewViewer({
 
 function HtmlViewer({
   projectId,
+  projectKind,
   file,
   liveHtml,
   isDeck,
@@ -3378,6 +3385,7 @@ function HtmlViewer({
   onFileSaved,
 }: {
   projectId: string;
+  projectKind: TrackingProjectKind;
   file: ProjectFile;
   liveHtml?: string;
   isDeck: boolean;
@@ -3420,6 +3428,8 @@ function HtmlViewer({
         action: 'select_share_option',
         share_context: 'artifact',
         export_format: format,
+        project_id: projectId,
+        project_kind: projectKind,
       },
       { requestId },
     );
@@ -3432,6 +3442,7 @@ function HtmlViewer({
           area: 'app_header',
           artifact_id: artifactId,
           project_id: projectId,
+          project_kind: projectKind,
           export_format: format,
           result,
           ...(errorCode ? { error_code: errorCode } : {}),
