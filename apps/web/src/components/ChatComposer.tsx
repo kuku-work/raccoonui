@@ -277,20 +277,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       };
     }, [projectId]);
 
-    // Composer-side plugin list: hide bundled atoms (pipeline-only) and,
-    // when the project pins a plugin, collapse to that single id so the
-    // tools-menu and @-mention picker reflect the user's earlier pick.
+    // Composer-side plugin list: hide bundled atoms (pipeline-only). Keep
+    // the full installed list available even when the project was created
+    // from a pinned plugin, so users can switch or layer different plugin
+    // context from the tools menu and @ picker.
     const pluginsForComposer = useMemo<InstalledPluginRecord[]>(() => {
       const allowedKinds = new Set(['skill', 'scenario', 'bundle']);
-      const rows = installedPlugins.filter((p) => {
+      return installedPlugins.filter((p) => {
         const k = p.manifest?.od?.kind;
         return !k || allowedKinds.has(k);
       });
-      if (pinnedPluginId) {
-        return rows.filter((p) => p.id === pinnedPluginId);
-      }
-      return rows;
-    }, [installedPlugins, pinnedPluginId]);
+    }, [installedPlugins]);
 
     const enabledMcpServers = useMemo(
       () => mcpServers.filter((s) => s.enabled),
@@ -1015,9 +1012,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 aria-label={t('chat.cliSettingsAria')}
               >
                 <Icon name="sliders" size={15} />
-                {enabledMcpServers.length > 0 ? (
-                  <span className="composer-tools-badge">{enabledMcpServers.length}</span>
-                ) : null}
               </button>
               {toolsOpen ? (
                 <div
@@ -1039,33 +1033,18 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                           <>
                             <Icon name="sparkles" size={12} />
                             <span>Plugins</span>
-                            {pluginsForComposer.length > 0 ? (
-                              <span className="composer-tools-tab-count">
-                                {pluginsForComposer.length}
-                              </span>
-                            ) : null}
                           </>
                         ) : null}
                         {tab === 'skills' ? (
                           <>
                             <Icon name="file" size={12} />
                             <span>Skills</span>
-                            {skills.length > 0 ? (
-                              <span className="composer-tools-tab-count">
-                                {skills.length}
-                              </span>
-                            ) : null}
                           </>
                         ) : null}
                         {tab === 'mcp' ? (
                           <>
                             <Icon name="link" size={12} />
                             <span>MCP</span>
-                            {enabledMcpServers.length > 0 ? (
-                              <span className="composer-tools-tab-count">
-                                {enabledMcpServers.length}
-                              </span>
-                            ) : null}
                           </>
                         ) : null}
                         {tab === 'import' ? (
@@ -1090,6 +1069,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                     {toolsTab === 'plugins' ? (
                       <ToolsPluginsPanel
                         plugins={pluginsForComposer}
+                        activePluginId={pinnedPluginId}
                         onApply={async (record) => {
                           const result = await pluginsSectionRef.current?.applyById(
                             record.id,
@@ -1313,10 +1293,12 @@ function StagedCommentAttachments({
 
 function ToolsPluginsPanel({
   plugins,
+  activePluginId,
   onApply,
   onShowDetails,
 }: {
   plugins: InstalledPluginRecord[];
+  activePluginId: string | null;
   onApply: (record: InstalledPluginRecord) => void | Promise<void>;
   onShowDetails: (record: InstalledPluginRecord) => void;
 }) {
@@ -1343,19 +1325,23 @@ function ToolsPluginsPanel({
         <div className="composer-tools-segments" role="tablist" aria-label="Plugin source">
           <button
             type="button"
+            role="tab"
+            aria-selected={source === 'community'}
             className={`composer-tools-segment${source === 'community' ? ' active' : ''}`}
             onClick={() => setSource('community')}
+            title={`${communityPlugins.length} installed community plugins`}
           >
-            <span>Community</span>
-            <span>{communityPlugins.length}</span>
+            Community
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={source === 'mine'}
             className={`composer-tools-segment${source === 'mine' ? ' active' : ''}`}
             onClick={() => setSource('mine')}
+            title={`${userPlugins.length} installed user plugins`}
           >
-            <span>My plugins</span>
-            <span>{userPlugins.length}</span>
+            My plugins
           </button>
         </div>
         <input
@@ -1382,7 +1368,12 @@ function ToolsPluginsPanel({
       ) : (
         <div className="composer-tools-list">
           {visiblePlugins.map((p) => (
-            <div key={p.id} className="composer-tools-row composer-tools-row--plugin">
+            <div
+              key={p.id}
+              className={`composer-tools-row composer-tools-row--plugin${
+                p.id === activePluginId ? ' active' : ''
+              }`}
+            >
               <button
                 type="button"
                 className="composer-tools-row-main"
