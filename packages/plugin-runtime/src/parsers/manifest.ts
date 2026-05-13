@@ -1,4 +1,8 @@
-import { PluginManifestSchema, type PluginManifest } from '@open-design/contracts';
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  PluginManifestSchema,
+  type PluginManifest,
+} from '@open-design/contracts';
 
 export interface ManifestParseSuccess {
   ok: true;
@@ -41,5 +45,12 @@ export function parseManifestObject(value: unknown): ManifestParseResult {
       errors: result.error.issues.map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`),
     };
   }
-  return { ok: true, manifest: result.data, warnings: [] };
+  return {
+    ok: true,
+    manifest: {
+      specVersion: OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+      ...result.data,
+    },
+    warnings: [],
+  };
 }

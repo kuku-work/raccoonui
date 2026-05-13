@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-kami-deck",
   "title": "Kami Deck",
   "version": "0.1.0",
@@ -34,6 +35,7 @@
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",
+    "featured": 0.06,
     "scenario": "marketing",
     "surface": "web",
     "preview": {

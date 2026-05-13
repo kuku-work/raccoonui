@@ -39,6 +39,8 @@ export function migratePlugins(db: SqliteDb): void {
     CREATE TABLE IF NOT EXISTS plugin_marketplaces (
       id            TEXT PRIMARY KEY,
       url           TEXT NOT NULL,
+      spec_version  TEXT NOT NULL DEFAULT '1.0.0',
+      version       TEXT NOT NULL DEFAULT '0.0.0',
       trust         TEXT NOT NULL,
       manifest_json TEXT NOT NULL,
       added_at      INTEGER NOT NULL,
@@ -51,6 +53,7 @@ export function migratePlugins(db: SqliteDb): void {
       conversation_id          TEXT,
       run_id                   TEXT,
       plugin_id                TEXT NOT NULL,
+      plugin_spec_version      TEXT NOT NULL DEFAULT '1.0.0',
       plugin_version           TEXT NOT NULL,
       manifest_source_digest   TEXT NOT NULL,
       source_marketplace_id    TEXT,
@@ -127,6 +130,20 @@ export function migratePlugins(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_genui_conv_surface ON genui_surfaces(conversation_id, surface_id);
     CREATE INDEX IF NOT EXISTS idx_genui_run          ON genui_surfaces(run_id);
   `);
+
+  const marketplaceCols = db.prepare(`PRAGMA table_info(plugin_marketplaces)`).all() as DbRow[];
+  if (!marketplaceCols.some((c) => c['name'] === 'spec_version')) {
+    db.exec(`ALTER TABLE plugin_marketplaces ADD COLUMN spec_version TEXT NOT NULL DEFAULT '1.0.0'`);
+  }
+  if (!marketplaceCols.some((c) => c['name'] === 'version')) {
+    db.exec(`ALTER TABLE plugin_marketplaces ADD COLUMN version TEXT NOT NULL DEFAULT '0.0.0'`);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_marketplaces_version ON plugin_marketplaces(version)`);
+
+  const snapshotCols = db.prepare(`PRAGMA table_info(applied_plugin_snapshots)`).all() as DbRow[];
+  if (!snapshotCols.some((c) => c['name'] === 'plugin_spec_version')) {
+    db.exec(`ALTER TABLE applied_plugin_snapshots ADD COLUMN plugin_spec_version TEXT NOT NULL DEFAULT '1.0.0'`);
+  }
 
   // Back-reference columns. SQLite has no IF NOT EXISTS for ALTER; check
   // pragma_table_info first. Mirrors the upstream pattern in db.ts.

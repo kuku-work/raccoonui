@@ -48,6 +48,7 @@ export function diffSnapshots(input: DiffSnapshotsInput): SnapshotDiffReport {
   // Identity + lineage.
   diffScalar(entries, 'snapshotId',           a.snapshotId,           b.snapshotId);
   diffScalar(entries, 'pluginId',             a.pluginId,             b.pluginId);
+  diffScalar(entries, 'pluginSpecVersion',    a.pluginSpecVersion,    b.pluginSpecVersion);
   diffScalar(entries, 'pluginVersion',        a.pluginVersion,        b.pluginVersion);
   diffScalar(entries, 'manifestSourceDigest', a.manifestSourceDigest, b.manifestSourceDigest);
   diffScalar(entries, 'sourceMarketplaceId',  a.sourceMarketplaceId,  b.sourceMarketplaceId);

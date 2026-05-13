@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-html-ppt-zhangzara-editorial-tri-tone",
   "title": "Html Ppt Zhangzara Editorial Tri Tone",
   "version": "0.1.0",

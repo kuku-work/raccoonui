@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-guizang-ppt",
   "title": "Guizang Ppt",
   "version": "0.1.0",
@@ -37,6 +38,7 @@
     "kind": "scenario",
     "taskKind": "new-generation",
     "mode": "deck",
+    "featured": 0.02,
     "scenario": "marketing",
     "surface": "web",
     "preview": {

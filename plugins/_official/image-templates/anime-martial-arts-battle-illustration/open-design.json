@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-anime-martial-arts-battle-illustration",
   "title": "Anime Martial Arts Battle Illustration",
   "version": "0.1.0",

@@ -189,7 +189,8 @@
 }
 
 .plugins-view__list,
-.plugins-view__marketplaces {
+.plugins-view__marketplaces,
+.plugins-view__available-list {
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -197,7 +198,9 @@
 
 .plugins-view__row,
 .plugins-view__marketplace,
+.plugins-view__available-card,
 .plugins-view__install-card,
+.plugins-view__source-manager,
 .plugins-view__team {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -314,12 +317,24 @@
   opacity: 0.55;
 }
 
-.plugins-view__marketplace {
+.plugins-view__marketplace,
+.plugins-view__available-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 13px;
+}
+
+.plugins-view__available-main {
+  min-width: 0;
+}
+
+.plugins-view__available-main p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 .plugins-view__marketplace a {
@@ -328,6 +343,40 @@
   color: var(--text-muted);
   font-size: 12px;
   word-break: break-all;
+}
+
+.plugins-view__source-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.plugins-view__source-manager label {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.plugins-view__source-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.plugins-view__source-actions select,
+.plugins-view__source-row select {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.plugins-view__source-actions select {
+  min-width: 112px;
 }
 
 .plugins-view__install-card {
@@ -625,7 +674,9 @@
   .plugins-view__hero,
   .plugins-view__hero-actions,
   .plugins-view__row,
-  .plugins-view__marketplace {
+  .plugins-view__marketplace,
+  .plugins-view__available-card,
+  .plugins-view__source-actions {
     flex-direction: column;
   }
 
@@ -636,7 +687,8 @@
   }
 
   .plugins-view__row-actions,
-  .plugins-view__source-row {
+  .plugins-view__source-row,
+  .plugins-view__source-actions {
     width: 100%;
   }
 

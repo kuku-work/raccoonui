@@ -72,6 +72,7 @@ export function PluginMetaSections({ record, omit, compact, heading }: Props) {
   const [copied, setCopied] = useState(false);
 
   const manifest: PluginManifest = record.manifest ?? ({} as PluginManifest);
+  const specVersion = typeof manifest.specVersion === 'string' ? manifest.specVersion : '';
   const od = manifest.od ?? {};
   const description = manifest.description ?? '';
   const query = resolvePluginQueryFallback(od.useCase?.query);
@@ -514,6 +515,14 @@ export function PluginMetaSections({ record, omit, compact, heading }: Props) {
               <code>v{record.version}</code>
             </dd>
           </div>
+          {specVersion ? (
+            <div>
+              <dt>Spec</dt>
+              <dd>
+                <code>v{specVersion}</code>
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Trust</dt>
             <dd>

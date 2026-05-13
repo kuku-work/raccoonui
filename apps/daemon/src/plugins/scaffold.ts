@@ -100,6 +100,7 @@ export async function scaffoldPlugin(input: ScaffoldInput): Promise<ScaffoldResu
 
   const manifest: Record<string, unknown> = {
     $schema:     'https://open-design.ai/schemas/plugin.v1.json',
+    specVersion: '1.0.0',
     name:        input.id,
     title,
     version:     '0.1.0',
@@ -142,7 +143,7 @@ export async function scaffoldPlugin(input: ScaffoldInput): Promise<ScaffoldResu
     '## Files',
     '',
     '- `SKILL.md` — the canonical agent skill body.',
-    '- `open-design.json` — the Open Design marketplace sidecar.',
+    '- `open-design.json` — the versioned Open Design marketplace sidecar.',
     '',
     'Edit `SKILL.md` to teach the agent how to perform the workflow.',
     'Edit `open-design.json` to refine the marketplace card and inputs.',

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-profile-avatar-cinematic-south-asian-male-portrait-with-vultures",
   "title": "Profile / Avatar - Cinematic South Asian Male Portrait with Vultures",
   "version": "0.1.0",

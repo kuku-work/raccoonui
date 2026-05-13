@@ -258,6 +258,7 @@ export function resolvePluginSnapshot(input: ResolveSnapshotInput): ResolveSnaps
     conversationId: input.conversationId ?? null,
     runId: input.runId ?? null,
     pluginId: result.appliedPlugin.pluginId,
+    pluginSpecVersion: result.appliedPlugin.pluginSpecVersion ?? plugin.manifest.specVersion,
     pluginVersion: result.appliedPlugin.pluginVersion,
     pluginTitle: result.appliedPlugin.pluginTitle,
     pluginDescription: result.appliedPlugin.pluginDescription,

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-kami-landing",
   "title": "Kami Landing",
   "version": "0.1.0",
@@ -40,6 +41,7 @@
     "platform": "desktop",
     "scenario": "marketing",
     "surface": "web",
+    "featured": 0.05,
     "preview": {
       "type": "html",
       "entry": "./example.html"

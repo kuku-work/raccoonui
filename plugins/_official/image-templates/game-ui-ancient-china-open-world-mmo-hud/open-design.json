@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-game-ui-ancient-china-open-world-mmo-hud",
   "title": "Game UI - Ancient China Open-World MMO HUD",
   "version": "0.1.0",

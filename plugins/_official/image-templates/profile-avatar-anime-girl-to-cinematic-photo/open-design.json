@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-profile-avatar-anime-girl-to-cinematic-photo",
   "title": "Profile / Avatar - Anime Girl to Cinematic Photo",
   "version": "0.1.0",

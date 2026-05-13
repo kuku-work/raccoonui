@@ -724,11 +724,35 @@ export async function uninstallPlugin(id: string): Promise<boolean> {
 export interface PluginMarketplace {
   id: string;
   url: string;
-  trust: 'official' | 'trusted' | 'restricted';
+  trust: PluginMarketplaceTrust;
+  specVersion?: string;
+  version?: string;
+  addedAt?: number;
+  refreshedAt?: number;
   manifest: {
     name?: string;
-    plugins?: Array<{ name: string; source: string; description?: string }>;
+    version?: string;
+    plugins?: PluginMarketplaceEntry[];
   };
+}
+
+export type PluginMarketplaceTrust = 'official' | 'trusted' | 'restricted';
+
+export interface PluginMarketplaceEntry {
+  name: string;
+  source: string;
+  version?: string;
+  ref?: string;
+  tags?: string[];
+  title?: string;
+  description?: string;
+  icon?: string;
+}
+
+export interface PluginMarketplaceMutationOutcome {
+  ok: boolean;
+  marketplace?: PluginMarketplace;
+  message: string;
 }
 
 export async function listPluginMarketplaces(): Promise<PluginMarketplace[]> {
@@ -740,6 +764,82 @@ export async function listPluginMarketplaces(): Promise<PluginMarketplace[]> {
   } catch {
     return [];
   }
+}
+
+export async function addPluginMarketplace(input: {
+  url: string;
+  trust: PluginMarketplaceTrust;
+}): Promise<PluginMarketplaceMutationOutcome> {
+  try {
+    const resp = await fetch('/api/marketplaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return readPluginMarketplaceOutcome(resp, 'Marketplace source added.');
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
+export async function refreshPluginMarketplace(
+  id: string,
+): Promise<PluginMarketplaceMutationOutcome> {
+  try {
+    const resp = await fetch(`/api/marketplaces/${encodeURIComponent(id)}/refresh`, {
+      method: 'POST',
+    });
+    return readPluginMarketplaceOutcome(resp, 'Marketplace source refreshed.');
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
+export async function removePluginMarketplace(
+  id: string,
+): Promise<PluginMarketplaceMutationOutcome> {
+  try {
+    const resp = await fetch(`/api/marketplaces/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!resp.ok) {
+      return { ok: false, message: await readErrorMessage(resp) };
+    }
+    return { ok: true, message: 'Marketplace source removed.' };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
+export async function setPluginMarketplaceTrust(
+  id: string,
+  trust: PluginMarketplaceTrust,
+): Promise<PluginMarketplaceMutationOutcome> {
+  try {
+    const resp = await fetch(`/api/marketplaces/${encodeURIComponent(id)}/trust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trust }),
+    });
+    return readPluginMarketplaceOutcome(resp, 'Marketplace trust updated.');
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
+async function readPluginMarketplaceOutcome(
+  resp: Response,
+  successMessage: string,
+): Promise<PluginMarketplaceMutationOutcome> {
+  if (!resp.ok) {
+    return { ok: false, message: await readErrorMessage(resp) };
+  }
+  const marketplace = (await resp.json().catch(() => null)) as PluginMarketplace | null;
+  return {
+    ok: true,
+    ...(marketplace ? { marketplace } : {}),
+    message: successMessage,
+  };
 }
 
 export async function applyPlugin(

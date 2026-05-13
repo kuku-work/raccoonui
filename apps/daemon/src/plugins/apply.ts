@@ -164,6 +164,7 @@ export function applyPlugin(input: ApplyInput): ApplyComputed {
   const snapshot: AppliedPluginSnapshot = {
     snapshotId:           '',
     pluginId:             input.plugin.id,
+    pluginSpecVersion:    manifest.specVersion,
     pluginVersion:        input.plugin.version,
     manifestSourceDigest: digest,
     sourceMarketplaceId:  input.plugin.sourceMarketplaceId,

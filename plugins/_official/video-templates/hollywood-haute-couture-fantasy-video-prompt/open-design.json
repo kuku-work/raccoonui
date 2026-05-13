@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-hollywood-haute-couture-fantasy-video-prompt",
   "title": "Hollywood Haute Couture Fantasy Video Prompt",
   "version": "0.1.0",

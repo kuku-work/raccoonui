@@ -29,8 +29,11 @@ export interface ExampleGeneratorOptions {
 
 interface SkillFrontmatter {
   name?: string;
+  zh_name?: string;
+  en_name?: string;
   description?: string;
   triggers?: unknown[];
+  tags?: unknown[];
   od?: {
     mode?: string;
     surface?: string;
@@ -75,12 +78,14 @@ export async function runExampleGenerator(opts: ExampleGeneratorOptions): Promis
     const fm = data as SkillFrontmatter;
     const name = pluginName('example', id);
     const folder = path.join(PLUGINS_ROOT, TIER_EXAMPLES, id);
+    const title = deriveTitle(fm, id);
 
     const mode = fm.od?.mode ?? 'prototype';
     const surface = fm.od?.surface ?? inferSurface(mode);
     const scenario = fm.od?.scenario ?? 'design';
     const platform = fm.od?.platform;
     const exampleFile = await sideFiles(srcFolder);
+    const featured = normaliseFeatured(fm.od?.featured);
     // The plugin folder ships `example.html` (the baked output), not
     // the original `index.html` the skill renders into the project
     // working directory. Always point preview at the in-folder file
@@ -90,7 +95,7 @@ export async function runExampleGenerator(opts: ExampleGeneratorOptions): Promis
 
     const manifest = buildManifest({
       name,
-      title: humanize(id),
+      title,
       description: typeof fm.description === 'string' ? fm.description.trim() : '',
       license: 'MIT',
       author: { name: 'Open Design', url: 'https://github.com/nexu-io' },
@@ -102,6 +107,7 @@ export async function runExampleGenerator(opts: ExampleGeneratorOptions): Promis
         scenario,
         surface,
         platform,
+        ...(Array.isArray(fm.tags) ? fm.tags.map(String) : []),
         ...(Array.isArray(fm.triggers) ? fm.triggers.map(String) : []),
       ]),
       compat: { agentSkills: [{ path: './SKILL.md' }] },
@@ -112,11 +118,12 @@ export async function runExampleGenerator(opts: ExampleGeneratorOptions): Promis
         ...(platform ? { platform } : {}),
         scenario,
         surface,
+        ...(featured !== undefined ? { featured } : {}),
         preview: { type: fm.od?.preview?.type ?? 'html', entry: `./${previewEntry}` },
         useCase: {
           query: derivePrompt(fm),
           ...(exampleFile.hasExample
-            ? { exampleOutputs: [{ path: './example.html', title: humanize(id) }] }
+            ? { exampleOutputs: [{ path: './example.html', title }] }
             : {}),
         },
         ...(Array.isArray(fm.od?.inputs) && fm.od.inputs.length > 0
@@ -169,6 +176,27 @@ function derivePrompt(fm: SkillFrontmatter): string {
   if (!desc) return 'Produce the artifact described in this skill, following its workflow exactly.';
   const collapsed = desc.replace(/\s+/g, ' ').trim();
   return collapsed.slice(0, 320);
+}
+
+function normaliseFeatured(value: unknown): number | true | undefined {
+  if (value === true) return true;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'true') return true;
+    const n = Number(trimmed);
+    if (Number.isFinite(n)) return Math.max(0, n);
+  }
+  return undefined;
+}
+
+function deriveTitle(fm: SkillFrontmatter, id: string): string {
+  for (const value of [fm.zh_name, fm.en_name]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return humanize(id);
 }
 
 function humanize(id: string): string {

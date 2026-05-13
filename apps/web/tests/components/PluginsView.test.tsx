@@ -5,10 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstalledPluginRecord, PluginSourceKind, TrustTier } from '@open-design/contracts';
 import { PluginsView } from '../../src/components/PluginsView';
 import {
+  addPluginMarketplace,
   applyPlugin,
   installPluginSource,
   listPluginMarketplaces,
   listPlugins,
+  refreshPluginMarketplace,
+  removePluginMarketplace,
+  setPluginMarketplaceTrust,
   type PluginShareProjectOutcome,
   uploadPluginFolder,
   uploadPluginZip,
@@ -19,10 +23,14 @@ vi.mock('../../src/router', () => ({
 }));
 
 vi.mock('../../src/state/projects', () => ({
+  addPluginMarketplace: vi.fn(),
   applyPlugin: vi.fn(),
   installPluginSource: vi.fn(),
   listPluginMarketplaces: vi.fn(),
   listPlugins: vi.fn(),
+  refreshPluginMarketplace: vi.fn(),
+  removePluginMarketplace: vi.fn(),
+  setPluginMarketplaceTrust: vi.fn(),
   uninstallPlugin: vi.fn(),
   uploadPluginFolder: vi.fn(),
   uploadPluginZip: vi.fn(),
@@ -63,6 +71,10 @@ function makePlugin(
 const mockedListPlugins = vi.mocked(listPlugins);
 const mockedListMarketplaces = vi.mocked(listPluginMarketplaces);
 const mockedInstallPluginSource = vi.mocked(installPluginSource);
+const mockedAddMarketplace = vi.mocked(addPluginMarketplace);
+const mockedRefreshMarketplace = vi.mocked(refreshPluginMarketplace);
+const mockedRemoveMarketplace = vi.mocked(removePluginMarketplace);
+const mockedSetMarketplaceTrust = vi.mocked(setPluginMarketplaceTrust);
 const mockedApplyPlugin = vi.mocked(applyPlugin);
 const mockedUploadPluginFolder = vi.mocked(uploadPluginFolder);
 const mockedUploadPluginZip = vi.mocked(uploadPluginZip);
@@ -79,10 +91,34 @@ beforeEach(() => {
       trust: 'official',
       manifest: {
         name: 'Example Catalog',
-        plugins: [{ name: 'remote-plugin', source: 'github:owner/repo' }],
+        version: '1.0.0',
+        plugins: [{
+          name: 'remote-plugin',
+          title: 'Remote Plugin',
+          source: 'github:owner/repo',
+          version: '1.2.0',
+          description: 'Remote catalog plugin.',
+          tags: ['deck'],
+        }],
       },
     },
   ]);
+  mockedAddMarketplace.mockResolvedValue({
+    ok: true,
+    message: 'Marketplace source added.',
+  });
+  mockedRefreshMarketplace.mockResolvedValue({
+    ok: true,
+    message: 'Marketplace source refreshed.',
+  });
+  mockedRemoveMarketplace.mockResolvedValue({
+    ok: true,
+    message: 'Marketplace source removed.',
+  });
+  mockedSetMarketplaceTrust.mockResolvedValue({
+    ok: true,
+    message: 'Marketplace trust updated.',
+  });
   mockedInstallPluginSource.mockResolvedValue({
     ok: true,
     plugin: makePlugin('new-plugin', 'github', 'restricted'),
@@ -150,20 +186,20 @@ describe('PluginsView', () => {
     expect(screen.queryByRole('dialog', { name: 'Create or import a plugin' })).toBeNull();
   });
 
-  it('groups official and user-installed plugins while keeping marketplaces coming soon', async () => {
+  it('shows installed plugins and available registry entries', async () => {
     render(<PluginsView />);
 
     await waitFor(() => expect(screen.getAllByText('Official Plugin').length).toBeGreaterThan(0));
-    expect(screen.queryByText('User Plugin')).toBeNull();
-
-    const myPluginsTab = screen.getByTestId('plugins-tab-mine');
-    const marketplacesTab = screen.getByTestId('plugins-tab-marketplaces');
-    expect(myPluginsTab.getAttribute('aria-disabled')).toBeNull();
-    expect(marketplacesTab.getAttribute('aria-disabled')).toBe('true');
-
-    fireEvent.click(myPluginsTab);
     expect(screen.getAllByText('User Plugin').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Official Plugin')).toBeNull();
+
+    const availableTab = screen.getByTestId('plugins-tab-available');
+    const sourcesTab = screen.getByTestId('plugins-tab-sources');
+    expect(availableTab.getAttribute('aria-disabled')).toBeNull();
+    expect(sourcesTab.getAttribute('aria-disabled')).toBeNull();
+
+    fireEvent.click(availableTab);
+    expect(await screen.findByText('Remote Plugin')).toBeTruthy();
+    expect(screen.getByText('Example Catalog')).toBeTruthy();
   });
 
   it('installs from a supported source string', async () => {
@@ -183,8 +219,51 @@ describe('PluginsView', () => {
       ),
     );
     expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
-    expect(screen.getByTestId('plugins-tab-mine').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('plugins-tab-installed').getAttribute('aria-selected')).toBe('true');
     expect(screen.getAllByText('User Plugin').length).toBeGreaterThan(0);
+  });
+
+  it('installs an available marketplace entry by name', async () => {
+    render(<PluginsView />);
+
+    fireEvent.click(await screen.findByTestId('plugins-tab-available'));
+    fireEvent.click(await screen.findByTestId('plugins-available-install-remote-plugin'));
+
+    await waitFor(() =>
+      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin'),
+    );
+    expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
+  });
+
+  it('manages registry sources from the Sources tab', async () => {
+    render(<PluginsView />);
+
+    fireEvent.click(await screen.findByTestId('plugins-tab-sources'));
+    fireEvent.change(screen.getByLabelText('Source URL'), {
+      target: { value: 'https://example.com/next.json' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add source' }));
+
+    await waitFor(() =>
+      expect(mockedAddMarketplace).toHaveBeenCalledWith({
+        url: 'https://example.com/next.json',
+        trust: 'restricted',
+      }),
+    );
+    expect(await screen.findByText('Marketplace source added.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(mockedRefreshMarketplace).toHaveBeenCalledWith('catalog-1'));
+
+    fireEvent.change(screen.getByLabelText('Trust for Example Catalog'), {
+      target: { value: 'trusted' },
+    });
+    await waitFor(() =>
+      expect(mockedSetMarketplaceTrust).toHaveBeenCalledWith('catalog-1', 'trusted'),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(mockedRemoveMarketplace).toHaveBeenCalledWith('catalog-1'));
   });
 
   it('uploads zip and folder plugins from the import dialog', async () => {
@@ -257,7 +336,6 @@ describe('PluginsView', () => {
       />,
     );
 
-    fireEvent.click(await screen.findByTestId('plugins-tab-mine'));
     const publish = await screen.findByTestId('plugins-home-publish-github-user-plugin');
     expect(publish.textContent).toContain('Publish');
     fireEvent.click(publish);

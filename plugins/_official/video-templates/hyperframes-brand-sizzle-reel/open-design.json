@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-hyperframes-brand-sizzle-reel",
   "title": "HyperFrames: 30-Second Brand Sizzle Reel",
   "version": "0.1.0",

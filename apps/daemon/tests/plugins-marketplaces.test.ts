@@ -25,10 +25,12 @@ let db: Database.Database;
 let tmpDir: string;
 
 const VALID_MANIFEST = JSON.stringify({
+  specVersion: '1.0.0',
   name: 'test-marketplace',
+  version: '1.0.0',
   metadata: { description: 'fixture', version: '1.0.0' },
   plugins: [
-    { name: 'sample-plugin', source: 'github:open-design/sample-plugin' },
+    { name: 'sample-plugin', source: 'github:open-design/sample-plugin', version: '0.1.0' },
   ],
 });
 
@@ -65,6 +67,8 @@ describe('marketplaces', () => {
       throw new Error(`expected ok: ${JSON.stringify(result)}`);
     }
     expect(result.row.url).toBe('https://example.com/marketplace.json');
+    expect(result.row.specVersion).toBe('1.0.0');
+    expect(result.row.version).toBe('1.0.0');
     expect(result.row.trust).toBe('restricted');
     expect(result.row.manifest.plugins).toHaveLength(1);
     expect(listMarketplaces(db)).toHaveLength(1);
@@ -103,13 +107,16 @@ describe('marketplaces', () => {
     updatedManifest.plugins.push({
       name: 'new-plugin',
       source: 'github:open-design/new-plugin',
+      version: '0.2.0',
     });
+    updatedManifest.version = '1.0.1';
     const refreshed = await refreshMarketplace(
       db,
       added.row.id,
       fixtureFetcher(JSON.stringify(updatedManifest)),
     );
     if (!refreshed.ok) throw new Error('refresh failed');
+    expect(refreshed.row.version).toBe('1.0.1');
     expect(refreshed.row.manifest.plugins).toHaveLength(2);
     expect(refreshed.row.refreshedAt).toBeGreaterThanOrEqual(added.row.refreshedAt);
   });
@@ -136,6 +143,8 @@ describe('resolvePluginInMarketplaces', () => {
     const resolved = resolvePluginInMarketplaces(db, 'sample-plugin');
     expect(resolved).not.toBeNull();
     expect(resolved!.source).toBe('github:open-design/sample-plugin');
+    expect(resolved!.pluginVersion).toBe('0.1.0');
+    expect(resolved!.marketplaceVersion).toBe('1.0.0');
     expect(resolved!.marketplaceTrust).toBe('restricted');
   });
 
@@ -159,8 +168,10 @@ describe('resolvePluginInMarketplaces', () => {
 
   it('walks marketplaces in registration order, first hit wins', async () => {
     const otherManifest = JSON.stringify({
+      specVersion: '1.0.0',
       name: 'other',
-      plugins: [{ name: 'sample-plugin', source: 'github:other/sample' }],
+      version: '1.0.0',
+      plugins: [{ name: 'sample-plugin', source: 'github:other/sample', version: '0.9.0' }],
     });
     const first = await addMarketplace(db, {
       url: 'https://first.example/marketplace.json',
