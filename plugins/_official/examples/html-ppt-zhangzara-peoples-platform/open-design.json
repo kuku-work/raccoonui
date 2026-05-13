@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-html-ppt-zhangzara-peoples-platform",
   "title": "Html Ppt Zhangzara Peoples Platform",
   "version": "0.1.0",

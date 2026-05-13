@@ -91,6 +91,7 @@ For ClawHub-ready skills:
 - Run the dry run or inspect command before making a listing public.
 - Link back to the canonical GitHub repo and Open Design PR.
 - Keep changelog text honest and versioned.
+- Keep `open-design.json` `specVersion` fixed to the spec kit version and bump plugin `version` for every publishable behavior change.
 
 ## Safety Checklist
 
@@ -111,6 +112,9 @@ Public skill registries are supply-chain surfaces. Before publishing:
 
 - Canonical source:
 - Open Design PR:
+- Open Design specVersion:
+- Plugin version:
+- Marketplace catalog version:
 - skills.sh install:
 - ClawHub listing:
 - Other registries:
@@ -132,4 +136,3 @@ Public skill registries are supply-chain surfaces. Before publishing:
 - [ClawHub](https://clawhub.ai/)
 - [ClawHub quickstart](https://github.com/openclaw/clawhub/blob/main/docs/quickstart.md)
 - [How ClawHub works](https://documentation.openclaw.ai/clawhub/how-it-works)
-

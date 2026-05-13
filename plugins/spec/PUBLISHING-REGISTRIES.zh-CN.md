@@ -91,6 +91,7 @@ clawhub package publish <source> --family code-plugin
 - 公开 listing 前先跑 dry run 或 inspect。
 - 链回 canonical GitHub repo 和 Open Design PR。
 - changelog 诚实且版本化。
+- `open-design.json` 的 `specVersion` 保持为规范包版本；每次可发布的行为变化都 bump 插件 `version`。
 
 ## 安全 Checklist
 
@@ -111,6 +112,9 @@ clawhub package publish <source> --family code-plugin
 
 - Canonical source:
 - Open Design PR:
+- Open Design specVersion:
+- Plugin version:
+- Marketplace catalog version:
 - skills.sh install:
 - ClawHub listing:
 - Other registries:
@@ -132,4 +136,3 @@ clawhub package publish <source> --family code-plugin
 - [ClawHub](https://clawhub.ai/)
 - [ClawHub quickstart](https://github.com/openclaw/clawhub/blob/main/docs/quickstart.md)
 - [How ClawHub works](https://documentation.openclaw.ai/clawhub/how-it-works)
-

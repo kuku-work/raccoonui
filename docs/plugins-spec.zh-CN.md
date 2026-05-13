@@ -222,6 +222,7 @@ my-plugin/
 ```json
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "make-a-deck",
   "title": "Make a deck",
   "version": "1.0.0",
@@ -346,6 +347,8 @@ my-plugin/
 ### 5.1 字段说明
 
 - `compat.*`：指向继承格式文件的相对路径。loader 会把它们的内容合并进 [`composeSystemPrompt()`](../apps/daemon/src/prompts/system.ts) 组装出的 OD prompt stack。
+- `specVersion`：解释此 manifest 时使用的 Open Design 插件规范版本。它独立于插件 `version`，并会冻结到 apply snapshot，便于 replay。
+- `version`：插件包自身版本。只要行为、元数据、pipeline、inputs 或随包 assets 出现用户需要审计的变化，就应该 bump。
 - `od.kind`：registry 里的分类（`skill` / `scenario` / `atom` / `bundle`）。
 - `od.taskKind`：四类产品场景之一（`new-generation` / `code-migration` / `figma-migration` / `tune-collab`，§1「四类产品场景」）。决定 marketplace filter、初始 inputs 模板、推荐 pipeline 起点。
 - `od.preview`：驱动 marketplace 卡片和详情页。`entry` 通过 daemon 以 sandboxed 方式服务（扩展现有 `/api/skills/:id/example` plumbing）。
@@ -422,15 +425,20 @@ export type ContextItem =
 
 ```json
 {
+  "$schema": "https://open-design.ai/schemas/marketplace.v1.json",
+  "specVersion": "1.0.0",
   "name": "open-design-official",
+  "version": "1.0.0",
   "owner":    { "name": "Open Design", "url": "https://open-design.ai" },
   "metadata": { "description": "First-party plugins", "version": "1.0.0" },
   "plugins": [
-    { "name": "make-a-deck", "source": "github:open-design/plugins/make-a-deck", "tags": ["deck"] },
-    { "name": "tweet-card",  "source": "https://files.../tweet-card-1.0.0.tgz",  "tags": ["marketing"] }
+    { "name": "make-a-deck", "version": "1.0.0", "source": "github:open-design/plugins/make-a-deck", "tags": ["deck"] },
+    { "name": "tweet-card",  "version": "1.0.0", "source": "https://files.../tweet-card-1.0.0.tgz",  "tags": ["marketing"] }
   ]
 }
 ```
+
+Marketplace 顶层 `version` 是 catalog snapshot 版本；每个 `plugins[]` entry 也声明被列入的插件版本。Installer 抓取后仍会校验目标文件夹自己的 `open-design.json`，但 registry search、审计日志和 marketplace refresh events 可以在安装前就理解 catalog 与插件版本。
 
 可以同时存在多个 marketplaces。用户通过 `od marketplace add <url>` 注册额外 index（Vercel 的、OpenClaw 的 clawhub、企业私有 catalog）。默认情况下，用户添加的 marketplace 只是 discovery source，它里面的插件仍然以 `restricted` 安装；只有官方内置 marketplace 或用户显式执行 `od marketplace add <url> --trust` / `od marketplace trust <id>` 后，来自该 marketplace 的插件才可以默认继承 `trusted`。
 
@@ -550,6 +558,7 @@ export interface ApplyResult {
 export interface AppliedPluginSnapshot {
   snapshotId: string;
   pluginId: string;
+  pluginSpecVersion: string;
   pluginVersion: string;
   manifestSourceDigest: string;
   sourceMarketplaceId?: string;
@@ -609,7 +618,7 @@ export interface InputFieldSpec {
 
 因此 daemon 必须：
 
-1. **Apply 时**：把 hydrated manifest 与 inputs 一起 hash 成 `manifestSourceDigest`，连同 `pluginVersion`、`pinnedRef`、`sourceMarketplaceId`、`resolvedContext`、`capabilitiesGranted`、`assetsStaged`、**`connectorsRequired` / `connectorsResolved`（参考 connector 子系统当前 `status`）**、**`mcpServers`（apply 时启用的 MCP server set）** 写入 `appliedPlugin`，返回给 caller。
+1. **Apply 时**：把 hydrated manifest 与 inputs 一起 hash 成 `manifestSourceDigest`，连同 `pluginSpecVersion`、`pluginVersion`、`pinnedRef`、`sourceMarketplaceId`、`resolvedContext`、`capabilitiesGranted`、`assetsStaged`、**`connectorsRequired` / `connectorsResolved`（参考 connector 子系统当前 `status`）**、**`mcpServers`（apply 时启用的 MCP server set）** 写入 `appliedPlugin`，返回给 caller。
 2. **Project create / run start 时**：把客户端提交的 `appliedPlugin`（或 daemon 在 server-side 重新解析得到的 snapshot）写入 SQLite `applied_plugin_snapshots` 表（§11.4），并在 `runs` / `conversations` 表中以 FK 指向。
 3. **Replay**：`od run replay <runId>` 与 `od plugin export <runId>` 必须从 snapshot 而非 live manifest 还原 prompt 与 assets，使老 run 在插件升级后仍可复现。
 4. **Audit**：UI 的 ProjectView 顶端展示 snapshot id + version + digest；artifact provenance（§11.5 ArtifactManifest）通过 snapshot id 反查 plugin source。
@@ -663,6 +672,7 @@ flowchart LR
 信任记录必须绑定 provenance，而不是只绑定名称：
 
 - `pluginId`
+- `specVersion`
 - `version` 或 resolved git SHA / archive digest
 - source marketplace id（如果有）
 - granted capabilities

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-video-seedance-three-kingdoms-zhaoyun-cradle-escape",
   "title": "Video - Three Kingdoms ARPG - Zhao Yun Cradle Escape (Seedance 2.0)",
   "version": "0.1.0",

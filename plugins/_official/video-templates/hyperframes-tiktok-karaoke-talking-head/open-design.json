@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-hyperframes-tiktok-karaoke-talking-head",
   "title": "HyperFrames: 9:16 TikTok Talking-Head with Karaoke Captions",
   "version": "0.1.0",

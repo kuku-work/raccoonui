@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-html-ppt-zhangzara-biennale-yellow",
   "title": "Html Ppt Zhangzara Biennale Yellow",
   "version": "0.1.0",

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-game-screenshot-anime-fighting-game-captain-ryuuga-vs-kaze-renshin",
   "title": "Game Screenshot - Anime Fighting Game: Captain Ryuuga vs Kaze Renshin",
   "version": "0.1.0",

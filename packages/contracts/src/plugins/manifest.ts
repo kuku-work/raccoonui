@@ -5,6 +5,10 @@ import { z } from 'zod';
 // outputs (synthesized PluginManifest from SKILL.md frontmatter or claude
 // plugin.json) parse cleanly without losing forward-compatible fields.
 
+export const OPEN_DESIGN_PLUGIN_SPEC_VERSION = '1.0.0';
+
+export const OpenDesignSpecVersionSchema = z.string().min(1);
+
 export const ReferenceSchema = z.object({
   ref:  z.string().optional(),
   path: z.string().optional(),
@@ -134,6 +138,7 @@ export type PluginConnectorRef = z.infer<typeof PluginConnectorRefSchema>;
 
 export const PluginManifestSchema = z.object({
   $schema:     z.string().optional(),
+  specVersion: OpenDesignSpecVersionSchema.optional(),
   name:        z.string().min(1).regex(/^[a-z0-9][a-z0-9._-]*$/),
   title:       z.string().optional(),
   version:     z.string().min(1),

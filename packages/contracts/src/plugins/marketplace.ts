@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  OpenDesignSpecVersionSchema,
+} from './manifest.js';
 
 // `open-design-marketplace.json` schema (v1). Mirrors
 // `docs/schemas/open-design.marketplace.v1.json`. The federated catalog
@@ -7,7 +11,7 @@ import { z } from 'zod';
 export const MarketplacePluginEntrySchema = z.object({
   name:        z.string().min(1),
   source:      z.string().min(1),
-  version:     z.string().optional(),
+  version:     z.string().min(1),
   ref:         z.string().optional(),
   tags:        z.array(z.string()).optional(),
   title:       z.string().optional(),
@@ -18,8 +22,10 @@ export const MarketplacePluginEntrySchema = z.object({
 export type MarketplacePluginEntry = z.infer<typeof MarketplacePluginEntrySchema>;
 
 export const MarketplaceManifestSchema = z.object({
-  $schema:  z.string().optional(),
-  name:     z.string().min(1),
+  $schema:     z.string().optional(),
+  specVersion: OpenDesignSpecVersionSchema.default(OPEN_DESIGN_PLUGIN_SPEC_VERSION),
+  name:        z.string().min(1),
+  version:     z.string().min(1),
   owner: z.object({
     name: z.string().optional(),
     url:  z.string().optional(),

@@ -45,6 +45,7 @@ my-plugin/
 ```json
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "my-plugin",
   "title": "My Plugin",
   "version": "0.1.0",
@@ -128,7 +129,9 @@ HyperFrames plugins may use `od.mode: "video"` plus a `hyperframes` tag when the
 ## 6. Manifest Rules
 
 - `name` is the stable plugin id.
+- `specVersion` is the Open Design plugin spec version that this manifest follows. Use the current spec kit value (`1.0.0`) unless the schema moves.
 - `version` is required. Use semver when possible.
+- `version` is the plugin package version, independent from `specVersion`.
 - `compat.agentSkills[0].path` should point to `./SKILL.md`.
 - `od.taskKind` must be one of `new-generation`, `figma-migration`, `code-migration`, or `tune-collab`.
 - `od.pipeline.stages[].atoms[]` should use known first-party atoms unless the plugin clearly targets a future OD release.
@@ -205,10 +208,11 @@ Also add `evals/trigger-queries.json` for activation testing when the descriptio
 Before opening a PR:
 
 1. Validate JSON syntax.
-2. Run `pnpm guard`.
-3. Run `pnpm --filter @open-design/plugin-runtime typecheck`.
-4. If available, run `od plugin validate ./path/to/plugin`.
-5. Include one screenshot, rendered preview, or example output when the plugin is visual.
-6. Explain trust and capabilities in the PR body.
+2. Confirm `open-design.json` includes `specVersion` and a bumped plugin `version` when behavior changed.
+3. Run `pnpm guard`.
+4. Run `pnpm --filter @open-design/plugin-runtime typecheck`.
+5. If available, run `od plugin validate ./path/to/plugin`.
+6. Include one screenshot, rendered preview, or example output when the plugin is visual.
+7. Explain trust and capabilities in the PR body.
 
 For external registry distribution, follow [`PUBLISHING-REGISTRIES.md`](PUBLISHING-REGISTRIES.md). In short: keep GitHub or the Open Design PR as source of truth, make the folder installable as a generic `SKILL.md` skill, then publish or list it on skills.sh, ClawHub, or other registries only after local validation passes.

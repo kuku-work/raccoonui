@@ -41,6 +41,7 @@ export type PluginConnectorBinding = z.infer<typeof PluginConnectorBindingSchema
 export const AppliedPluginSnapshotSchema = z.object({
   snapshotId:           z.string(),
   pluginId:             z.string(),
+  pluginSpecVersion:    z.string().optional(),
   pluginVersion:        z.string(),
   manifestSourceDigest: z.string(),
   sourceMarketplaceId:  z.string().optional(),

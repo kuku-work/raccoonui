@@ -40,7 +40,7 @@ Open Design 插件遵循和 Agent Skills 兼容的可移植形态：一个包含
 1. 复制 `templates/` 到一个新的插件文件夹。
 2. 把文件夹名和 frontmatter `name` 改成小写 id，例如 `launch-deck`。
 3. 在 `SKILL.md` 里写清触发描述，格式建议是：“Use this plugin when...”
-4. 填写 `open-design.json`：title、version、tags、`od.taskKind`、`od.mode`、`od.useCase.query`、`od.pipeline`、inputs 和 capabilities。
+4. 填写 `open-design.json`：`specVersion`、title、插件 `version`、tags、`od.taskKind`、`od.mode`、`od.useCase.query`、`od.pipeline`、inputs 和 capabilities。
 5. 如果插件有视觉输出，添加一个小的 `examples/` 或 `preview/` artifact。
 6. 本地校验：
 

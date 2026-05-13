@@ -45,6 +45,7 @@ my-plugin/
 ```json
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "my-plugin",
   "title": "My Plugin",
   "version": "0.1.0",
@@ -128,7 +129,9 @@ HyperFrames 插件可以使用 `od.mode: "video"` 加 `hyperframes` tag，让它
 ## 6. Manifest 规则
 
 - `name` 是稳定插件 id。
+- `specVersion` 是此 manifest 遵循的 Open Design 插件规范版本。除非 schema 升级，否则使用当前规范包的值（`1.0.0`）。
 - `version` 必填。尽量使用 semver。
+- `version` 是插件包自身版本，独立于 `specVersion`。
 - `compat.agentSkills[0].path` 应指向 `./SKILL.md`。
 - `od.taskKind` 必须是 `new-generation`、`figma-migration`、`code-migration` 或 `tune-collab`。
 - `od.pipeline.stages[].atoms[]` 应使用已知一方 atoms，除非插件明确面向未来 OD 版本。
@@ -205,10 +208,11 @@ preview 应展示真实输出形态，而不是装饰性的 splash screen。
 打开 PR 前：
 
 1. 校验 JSON 语法。
-2. 运行 `pnpm guard`。
-3. 运行 `pnpm --filter @open-design/plugin-runtime typecheck`。
-4. 如果可用，运行 `od plugin validate ./path/to/plugin`。
-5. 视觉类插件包含一张截图、渲染 preview 或示例输出。
-6. 在 PR body 里说明 trust 和 capabilities。
+2. 确认 `open-design.json` 包含 `specVersion`，并在行为变化时 bump 插件 `version`。
+3. 运行 `pnpm guard`。
+4. 运行 `pnpm --filter @open-design/plugin-runtime typecheck`。
+5. 如果可用，运行 `od plugin validate ./path/to/plugin`。
+6. 视觉类插件包含一张截图、渲染 preview 或示例输出。
+7. 在 PR body 里说明 trust 和 capabilities。
 
 外部 registry 分发策略见 [`PUBLISHING-REGISTRIES.zh-CN.md`](PUBLISHING-REGISTRIES.zh-CN.md)。简言之：把 GitHub 或 Open Design PR 作为 source of truth，让文件夹能作为通用 `SKILL.md` skill 安装；本地验证通过后，再发布或登记到 skills.sh、ClawHub 或其他 registry。

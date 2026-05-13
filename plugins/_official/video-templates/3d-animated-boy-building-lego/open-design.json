@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-3d-animated-boy-building-lego",
   "title": "3D Animated Boy Building Lego",
   "version": "0.1.0",

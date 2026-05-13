@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-social-media-post-fashion-editorial-collage",
   "title": "Social Media Post - Fashion Editorial Collage",
   "version": "0.1.0",

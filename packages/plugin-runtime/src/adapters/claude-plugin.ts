@@ -1,4 +1,7 @@
-import type { PluginManifest } from '@open-design/contracts';
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  type PluginManifest,
+} from '@open-design/contracts';
 
 // Adapter from a `.claude-plugin/plugin.json` file to a synthesized
 // PluginManifest. Phase 1 keeps the mapping minimal — name / version /
@@ -54,6 +57,7 @@ export function adaptClaudePlugin(
     warnings.push(`claude-plugin declares ${commands} command(s); v1 OD apply does not auto-register hooks. Add them via od.context.claudePlugins[].`);
   }
   const manifest: PluginManifest = {
+    specVersion: OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     name: safeName,
     title: typeof obj['title'] === 'string' ? obj['title'] : safeName,
     version,
@@ -69,6 +73,7 @@ export function adaptClaudePlugin(
 
 function synthesizeFallback(folderId: string, compatPath: string): PluginManifest {
   return {
+    specVersion: OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     name: folderId,
     title: folderId,
     version: '0.0.0',

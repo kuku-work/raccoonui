@@ -1,6 +1,8 @@
 {
   "$schema": "https://open-design.ai/schemas/marketplace.v1.json",
+  "specVersion": "1.0.0",
   "name": "open-design-spec-examples",
+  "version": "0.1.0",
   "owner": {
     "name": "Open Design Spec Examples",
     "url": "https://github.com/nexu-io/open-design"

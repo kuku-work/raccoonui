@@ -15,15 +15,16 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { readPluginEnvKnobs } from '../app-config.js';
-import type {
-  AppliedPluginSnapshot,
-  GenUISurfaceSpec,
-  McpServerSpec,
-  PluginAssetRef,
-  PluginConnectorBinding,
-  PluginConnectorRef,
-  PluginPipeline,
-  ResolvedContext,
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  type AppliedPluginSnapshot,
+  type GenUISurfaceSpec,
+  type McpServerSpec,
+  type PluginAssetRef,
+  type PluginConnectorBinding,
+  type PluginConnectorRef,
+  type PluginPipeline,
+  type ResolvedContext,
 } from '@open-design/contracts';
 
 type SqliteDb = Database.Database;
@@ -34,6 +35,7 @@ export interface CreateSnapshotInput {
   conversationId?: string | null | undefined;
   runId?: string | null | undefined;
   pluginId: string;
+  pluginSpecVersion?: string | null | undefined;
   pluginVersion: string;
   pluginTitle?: string | undefined;
   pluginDescription?: string | undefined;
@@ -69,7 +71,7 @@ export function createSnapshot(db: SqliteDb, input: CreateSnapshotInput): Applie
 
   db.prepare(`
     INSERT INTO applied_plugin_snapshots (
-      id, project_id, conversation_id, run_id, plugin_id, plugin_version,
+      id, project_id, conversation_id, run_id, plugin_id, plugin_spec_version, plugin_version,
       manifest_source_digest, source_marketplace_id, pinned_ref, task_kind,
       inputs_json, resolved_context_json, pipeline_json, genui_surfaces_json,
       capabilities_granted, capabilities_required, assets_staged_json,
@@ -77,13 +79,14 @@ export function createSnapshot(db: SqliteDb, input: CreateSnapshotInput): Applie
       plugin_title, plugin_description, query_text,
       status, applied_at, expires_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fresh', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'fresh', ?, ?)
   `).run(
     id,
     input.projectId,
     input.conversationId ?? null,
     input.runId ?? null,
     input.pluginId,
+    input.pluginSpecVersion ?? OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     input.pluginVersion,
     input.manifestSourceDigest,
     input.sourceMarketplaceId ?? null,
@@ -280,6 +283,7 @@ function buildSnapshot(args: {
   const snapshot: AppliedPluginSnapshot = {
     snapshotId:           id,
     pluginId:             input.pluginId,
+    pluginSpecVersion:    input.pluginSpecVersion ?? OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     pluginVersion:        input.pluginVersion,
     manifestSourceDigest: input.manifestSourceDigest,
     sourceMarketplaceId:  input.sourceMarketplaceId ?? undefined,
@@ -309,6 +313,7 @@ export function rowToSnapshot(row: DbRow): AppliedPluginSnapshot {
   const snapshot: AppliedPluginSnapshot = {
     snapshotId:           String(row['id']),
     pluginId:             String(row['plugin_id']),
+    pluginSpecVersion:    row['plugin_spec_version'] != null ? String(row['plugin_spec_version']) : undefined,
     pluginVersion:        String(row['plugin_version']),
     manifestSourceDigest: String(row['manifest_source_digest']),
     sourceMarketplaceId:  row['source_marketplace_id'] != null ? String(row['source_marketplace_id']) : undefined,

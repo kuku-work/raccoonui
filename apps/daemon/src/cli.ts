@@ -1218,7 +1218,7 @@ Common options:
         return;
       }
       for (const m of rows) {
-        console.log(`${m.id}  trust=${m.trust}  url=${m.url}`);
+        console.log(`${m.id}  version=${m.version ?? 'unknown'}  spec=${m.specVersion ?? 'unknown'}  trust=${m.trust}  url=${m.url}`);
       }
       return;
     }
@@ -1249,7 +1249,9 @@ Common options:
           matches.push({
             marketplaceId:  mp.id,
             marketplaceUrl: mp.url,
+            marketplaceVersion: mp.version,
             name:           p.name,
+            version:        p.version,
             source:         p.source,
             description:    p.description ?? '',
             tags:           p.tags ?? [],
@@ -1265,7 +1267,7 @@ Common options:
         return;
       }
       for (const m of matches) {
-        console.log(`${m.name}\t${m.source}\t${m.marketplaceId}\t${m.description}`);
+        console.log(`${m.name}@${m.version}\t${m.source}\t${m.marketplaceId}@${m.marketplaceVersion}\t${m.description}`);
       }
       return;
     }

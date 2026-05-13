@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-social-media-post-showa-day-retro-culture-magazine-cover",
   "title": "Social Media Post - Showa Day Retro Culture Magazine Cover",
   "version": "0.1.0",

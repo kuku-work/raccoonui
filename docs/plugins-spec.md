@@ -222,6 +222,7 @@ Rules of authorship:
 ```json
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "make-a-deck",
   "title": "Make a deck",
   "version": "1.0.0",
@@ -346,6 +347,8 @@ Rules of authorship:
 ### 5.1 Field reference
 
 - `compat.*` — relative paths to inherited files. The loader concatenates their content into the OD prompt stack assembled by [`composeSystemPrompt()`](../apps/daemon/src/prompts/system.ts).
+- `specVersion` — the Open Design plugin spec version used to interpret the manifest. This is distinct from plugin `version` and is frozen into apply snapshots for replay.
+- `version` — the plugin package version. Bump it whenever behavior, metadata, pipeline, inputs, or bundled assets change in a way users may need to audit.
 - `od.kind` — registry classification (`skill` / `scenario` / `atom` / `bundle`).
 - `od.taskKind` — one of the four product scenarios (`new-generation` / `code-migration` / `figma-migration` / `tune-collab`, see §1 "Four product scenarios"). Drives marketplace filters, default input templates, and the recommended pipeline starting point.
 - `od.preview` — drives the marketplace card and detail page. `entry` is served sandboxed via the daemon (the existing `/api/skills/:id/example` plumbing extended to plugins).
@@ -422,15 +425,20 @@ Mirrors [`anthropics/skills/.claude-plugin/marketplace.json`](https://raw.github
 
 ```json
 {
+  "$schema": "https://open-design.ai/schemas/marketplace.v1.json",
+  "specVersion": "1.0.0",
   "name": "open-design-official",
+  "version": "1.0.0",
   "owner":    { "name": "Open Design", "url": "https://open-design.ai" },
   "metadata": { "description": "First-party plugins", "version": "1.0.0" },
   "plugins": [
-    { "name": "make-a-deck", "source": "github:open-design/plugins/make-a-deck", "tags": ["deck"] },
-    { "name": "tweet-card",  "source": "https://files.../tweet-card-1.0.0.tgz",  "tags": ["marketing"] }
+    { "name": "make-a-deck", "version": "1.0.0", "source": "github:open-design/plugins/make-a-deck", "tags": ["deck"] },
+    { "name": "tweet-card",  "version": "1.0.0", "source": "https://files.../tweet-card-1.0.0.tgz",  "tags": ["marketing"] }
   ]
 }
 ```
+
+The marketplace top-level `version` is the catalog snapshot version; every `plugins[]` entry also declares the listed plugin version. Installers still verify the target folder's own `open-design.json` after fetching, but registry search, audit logs, and marketplace refresh events can now reason about catalog and plugin versions before install.
 
 Multiple marketplaces coexist — the user runs `od marketplace add <url>` to register additional indexes (Vercel's, OpenClaw's clawhub, an enterprise team's private catalog). By default, a user-added marketplace is only a discovery source and plugins from it still install as `restricted`; only the built-in official marketplace or a marketplace explicitly trusted through `od marketplace add <url> --trust` / `od marketplace trust <id>` can pass through default `trusted` status.
 
@@ -550,6 +558,7 @@ export interface ApplyResult {
 export interface AppliedPluginSnapshot {
   snapshotId: string;
   pluginId: string;
+  pluginSpecVersion: string;
   pluginVersion: string;
   manifestSourceDigest: string;
   sourceMarketplaceId?: string;
@@ -610,7 +619,7 @@ Lives in `packages/contracts/src/plugins/apply.ts`. Re-exported from [`packages/
 
 The daemon therefore must:
 
-1. **At apply time** — hash the hydrated manifest plus inputs into `manifestSourceDigest`, then write `pluginVersion`, `pinnedRef`, `sourceMarketplaceId`, `resolvedContext`, `capabilitiesGranted`, `assetsStaged`, **`connectorsRequired` / `connectorsResolved` (cross-checked against the connector subsystem's current `status`)**, and **`mcpServers` (the MCP server set active at apply time)** into `appliedPlugin` and return it to the caller.
+1. **At apply time** — hash the hydrated manifest plus inputs into `manifestSourceDigest`, then write `pluginSpecVersion`, `pluginVersion`, `pinnedRef`, `sourceMarketplaceId`, `resolvedContext`, `capabilitiesGranted`, `assetsStaged`, **`connectorsRequired` / `connectorsResolved` (cross-checked against the connector subsystem's current `status`)**, and **`mcpServers` (the MCP server set active at apply time)** into `appliedPlugin` and return it to the caller.
 2. **At project create / run start** — write the client-supplied `appliedPlugin` (or the daemon's server-side re-resolved snapshot) into the SQLite `applied_plugin_snapshots` table (§11.4) and FK-link it from `runs` / `conversations`.
 3. **Replay** — `od run replay <runId>` and `od plugin export <runId>` must reconstruct prompt and assets from the snapshot rather than the live manifest, so old runs remain reproducible after plugin upgrades.
 4. **Audit** — UI ProjectView shows snapshot id + version + digest at the top; artifact provenance (§11.5 ArtifactManifest) reverse-resolves plugin source via the snapshot id.
@@ -664,6 +673,7 @@ A `restricted` plugin can never reach P3/P4/P5 unless the user grants the capabi
 Trust records must bind to provenance, not just a name:
 
 - `pluginId`
+- `specVersion`
 - `version` or resolved git SHA / archive digest
 - source marketplace id, if any
 - granted capabilities

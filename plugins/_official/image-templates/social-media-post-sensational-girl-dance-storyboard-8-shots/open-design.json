@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-social-media-post-sensational-girl-dance-storyboard-8-shots",
   "title": "Social Media Post - Sensational Girl Dance Storyboard (8 Shots)",
   "version": "0.1.0",

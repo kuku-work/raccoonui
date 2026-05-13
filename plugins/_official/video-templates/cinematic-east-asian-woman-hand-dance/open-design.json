@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-cinematic-east-asian-woman-hand-dance",
   "title": "Cinematic East Asian Woman Hand Dance",
   "version": "0.1.0",

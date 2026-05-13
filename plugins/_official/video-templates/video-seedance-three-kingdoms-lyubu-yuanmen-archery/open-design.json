@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-video-seedance-three-kingdoms-lyubu-yuanmen-archery",
   "title": "Video - Three Kingdoms ARPG - Lyu Bu Yuanmen Archery (Seedance 2.0)",
   "version": "0.1.0",

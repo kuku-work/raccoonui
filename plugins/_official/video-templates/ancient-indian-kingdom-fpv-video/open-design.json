@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-ancient-indian-kingdom-fpv-video",
   "title": "Ancient Indian Kingdom FPV Video",
   "version": "0.1.0",

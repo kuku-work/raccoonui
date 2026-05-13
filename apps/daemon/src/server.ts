@@ -4821,7 +4821,11 @@ export async function startServer({
         recordPluginEvent({
           kind:     'plugin.marketplace-refreshed',
           pluginId: '',
-          details:  { marketplaceId: req.params.id },
+          details:  {
+            marketplaceId: req.params.id,
+            marketplaceVersion: result.row.version,
+            specVersion: result.row.specVersion,
+          },
         });
       } catch { /* best-effort */ }
       res.json(result.row);
@@ -5154,6 +5158,7 @@ export async function startServer({
         // the digest match guarantees byte-equality (§8.2.1).
         rerun: {
           pluginId:             snapshot.pluginId,
+          pluginSpecVersion:    snapshot.pluginSpecVersion,
           pluginVersion:        snapshot.pluginVersion,
           inputs:               snapshot.inputs,
           manifestSourceDigest: snapshot.manifestSourceDigest,

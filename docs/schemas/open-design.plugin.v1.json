@@ -4,10 +4,11 @@
   "title": "Open Design plugin manifest (v1)",
   "description": "Schema for `open-design.json` sidecar files. Companion of `SKILL.md`; never duplicates skill body content. See docs/plugins-spec.md §5.",
   "type": "object",
-  "required": ["name", "version"],
+  "required": ["specVersion", "name", "version"],
   "additionalProperties": true,
   "properties": {
     "$schema": { "type": "string", "format": "uri" },
+    "specVersion": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "title": { "type": "string", "minLength": 1 },
     "version": { "type": "string", "minLength": 1 },

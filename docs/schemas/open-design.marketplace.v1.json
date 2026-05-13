@@ -4,11 +4,13 @@
   "title": "Open Design plugin marketplace index (v1)",
   "description": "Schema for `open-design-marketplace.json` federated catalog files. See docs/plugins-spec.md §6.",
   "type": "object",
-  "required": ["name", "plugins"],
+  "required": ["specVersion", "name", "version", "plugins"],
   "additionalProperties": true,
   "properties": {
     "$schema": { "type": "string", "format": "uri" },
+    "specVersion": { "type": "string", "minLength": 1 },
     "name":    { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
     "owner": {
       "type": "object",
       "properties": {
@@ -29,11 +31,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "source"],
+        "required": ["name", "source", "version"],
         "properties": {
           "name":    { "type": "string", "minLength": 1 },
           "source":  { "type": "string", "minLength": 1 },
-          "version": { "type": "string" },
+          "version": { "type": "string", "minLength": 1 },
           "ref":     { "type": "string" },
           "tags":    { "type": "array", "items": { "type": "string" } },
           "title":   { "type": "string" },

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-frame-liquid-bg-hero",
   "title": "流体背景 Hero 帧",
   "version": "0.1.0",

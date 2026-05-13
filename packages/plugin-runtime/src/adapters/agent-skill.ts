@@ -1,6 +1,7 @@
-import type {
-  InputField,
-  PluginManifest,
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  type InputField,
+  type PluginManifest,
 } from '@open-design/contracts';
 import { parseFrontmatter, type FrontmatterObject, type FrontmatterValue } from '../parsers/frontmatter.js';
 
@@ -79,6 +80,7 @@ export function adaptAgentSkill(
     : undefined;
 
   const manifest: PluginManifest = {
+    specVersion: OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     name,
     title,
     version,

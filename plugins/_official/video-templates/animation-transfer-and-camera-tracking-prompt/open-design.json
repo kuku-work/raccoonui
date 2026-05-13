@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "video-template-animation-transfer-and-camera-tracking-prompt",
   "title": "Animation transfer and camera tracking prompt",
   "version": "0.1.0",

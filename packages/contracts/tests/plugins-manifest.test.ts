@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
   PluginManifestSchema,
   resolveLocalizedText,
 } from '../src/plugins/manifest.js';
 
 describe('plugin manifest localized text', () => {
+  it('exports the current plugin spec version for manifests and registries', () => {
+    expect(OPEN_DESIGN_PLUGIN_SPEC_VERSION).toBe('1.0.0');
+  });
+
   it('accepts legacy string use-case queries', () => {
     const manifest = PluginManifestSchema.parse({
       name: 'sample-plugin',

@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "example-frame-logo-outro",
   "title": "品牌 Logo 收尾帧",
   "version": "0.1.0",

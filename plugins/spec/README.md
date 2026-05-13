@@ -40,7 +40,7 @@ Workflow lanes:
 1. Copy `templates/` to a new plugin folder.
 2. Rename the folder and frontmatter `name` to a lowercase id such as `launch-deck`.
 3. Write a pushy `description` in `SKILL.md`: "Use this plugin when..."
-4. Fill `open-design.json`: title, version, tags, `od.taskKind`, `od.mode`, `od.useCase.query`, `od.pipeline`, inputs, and capabilities.
+4. Fill `open-design.json`: `specVersion`, title, plugin `version`, tags, `od.taskKind`, `od.mode`, `od.useCase.query`, `od.pipeline`, inputs, and capabilities.
 5. Add a small `examples/` or `preview/` artifact if the plugin is visual.
 6. Validate locally:
 

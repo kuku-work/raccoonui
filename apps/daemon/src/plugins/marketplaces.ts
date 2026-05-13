@@ -19,7 +19,10 @@ import {
   parseMarketplace,
   type MarketplaceParseResult,
 } from '@open-design/plugin-runtime';
-import type { MarketplaceManifest } from '@open-design/contracts';
+import {
+  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+  type MarketplaceManifest,
+} from '@open-design/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -28,6 +31,8 @@ export type MarketplaceTrustTier = 'official' | 'trusted' | 'restricted';
 export interface MarketplaceRow {
   id: string;
   url: string;
+  specVersion: string;
+  version: string;
   trust: MarketplaceTrustTier;
   manifest: MarketplaceManifest;
   addedAt: number;
@@ -100,56 +105,77 @@ export async function addMarketplace(
   const now = Date.now();
   const trust = input.trust ?? 'restricted';
   db.prepare(
-    `INSERT INTO plugin_marketplaces (id, url, trust, manifest_json, added_at, refreshed_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.url, trust, text, now, now);
+    `INSERT INTO plugin_marketplaces (id, url, spec_version, version, trust, manifest_json, added_at, refreshed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, input.url, parsed.manifest.specVersion, parsed.manifest.version, trust, text, now, now);
   return {
     ok: true,
-    row: { id, url: input.url, trust, manifest: parsed.manifest, addedAt: now, refreshedAt: now },
+    row: {
+      id,
+      url: input.url,
+      specVersion: parsed.manifest.specVersion,
+      version: parsed.manifest.version,
+      trust,
+      manifest: parsed.manifest,
+      addedAt: now,
+      refreshedAt: now,
+    },
     warnings: [],
   };
 }
 
 export function listMarketplaces(db: SqliteDb): MarketplaceRow[] {
   const rows = db
-    .prepare(`SELECT id, url, trust, manifest_json, added_at, refreshed_at FROM plugin_marketplaces ORDER BY added_at ASC`)
+    .prepare(`SELECT id, url, spec_version, version, trust, manifest_json, added_at, refreshed_at FROM plugin_marketplaces ORDER BY added_at ASC`)
     .all() as Array<{
       id: string;
       url: string;
+      spec_version: string;
+      version: string;
       trust: MarketplaceTrustTier;
       manifest_json: string;
       added_at: number;
       refreshed_at: number;
     }>;
-  return rows.map((r) => ({
-    id: r.id,
-    url: r.url,
-    trust: r.trust,
-    manifest: safeParseManifest(r.manifest_json),
-    addedAt: r.added_at,
-    refreshedAt: r.refreshed_at,
-  }));
+  return rows.map((r) => {
+    const manifest = safeParseManifest(r.manifest_json);
+    return {
+      id: r.id,
+      url: r.url,
+      specVersion: r.spec_version || manifest.specVersion,
+      version: r.version === '0.0.0' ? manifest.version : r.version,
+      trust: r.trust,
+      manifest,
+      addedAt: r.added_at,
+      refreshedAt: r.refreshed_at,
+    };
+  });
 }
 
 export function getMarketplace(db: SqliteDb, id: string): MarketplaceRow | null {
   const row = db
-    .prepare(`SELECT id, url, trust, manifest_json, added_at, refreshed_at FROM plugin_marketplaces WHERE id = ?`)
+    .prepare(`SELECT id, url, spec_version, version, trust, manifest_json, added_at, refreshed_at FROM plugin_marketplaces WHERE id = ?`)
     .get(id) as
       | undefined
       | {
           id: string;
           url: string;
+          spec_version: string;
+          version: string;
           trust: MarketplaceTrustTier;
           manifest_json: string;
           added_at: number;
           refreshed_at: number;
         };
   if (!row) return null;
+  const manifest = safeParseManifest(row.manifest_json);
   return {
     id: row.id,
     url: row.url,
+    specVersion: row.spec_version || manifest.specVersion,
+    version: row.version === '0.0.0' ? manifest.version : row.version,
     trust: row.trust,
-    manifest: safeParseManifest(row.manifest_json),
+    manifest,
     addedAt: row.added_at,
     refreshedAt: row.refreshed_at,
   };
@@ -198,11 +224,17 @@ export async function refreshMarketplace(
     return { ok: false, status: 422, message: 'marketplace manifest failed validation', errors: parsed.errors };
   }
   const now = Date.now();
-  db.prepare(`UPDATE plugin_marketplaces SET manifest_json = ?, refreshed_at = ? WHERE id = ?`)
-    .run(text, now, id);
+  db.prepare(`UPDATE plugin_marketplaces SET spec_version = ?, version = ?, manifest_json = ?, refreshed_at = ? WHERE id = ?`)
+    .run(parsed.manifest.specVersion, parsed.manifest.version, text, now, id);
   return {
     ok: true,
-    row: { ...existing, manifest: parsed.manifest, refreshedAt: now },
+    row: {
+      ...existing,
+      specVersion: parsed.manifest.specVersion,
+      version: parsed.manifest.version,
+      manifest: parsed.manifest,
+      refreshedAt: now,
+    },
   };
 }
 
@@ -222,10 +254,54 @@ function safeParseManifest(raw: string): MarketplaceManifest {
   } catch {
     // fall through
   }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('legacy marketplace manifest is not an object');
+    }
+    const legacy = parsed as Record<string, unknown>;
+    const metadata = typeof legacy['metadata'] === 'object' && legacy['metadata'] !== null
+      ? legacy['metadata'] as Record<string, unknown>
+      : {};
+    const plugins = Array.isArray(legacy?.['plugins'])
+      ? (legacy['plugins'] as unknown[]).flatMap((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+          const obj = entry as Record<string, unknown>;
+          const name = typeof obj['name'] === 'string' ? obj['name'] : '';
+          const source = typeof obj['source'] === 'string' ? obj['source'] : '';
+          if (!name || !source) return [];
+          return [{
+            ...obj,
+            name,
+            source,
+            version: typeof obj['version'] === 'string' && obj['version'].length > 0
+              ? obj['version']
+              : '0.0.0',
+          }];
+        })
+      : [];
+    return {
+      ...legacy,
+      specVersion: typeof legacy['specVersion'] === 'string'
+        ? legacy['specVersion'] as string
+        : OPEN_DESIGN_PLUGIN_SPEC_VERSION,
+      name: typeof legacy['name'] === 'string' ? legacy['name'] as string : 'unknown',
+      version: typeof legacy['version'] === 'string' && (legacy['version'] as string).length > 0
+        ? legacy['version'] as string
+        : typeof metadata['version'] === 'string' && metadata['version'].length > 0
+          ? metadata['version']
+          : '0.0.0',
+      plugins,
+    } as MarketplaceManifest;
+  } catch {
+    // fall through
+  }
   // Last-resort fallback: return a minimal shape so the caller doesn't
   // explode if a database row was stored before a schema patch.
   return {
+    specVersion: OPEN_DESIGN_PLUGIN_SPEC_VERSION,
     name: 'unknown',
+    version: '0.0.0',
     plugins: [],
   } as MarketplaceManifest;
 }
@@ -245,7 +321,10 @@ export interface ResolvedPluginEntry {
   marketplaceId: string;
   marketplaceUrl: string;
   marketplaceTrust: MarketplaceTrustTier;
+  marketplaceSpecVersion: string;
+  marketplaceVersion: string;
   pluginName: string;
+  pluginVersion: string;
   source: string;
   description?: string;
 }
@@ -265,7 +344,10 @@ export function resolvePluginInMarketplaces(
           marketplaceId:    row.id,
           marketplaceUrl:   row.url,
           marketplaceTrust: row.trust,
+          marketplaceSpecVersion: row.specVersion,
+          marketplaceVersion: row.version,
           pluginName:       entry.name,
+          pluginVersion:    entry.version,
           source:           entry.source,
         };
         if (entry.description) result.description = entry.description;

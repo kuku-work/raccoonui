@@ -1,5 +1,6 @@
 {
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
+  "specVersion": "1.0.0",
   "name": "image-template-3d-stone-staircase-evolution-infographic",
   "title": "3D Stone Staircase Evolution Infographic",
   "version": "0.1.0",
