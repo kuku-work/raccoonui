@@ -27,8 +27,9 @@ import {
 } from "@open-design/platform";
 import type { ToolPackConfig } from "../config.js";
 import { PACKAGED_CONFIG_PATH_ENV, writeLaunchPackagedConfig } from "./app-config.js";
-import { DESKTOP_LOG_ECHO_ENV, PRODUCT_NAME } from "./constants.js";
+import { DESKTOP_LOG_ECHO_ENV } from "./constants.js";
 import { clearQuarantine, pathExists } from "./fs.js";
+import { resolveMacInstallIdentity } from "./identity.js";
 import { desktopIdentityPath, desktopLogPath, macAppExecutablePath, resolveMacPaths } from "./paths.js";
 import type { DesktopRootIdentityFallback, DesktopRootIdentityMarker, MacCleanupResult, MacInspectResult, MacInstallResult, MacStartResult, MacStartSource, MacStopResult, MacUninstallResult } from "./types.js";
 
@@ -480,6 +481,7 @@ async function detachMount(mountPoint: string): Promise<boolean> {
 
 export async function installPackedMacDmg(config: ToolPackConfig): Promise<MacInstallResult> {
   const paths = resolveMacPaths(config);
+  const identity = resolveMacInstallIdentity(config);
   if (!(await pathExists(paths.dmgPath))) {
     throw new Error(`no mac dmg found at ${paths.dmgPath}; run tools-pack mac build --to all first`);
   }
@@ -499,7 +501,7 @@ export async function installPackedMacDmg(config: ToolPackConfig): Promise<MacIn
       "-nobrowse",
       "-quiet",
     ]);
-    await execFileAsync("ditto", [join(paths.mountPoint, `${PRODUCT_NAME}.app`), paths.installedAppPath]);
+    await execFileAsync("ditto", [join(paths.mountPoint, identity.publicAppBundleName), paths.installedAppPath]);
     await clearQuarantine(paths.installedAppPath);
   } finally {
     detached = await detachMount(paths.mountPoint);
