@@ -1,3 +1,5 @@
+import type { PluginUseAction } from '../plugins-home/useActions';
+
 export type HomePromptHandoff =
   | {
     id: number;
@@ -13,6 +15,7 @@ export type HomePromptHandoff =
     pluginId: string;
     focus: boolean;
     source: 'plugin-use';
+    action: PluginUseAction;
     inputs?: Record<string, unknown>;
   };
 
@@ -29,7 +32,7 @@ export const PLUGIN_AUTHORING_PROMPT_TEMPLATE = [
   '',
   'Then run or prepare the CLI path: od plugin validate, od plugin pack, local install/run validation, od plugin whoami/login through gh, and od plugin publish when the user is ready to open a registry PR.',
   '',
-  'When finished, summarize files created, validation status, local install/run status, pack output, and the exact publish command or PR next step.',
+  'When finished, summarize files created, validation status, local install/run status, pack output, and the exact publish command or PR next step. End by clearly offering the next actions: Add to My plugins, Publish repo, or Open Design PR.',
 ].join('\n');
 
 export const PLUGIN_AUTHORING_PROMPT = buildPluginAuthoringPrompt(PLUGIN_AUTHORING_DEFAULT_GOAL);
@@ -85,12 +88,16 @@ export function createPluginAuthoringHandoff(
 export function createPluginUseHandoff(
   id: number,
   pluginId: string,
-  inputs?: Record<string, unknown>,
+  options: {
+    action?: PluginUseAction;
+    inputs?: Record<string, unknown>;
+  } = {},
 ): HomePromptHandoff {
   return {
     id,
     pluginId,
-    ...(inputs ? { inputs } : {}),
+    action: options.action ?? 'use',
+    ...(options.inputs ? { inputs: options.inputs } : {}),
     focus: true,
     source: 'plugin-use',
   };

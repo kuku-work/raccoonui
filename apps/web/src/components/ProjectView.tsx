@@ -105,6 +105,10 @@ import {
 import { decideAutoOpenAfterWrite } from './auto-open-file';
 import { FileWorkspace } from './FileWorkspace';
 import { Icon } from './Icon';
+import {
+  buildPluginFolderAgentActionPrompt,
+  type PluginFolderAgentAction,
+} from './design-files/pluginFolderActions';
 import { CenteredLoader } from './Loading';
 import { Toast } from './Toast';
 import { useDesignMdState } from '../hooks/useDesignMdState';
@@ -2076,6 +2080,15 @@ export function ProjectView({
     [currentConversationActionDisabled, handleSend],
   );
 
+  const handlePluginFolderAgentAction = useCallback(
+    (relativePath: string, action: PluginFolderAgentAction) => {
+      if (currentConversationActionDisabled) return;
+      const prompt = buildPluginFolderAgentActionPrompt(relativePath, action);
+      void handleSend(prompt, [], []);
+    },
+    [currentConversationActionDisabled, handleSend],
+  );
+
   const handleExportAsPptx = useCallback(
     (fileName: string) => {
       if (currentConversationActionDisabled) return;
@@ -2464,6 +2477,7 @@ export function ProjectView({
   // captures the prompt independently so downstream effects can still
   // dispatch the auto-send without going through initialDraft.
   const autoSendSeedRef = useRef<string | null>(null);
+  const autoSendFirstMessageRef = useRef(false);
   if (autoSendSeedRef.current === null) {
     let isAutoSend = false;
     try {
@@ -2473,6 +2487,7 @@ export function ProjectView({
     } catch {
       /* sessionStorage may be unavailable; treat as manual flow. */
     }
+    autoSendFirstMessageRef.current = isAutoSend;
     autoSendSeedRef.current = isAutoSend ? (project.pendingPrompt ?? '') : '';
   }
   const [initialDraft, setInitialDraft] = useState<
@@ -2485,6 +2500,10 @@ export function ProjectView({
   useEffect(() => {
     const pendingPrompt = project.pendingPrompt;
     if (!pendingPrompt) return;
+    if (autoSendFirstMessageRef.current) {
+      onClearPendingPrompt();
+      return;
+    }
     setInitialDraft((current) =>
       current?.projectId === project.id
         ? current
@@ -2818,6 +2837,7 @@ export function ProjectView({
               onSend={handleSend}
               onStop={handleStop}
               onRequestOpenFile={requestOpenFile}
+              onRequestPluginFolderAgentAction={handlePluginFolderAgentAction}
               initialDraft={chatInitialDraft}
               onSubmitForm={(text) => {
                 if (currentConversationActionDisabled) return;
@@ -2891,6 +2911,7 @@ export function ProjectView({
           onSavePreviewComment={savePreviewComment}
           onRemovePreviewComment={removePreviewComment}
           onSendBoardCommentAttachments={handleSendBoardCommentAttachments}
+          onPluginFolderAgentAction={handlePluginFolderAgentAction}
           focusMode={workspaceFocused}
           onFocusModeChange={setWorkspaceFocused}
         />

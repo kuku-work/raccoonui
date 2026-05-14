@@ -3,10 +3,12 @@ import '../../globals.css';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Header } from '../../_components/header';
+import { getCatalogCounts } from '../../_lib/catalog';
 import { getPublicPlugins, getRegistryCounts } from '../../plugin-registry';
 
 const plugins = getPublicPlugins();
 const counts = getRegistryCounts(plugins);
+const catalogCounts = await getCatalogCounts();
 const previewCount = plugins.filter((plugin) => plugin.preview).length;
 const surfaceCount = new Set(
   plugins.map((plugin) => plugin.mode ?? plugin.surface ?? plugin.visualKind),
@@ -25,7 +27,9 @@ const site = Astro.site ?? new URL('https://open-design.ai');
 const canonical = new URL('/plugins/', site).toString();
 const title = 'Open Design Plugins — Official and community registries';
 const description = `Browse ${counts.all} Open Design plugins from official and community registries. Search installable agent-native design workflows with stable vendor/plugin IDs.`;
-const headerHtml = renderToStaticMarkup(createElement(Header));
+const headerHtml = renderToStaticMarkup(
+  createElement(Header, { counts: catalogCounts, brandHref: '/' }),
+);
 const itemListJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'ItemList',

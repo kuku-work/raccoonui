@@ -3,6 +3,7 @@ import '../../globals.css';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Header } from '../../_components/header';
+import { getCatalogCounts } from '../../_lib/catalog';
 import type { PublicPluginEntry } from '../../plugin-registry';
 import { getPublicPlugins } from '../../plugin-registry';
 
@@ -18,7 +19,10 @@ const site = Astro.site ?? new URL('https://open-design.ai');
 const canonical = new URL(plugin.detailHref, site).toString();
 const title = `${plugin.title} — Open Design Plugin`;
 const description = `${plugin.description} Install with ${plugin.installCommand}.`;
-const headerHtml = renderToStaticMarkup(createElement(Header));
+const catalogCounts = await getCatalogCounts();
+const headerHtml = renderToStaticMarkup(
+  createElement(Header, { counts: catalogCounts, brandHref: '/' }),
+);
 const related = getPublicPlugins()
   .filter((item) => item.id !== plugin.id && item.registryId === plugin.registryId)
   .slice(0, 6);
