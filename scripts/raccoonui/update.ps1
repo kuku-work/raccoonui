@@ -17,10 +17,11 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $RaccoonUIDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 
-# Resource layers the daemon expects under OD_RESOURCE_ROOT (= .raccoonui/).
-# Mirrors the list in install.ps1 so update can top up directories the
-# user never had (e.g. upstream added skills/ + prompt-templates/ but
-# install.ps1 had only seeded design-systems/ in older revisions).
+# Resource layers seeded into .raccoonui/ for the packaged release path
+# (dev mode start.ps1 reads from repo root, not .raccoonui/). Mirrors the
+# list in install.ps1 so update can top up directories the user never had
+# (e.g. upstream added skills/ + prompt-templates/ but install.ps1 had only
+# seeded design-systems/ in older revisions).
 $RaccoonUIResources = @(
     @{ src = 'design-systems';        dst = 'design-systems' },
     @{ src = 'skills';                dst = 'skills' },

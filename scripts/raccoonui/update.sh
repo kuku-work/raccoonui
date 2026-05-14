@@ -10,10 +10,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RACCOONUI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Resource layers the daemon expects under OD_RESOURCE_ROOT (= .raccoonui/).
-# Mirrors the list in install.sh so update can top up directories the
-# user never had (e.g. upstream added skills/ + prompt-templates/ but
-# install.sh had only seeded design-systems/ in older revisions).
+# Resource layers seeded into .raccoonui/ for the packaged release path
+# (dev mode start.sh reads from repo root, not .raccoonui/). Mirrors the
+# list in install.sh so update can top up directories the user never had
+# (e.g. upstream added skills/ + prompt-templates/ but install.sh had only
+# seeded design-systems/ in older revisions).
 RACCOONUI_RESOURCES=(
     "design-systems:design-systems"
     "skills:skills"

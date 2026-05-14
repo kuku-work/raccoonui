@@ -29,15 +29,17 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 if [ -d "$TARGET/.git" ]; then
-    echo "→ existing fork at $TARGET — pulling latest"
+    echo "→ existing fork at $TARGET — switching to main + pulling latest"
     cd "$TARGET"
+    git checkout main
     git pull origin main --ff-only
 else
     if [ -d "$TARGET" ]; then
         echo "❌ $TARGET exists but is not a git repo. Move it aside or set RACCOONUI_DIR."
         exit 1
     fi
-    git clone "$REPO" "$TARGET"
+    # Explicit --branch main: coworkers track main; kuku-only work lives in dev.
+    git clone --branch main "$REPO" "$TARGET"
     cd "$TARGET"
 fi
 

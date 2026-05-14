@@ -29,9 +29,11 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 if (Test-Path "$target\.git") {
-    Write-Host "→ existing fork at $target — pulling latest" -ForegroundColor Cyan
+    Write-Host "→ existing fork at $target — switching to main + pulling latest" -ForegroundColor Cyan
     Push-Location $target
     try {
+        git checkout main
+        if ($LASTEXITCODE -ne 0) { throw "git checkout main failed" }
         git pull origin main --ff-only
         if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
     } finally {
@@ -42,7 +44,8 @@ if (Test-Path "$target\.git") {
         Write-Host "❌ $target exists but is not a git repo. Move it aside or set `$env:RACCOONUI_DIR." -ForegroundColor Red
         exit 1
     }
-    git clone $repo $target
+    # Explicit --branch main: coworkers track main; kuku-only work lives in dev.
+    git clone --branch main $repo $target
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 }
 

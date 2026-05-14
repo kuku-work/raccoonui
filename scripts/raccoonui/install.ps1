@@ -170,11 +170,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
 
     # ── 6. Seed .raccoonui/ resource layers ──
-    # start.ps1 sets OD_RESOURCE_ROOT=.raccoonui, which makes the daemon
-    # resolve EVERY resource segment under that dir (skills, design-systems,
-    # craft, frames, community-pets, prompt-templates). Seed each one from
-    # the matching repo path; dir-already-exists → skip so user-edits in
-    # .raccoonui/ are preserved across re-runs.
+    # Dev mode (start.ps1) reads SKILL.md / design-systems / design-templates /
+    # craft / prompt-templates etc. directly from the repo root, so .raccoonui/
+    # is NOT required for the daily start path. We still seed it here so the
+    # packaged release path (tools/pack) and any future OD_RESOURCE_ROOT=.raccoonui
+    # override has a complete snapshot. dir-already-exists → skip so user-edits
+    # in .raccoonui/ are preserved across re-runs.
     Seed-RaccoonUIResources $RaccoonUIDir
 
     # ── 7. Build ──

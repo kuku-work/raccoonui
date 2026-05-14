@@ -62,35 +62,47 @@ try {
     }
 
     # ── pre-start update check ──
-    # Notify-only: prompts but never auto-pulls without consent. Detect phase
-    # is best-effort (network errors / detached HEAD / no upstream branch
-    # silently skip); the update phase, once user picks Y, fails loud so the
-    # user never starts a half-rebuilt daemon. Default after 30s of no input
-    # is N → start with current source.
+    # Default Y (auto-update on timeout) so coworkers never silently run a
+    # stale source tree. Detect phase is best-effort (network down / detached
+    # HEAD / no upstream silently skip with a visible note so the user knows
+    # they are running un-checked source); the update phase fails loud so the
+    # user never starts a half-rebuilt daemon.
     $detectOk = $true
+    $detectSkipReason = $null
     $branch = $null
     $behind = 0
     try {
         $branch = (git rev-parse --abbrev-ref HEAD 2>$null | Out-String).Trim()
-        if (-not $branch -or $branch -eq 'HEAD') { $detectOk = $false }
+        if (-not $branch -or $branch -eq 'HEAD') {
+            $detectOk = $false
+            $detectSkipReason = 'detached HEAD'
+        }
         if ($detectOk) {
             git fetch origin --quiet 2>$null
-            if ($LASTEXITCODE -ne 0) { $detectOk = $false }
+            if ($LASTEXITCODE -ne 0) {
+                $detectOk = $false
+                $detectSkipReason = 'git fetch failed (offline?)'
+            }
         }
         if ($detectOk) {
             $countStr = (git rev-list --count "${branch}..origin/$branch" 2>$null | Out-String).Trim()
-            if ([string]::IsNullOrEmpty($countStr)) { $detectOk = $false }
-            else { $behind = [int]$countStr }
+            if ([string]::IsNullOrEmpty($countStr)) {
+                $detectOk = $false
+                $detectSkipReason = "no origin/$branch tracking branch"
+            } else { $behind = [int]$countStr }
         }
     } catch {
         $detectOk = $false
+        if (-not $detectSkipReason) { $detectSkipReason = 'unexpected error' }
     }
 
-    if ($detectOk -and $behind -gt 0) {
+    if (-not $detectOk) {
+        Write-Host "ℹ️  跳過更新檢查 ($detectSkipReason) — 跑 local source" -ForegroundColor DarkGray
+    } elseif ($behind -gt 0) {
         Write-Host ""
         Write-Host "⚠️  origin/$branch 領先本地 $behind commits — 建議更新" -ForegroundColor Yellow
-        Write-Host "   立即更新? [Y/n]  (30 秒未輸入 → 直接啟動)" -ForegroundColor Yellow
-        $deadline = (Get-Date).AddSeconds(30)
+        Write-Host "   立即更新? [Y/n]  (5 秒未輸入 → 自動更新)" -ForegroundColor Yellow
+        $deadline = (Get-Date).AddSeconds(5)
         $choice = $null
         while ((Get-Date) -lt $deadline) {
             if ([Console]::KeyAvailable) {
@@ -99,7 +111,9 @@ try {
             }
             Start-Sleep -Milliseconds 100
         }
-        if ($choice -eq 'Y' -or $choice -eq 'y') {
+        if ($choice -eq 'N' -or $choice -eq 'n') {
+            Write-Host "→ skipping update, starting current source" -ForegroundColor DarkGray
+        } else {
             Write-Host ""
             Write-Host "🔄 Pulling origin/$branch..." -ForegroundColor Cyan
             git pull origin $branch --ff-only
@@ -108,8 +122,6 @@ try {
             pnpm install
             if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
             Write-Host "✅ updated, continuing to start" -ForegroundColor Green
-        } else {
-            Write-Host "→ skipping update, starting current source" -ForegroundColor DarkGray
         }
     }
 

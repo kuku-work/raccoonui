@@ -30,49 +30,55 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # ── pre-start update check ──
-# Notify-only: prompts but never auto-pulls without consent. Detect phase
-# is best-effort (network errors / detached HEAD / no upstream branch
-# silently skip); the update phase, once user picks Y, fails loud so the
-# user never starts a half-rebuilt source. Default after 30s of no input
-# is N → start with current source.
+# Default Y (auto-update on timeout) so coworkers never silently run a
+# stale source tree. Detect phase is best-effort (network down / detached
+# HEAD / no upstream silently skip with a visible note so the user knows
+# they are running un-checked source); the update phase fails loud so the
+# user never starts a half-rebuilt source.
 detect_ok=1
+detect_skip_reason=""
 branch=""
 behind=0
 {
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
         detect_ok=0
+        detect_skip_reason="detached HEAD"
     fi
     if [ $detect_ok -eq 1 ]; then
         if ! git fetch origin --quiet 2>/dev/null; then
             detect_ok=0
+            detect_skip_reason="git fetch failed (offline?)"
         fi
     fi
     if [ $detect_ok -eq 1 ]; then
         behind=$(git rev-list --count "${branch}..origin/${branch}" 2>/dev/null || echo "")
         if [ -z "$behind" ]; then
             detect_ok=0
+            detect_skip_reason="no origin/${branch} tracking branch"
             behind=0
         fi
     fi
-} || detect_ok=0
+} || { detect_ok=0; detect_skip_reason="${detect_skip_reason:-unexpected error}"; }
 
-if [ $detect_ok -eq 1 ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+if [ $detect_ok -eq 0 ]; then
+    printf "ℹ️  跳過更新檢查 (%s) — 跑 local source\n" "$detect_skip_reason"
+elif [ "$behind" -gt 0 ] 2>/dev/null; then
     printf "\n⚠️  origin/%s 領先本地 %s commits — 建議更新\n" "$branch" "$behind"
-    printf "   立即更新? [Y/n]  (30 秒未輸入 → 直接啟動): "
+    printf "   立即更新? [Y/n]  (5 秒未輸入 → 自動更新): "
     choice=""
-    read -r -t 30 -n 1 choice || true
+    read -r -t 5 -n 1 choice || true
     printf "\n"
-    case "${choice:-n}" in
-        [Yy])
+    case "${choice:-y}" in
+        [Nn])
+            printf "→ skipping update, starting current source\n"
+            ;;
+        *)
             printf "🔄 Pulling origin/%s...\n" "$branch"
             git pull origin "$branch" --ff-only
             printf "📦 pnpm install...\n"
             pnpm install
             printf "✅ updated, continuing to start\n"
-            ;;
-        *)
-            printf "→ skipping update, starting current source\n"
             ;;
     esac
 fi
