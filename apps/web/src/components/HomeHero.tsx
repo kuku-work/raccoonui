@@ -38,6 +38,7 @@ interface Props {
   onOpenPluginDetails?: (record: InstalledPluginRecord) => void;
   pluginInputFields?: InputFieldSpec[];
   pluginInputValues?: Record<string, unknown>;
+  pluginInputTemplate?: string | null;
   onPluginInputValuesChange?: (values: Record<string, unknown>) => void;
   onPluginInputValidityChange?: (valid: boolean) => void;
   pluginOptions: InstalledPluginRecord[];
@@ -92,6 +93,7 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
     onOpenPluginDetails = () => undefined,
     pluginInputFields = [],
     pluginInputValues = {},
+    pluginInputTemplate = null,
     onPluginInputValuesChange = () => undefined,
     onPluginInputValidityChange = () => undefined,
     pluginOptions,
@@ -206,6 +208,10 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
     (mentionTab === 'plugins' && pluginsLoading) ||
     (mentionTab === 'skills' && skillsLoading) ||
     (mentionTab === 'mcp' && mcpLoading);
+  const promptHighlightParts = useMemo(
+    () => buildPromptHighlightParts(pluginInputTemplate, pluginInputValues, prompt),
+    [pluginInputTemplate, pluginInputValues, prompt],
+  );
 
   useEffect(() => {
     if (selectedIndex >= visiblePickerOptions.length) setSelectedIndex(0);
@@ -326,64 +332,93 @@ export const HomeHero = forwardRef<HTMLTextAreaElement, Props>(function HomeHero
             pluginInputFields.length > 0 ? ' home-hero__prompt-surface--with-inputs' : ''
           }`}
         >
-          <textarea
-            ref={ref}
-            className="home-hero__input"
-            data-testid="home-hero-input"
-            value={prompt}
-            onChange={(e) => {
-              onPromptChange(e.target.value);
-              setSelectedIndex(0);
-            }}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-            onKeyDown={(e) => {
-              if (isImeComposing(e, composingRef.current)) return;
-              if (pickerOpen && visiblePickerOptions.length > 0) {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setSelectedIndex((idx) => (idx + 1) % visiblePickerOptions.length);
-                  return;
-                }
-                if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setSelectedIndex(
-                    (idx) => (idx - 1 + visiblePickerOptions.length) % visiblePickerOptions.length,
-                  );
-                  return;
-                }
-                if (e.key === 'Tab') {
-                  e.preventDefault();
-                  const selected = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
-                  if (selected && !selected.disabled) selected.onPick();
-                  return;
-                }
-              }
-              if (
-                e.key === 'Enter' &&
-                !e.shiftKey &&
-                !e.metaKey &&
-                !e.ctrlKey &&
-                !e.altKey
-              ) {
-                e.preventDefault();
+          <div
+            className={`home-hero__prompt-editor${
+              promptHighlightParts ? ' home-hero__prompt-editor--highlighted' : ''
+            }`}
+          >
+            {promptHighlightParts ? (
+              <div
+                className="home-hero__prompt-highlight"
+                data-testid="home-hero-prompt-highlight"
+                aria-hidden
+              >
+                {promptHighlightParts.map((part, index) => (
+                  part.kind === 'slot' ? (
+                    <span
+                      key={`${part.key}-${index}`}
+                      className="home-hero__prompt-slot"
+                      data-field-name={part.key}
+                      data-filled={part.filled}
+                      data-testid={`home-hero-prompt-slot-${part.key}`}
+                    >
+                      {part.text}
+                    </span>
+                  ) : (
+                    <span key={`text-${index}`}>{part.text}</span>
+                  )
+                ))}
+              </div>
+            ) : null}
+            <textarea
+              ref={ref}
+              className="home-hero__input"
+              data-testid="home-hero-input"
+              value={prompt}
+              onChange={(e) => {
+                onPromptChange(e.target.value);
+                setSelectedIndex(0);
+              }}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+              }}
+              onKeyDown={(e) => {
+                if (isImeComposing(e, composingRef.current)) return;
                 if (pickerOpen && visiblePickerOptions.length > 0) {
-                  const selected = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
-                  if (selected && !selected.disabled) selected.onPick();
-                  return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSelectedIndex((idx) => (idx + 1) % visiblePickerOptions.length);
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSelectedIndex(
+                      (idx) => (idx - 1 + visiblePickerOptions.length) % visiblePickerOptions.length,
+                    );
+                    return;
+                  }
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const selected = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
+                    if (selected && !selected.disabled) selected.onPick();
+                    return;
+                  }
                 }
-                if (canSubmit) onSubmit();
-              }
-            }}
-            placeholder={placeholder}
-            rows={3}
-            aria-controls={pickerOpen ? 'home-hero-context-picker' : undefined}
-            aria-expanded={pickerOpen}
-          />
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  !e.metaKey &&
+                  !e.ctrlKey &&
+                  !e.altKey
+                ) {
+                  e.preventDefault();
+                  if (pickerOpen && visiblePickerOptions.length > 0) {
+                    const selected = visiblePickerOptions[selectedIndex] ?? visiblePickerOptions[0];
+                    if (selected && !selected.disabled) selected.onPick();
+                    return;
+                  }
+                  if (canSubmit) onSubmit();
+                }
+              }}
+              placeholder={placeholder}
+              rows={3}
+              aria-controls={pickerOpen ? 'home-hero-context-picker' : undefined}
+              aria-expanded={pickerOpen}
+            />
+          </div>
           {pluginInputFields.length > 0 ? (
             <PluginInputsForm
               fields={pluginInputFields}
@@ -557,6 +592,66 @@ interface ContextMention {
   start: number;
   end: number;
   query: string;
+}
+
+interface PromptHighlightPart {
+  kind: 'text' | 'slot';
+  text: string;
+  key?: string;
+  filled?: boolean;
+}
+
+const INPUT_PLACEHOLDER_PATTERN = /\{\{\s*([a-zA-Z_][\w-]*)\s*\}\}/g;
+
+function buildPromptHighlightParts(
+  template: string | null,
+  values: Record<string, unknown>,
+  prompt: string,
+): PromptHighlightPart[] | null {
+  if (!template) return null;
+  INPUT_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const parts: PromptHighlightPart[] = [];
+  let rendered = '';
+  let lastIndex = 0;
+  let slotCount = 0;
+  let match: RegExpExecArray | null;
+  while ((match = INPUT_PLACEHOLDER_PATTERN.exec(template)) !== null) {
+    const placeholder = match[0];
+    const key = match[1];
+    if (!key) continue;
+    const literal = template.slice(lastIndex, match.index);
+    if (literal) {
+      parts.push({ kind: 'text', text: literal });
+      rendered += literal;
+    }
+    const replacement = stringifyTemplateValue(values[key], placeholder);
+    parts.push({
+      kind: 'slot',
+      key,
+      text: replacement.text,
+      filled: replacement.filled,
+    });
+    rendered += replacement.text;
+    slotCount += 1;
+    lastIndex = match.index + placeholder.length;
+  }
+  const tail = template.slice(lastIndex);
+  if (tail) {
+    parts.push({ kind: 'text', text: tail });
+    rendered += tail;
+  }
+  if (slotCount === 0 || rendered !== prompt) return null;
+  return parts;
+}
+
+function stringifyTemplateValue(
+  value: unknown,
+  placeholder: string,
+): { text: string; filled: boolean } {
+  if (value === undefined || value === null || value === '') {
+    return { text: placeholder, filled: false };
+  }
+  return { text: String(value), filled: true };
 }
 
 function getContextMention(value: string): ContextMention | null {

@@ -102,8 +102,20 @@ export type ArchiveFetcher = (url: string) => Promise<{
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 
 const SAFE_BASENAME = /^[a-z0-9][a-z0-9._-]*$/;
-const GITHUB_SOURCE_RE = /^github:([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)(?:@([A-Za-z0-9._/-]+))?(?:\/(.+))?$/;
+const GITHUB_SOURCE_RE = /^github:([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)(.*)$/;
 const HTTPS_SOURCE_RE = /^https:\/\//i;
+const GITHUB_REF_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+interface GithubArchiveCandidate {
+  ref: string;
+  subpath?: string;
+}
+
+interface ParsedGithubSource {
+  owner: string;
+  repo: string;
+  candidates: GithubArchiveCandidate[];
+}
 
 // Top-level dispatcher. Picks the backend off the source string and yields
 // the same InstallEvent stream regardless of where the bytes came from.
@@ -127,8 +139,8 @@ async function* installFromGithub(
   db: SqliteDb,
   opts: InstallOptions,
 ): AsyncGenerator<InstallEvent, void, void> {
-  const match = GITHUB_SOURCE_RE.exec(opts.source);
-  if (!match) {
+  const parsed = parseGithubSource(opts.source);
+  if (!parsed) {
     yield {
       kind: 'error',
       message: `Malformed github source ${opts.source}; expected github:owner/repo[@ref][/subpath]`,
@@ -136,14 +148,82 @@ async function* installFromGithub(
     };
     return;
   }
-  const [, owner, repo, ref, subpath] = match;
-  const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${ref ?? 'HEAD'}`;
+
+  let lastError: string | undefined;
+  const triedUrls: string[] = [];
+  for (const candidate of parsed.candidates) {
+    const tarballUrl = githubTarballUrl(parsed.owner, parsed.repo, candidate.ref);
+    triedUrls.push(tarballUrl);
+    const buffered: InstallEvent[] = [];
+    for await (const ev of installFromArchiveUrl(db, opts, tarballUrl, candidate.subpath)) {
+      buffered.push(ev);
+      if (ev.kind === 'error') {
+        lastError = ev.message;
+        break;
+      }
+      if (ev.kind === 'success') {
+        for (const bufferedEvent of buffered) yield bufferedEvent;
+        return;
+      }
+    }
+    if (!lastError || !isRetryableGithubCandidateError(lastError)) break;
+  }
+
   yield {
-    kind: 'progress',
-    phase: 'resolving',
-    message: `Fetching ${tarballUrl}`,
+    kind: 'error',
+    message: lastError
+      ? `${lastError}. Tried GitHub archive URL(s): ${triedUrls.join(', ')}`
+      : `GitHub source ${opts.source} did not produce an installable archive`,
+    warnings: [],
   };
-  yield* installFromArchiveUrl(db, opts, tarballUrl, subpath);
+}
+
+function parseGithubSource(source: string): ParsedGithubSource | null {
+  const match = GITHUB_SOURCE_RE.exec(source);
+  if (!match) return null;
+  const [, owner, repo, rest = ''] = match;
+  if (!owner || !repo) return null;
+
+  if (rest.length === 0) {
+    return { owner, repo, candidates: [{ ref: 'HEAD' }] };
+  }
+
+  if (rest.startsWith('/')) {
+    const subpath = sanitizeRelativePath(rest.slice(1));
+    return subpath ? { owner, repo, candidates: [{ ref: 'HEAD', subpath }] } : null;
+  }
+
+  if (!rest.startsWith('@')) return null;
+  const refAndMaybeSubpath = rest.slice(1);
+  const parts = refAndMaybeSubpath.split('/');
+  if (parts.length === 0 || parts.some((part) => !GITHUB_REF_SEGMENT_RE.test(part))) {
+    return null;
+  }
+
+  const candidates: GithubArchiveCandidate[] = [];
+  const seen = new Set<string>();
+  for (let refPartCount = 1; refPartCount <= parts.length; refPartCount += 1) {
+    const ref = parts.slice(0, refPartCount).join('/');
+    const subpathParts = parts.slice(refPartCount);
+    const subpath = subpathParts.length > 0
+      ? sanitizeRelativePath(subpathParts.join('/'))
+      : undefined;
+    const key = `${ref}\0${subpath ?? ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push({ ref, ...(subpath ? { subpath } : {}) });
+    }
+  }
+  return candidates.length > 0 ? { owner, repo, candidates } : null;
+}
+
+function githubTarballUrl(owner: string, repo: string, ref: string): string {
+  const encodedRef = ref.split('/').map((part) => encodeURIComponent(part)).join('/');
+  return `https://codeload.github.com/${owner}/${repo}/tar.gz/${encodedRef}`;
+}
+
+function isRetryableGithubCandidateError(message: string): boolean {
+  return /^Fetch failed: 404\b/.test(message) || /^Subpath .+ not found inside archive$/.test(message);
 }
 
 // Plain `https://…tar.gz` / `https://…tgz` source.

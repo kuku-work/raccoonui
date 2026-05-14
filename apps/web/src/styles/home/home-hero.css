@@ -181,7 +181,44 @@
       color-mix(in srgb, var(--accent) 2%, transparent)
     );
 }
+.home-hero__prompt-editor {
+  position: relative;
+  min-width: 0;
+}
+.home-hero__prompt-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  padding: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.home-hero__prompt-slot {
+  display: inline;
+  margin: 0 1px;
+  padding: 1px 5px 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  color: var(--accent);
+  font-weight: 680;
+}
+.home-hero__prompt-slot[data-filled='false'] {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  color: color-mix(in srgb, var(--accent) 74%, var(--text-muted));
+}
 .home-hero__input {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 84px;
   resize: vertical;
@@ -194,6 +231,14 @@
   background: transparent;
   color: var(--text);
   transition: none;
+}
+.home-hero__prompt-editor--highlighted .home-hero__input {
+  color: transparent;
+  caret-color: var(--text);
+}
+.home-hero__prompt-editor--highlighted .home-hero__input::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: transparent;
 }
 .home-hero__input:focus {
   border: none;

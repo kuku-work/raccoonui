@@ -30,6 +30,7 @@ let pluginsRoot: string;
 
 async function buildFixtureTarball(args: {
   rootPrefix: string;
+  pluginSubpath?: string;
   withSymlink?: boolean;
   bigPaddingBytes?: number;
 }): Promise<Buffer> {
@@ -37,18 +38,21 @@ async function buildFixtureTarball(args: {
   // codeload uses: `<repo>-<sha>/<files>`.
   const tmp = await mkdtemp(path.join(os.tmpdir(), 'od-fixture-'));
   const wrapper = path.join(tmp, args.rootPrefix);
-  await mkdir(wrapper, { recursive: true });
+  const pluginRoot = args.pluginSubpath
+    ? path.join(wrapper, args.pluginSubpath)
+    : wrapper;
+  await mkdir(pluginRoot, { recursive: true });
   const fixtureSrc = path.join(__dirname, 'fixtures', 'plugin-fixtures', 'sample-plugin');
   for (const entry of await readdir(fixtureSrc)) {
     const data = await fs.promises.readFile(path.join(fixtureSrc, entry));
-    await writeFile(path.join(wrapper, entry), data);
+    await writeFile(path.join(pluginRoot, entry), data);
   }
   if (args.withSymlink) {
-    await symlink('SKILL.md', path.join(wrapper, 'symlink-here'));
+    await symlink('SKILL.md', path.join(pluginRoot, 'symlink-here'));
   }
   if (args.bigPaddingBytes) {
     const buf = Buffer.alloc(args.bigPaddingBytes, 0);
-    await writeFile(path.join(wrapper, 'huge.bin'), buf);
+    await writeFile(path.join(pluginRoot, 'huge.bin'), buf);
   }
   const stream = tarCreate(
     { cwd: tmp, gzip: true },
@@ -110,6 +114,35 @@ describe('archive installer', () => {
     expect(urlSeen).toBe('https://codeload.github.com/open-design/sample-plugin/tar.gz/HEAD');
     const row = db.prepare(`SELECT source_kind, source FROM installed_plugins WHERE id = 'sample-plugin'`).get();
     expect(row).toEqual({ source_kind: 'github', source: 'github:open-design/sample-plugin' });
+  });
+
+  it('extracts a github source with a ref and plugin subpath', async () => {
+    const tarball = await buildFixtureTarball({
+      rootPrefix: 'open-design-garnet-hemisphere',
+      pluginSubpath: path.join('plugins', 'community', 'registry-starter'),
+    });
+    let urlSeen = '';
+    const fetcher: ArchiveFetcher = async (u) => {
+      urlSeen = u;
+      return makeFetcher(tarball)('');
+    };
+    let success = false;
+    let error: string | undefined;
+    const source = 'github:nexu-io/open-design@garnet-hemisphere/plugins/community/registry-starter';
+    for await (const ev of installPlugin(db, {
+      source,
+      roots: { userPluginsRoot: pluginsRoot },
+      fetcher,
+    })) {
+      if (ev.kind === 'success') success = true;
+      if (ev.kind === 'error') error = ev.message;
+    }
+    if (!success) {
+      throw new Error(`install failed: ${error}`);
+    }
+    expect(urlSeen).toBe('https://codeload.github.com/nexu-io/open-design/tar.gz/garnet-hemisphere');
+    const row = db.prepare(`SELECT source_kind, source FROM installed_plugins WHERE id = 'sample-plugin'`).get();
+    expect(row).toEqual({ source_kind: 'github', source });
   });
 
   it('extracts a https://*.tgz source (records source_kind=url)', async () => {

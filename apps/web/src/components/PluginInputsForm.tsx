@@ -184,7 +184,8 @@ function renderField(
 }
 
 function fieldType(field: InputFieldSpec): string {
-  const raw = typeof field.type === 'string' ? field.type : 'string';
+  const rawType = (field as { type?: unknown }).type;
+  const raw = typeof rawType === 'string' ? rawType : 'string';
   return raw === 'upload' ? 'file' : raw;
 }
 

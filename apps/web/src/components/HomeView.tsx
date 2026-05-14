@@ -581,6 +581,7 @@ export function HomeView({
         onOpenPluginDetails={setDetailsRecord}
         pluginInputFields={active?.inputFields ?? []}
         pluginInputValues={active?.inputs ?? {}}
+        pluginInputTemplate={active?.queryTemplate ?? null}
         onPluginInputValuesChange={updateActiveInputs}
         onPluginInputValidityChange={(valid) => {
           setActive((prev) => (prev ? { ...prev, inputsValid: valid } : prev));
