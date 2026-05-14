@@ -9,7 +9,10 @@ import type {
   OrbitConfig,
   PetConfig,
 } from '../types';
-import { normalizeAccentColor } from './appearance';
+import {
+  DEFAULT_ACCENT_COLOR,
+  normalizeAccentColor,
+} from './appearance';
 import {
   DEFAULT_FAILURE_SOUND_ID,
   DEFAULT_SUCCESS_SOUND_ID,
@@ -73,6 +76,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   raigcWorkflowId: null,
   onboardingCompleted: false,
   theme: 'system',
+  accentColor: DEFAULT_ACCENT_COLOR,
   mediaProviders: {},
   composio: {},
   agentModels: {},

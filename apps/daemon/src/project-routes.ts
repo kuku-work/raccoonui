@@ -7,7 +7,7 @@ import type { RouteDeps } from './server-context.js';
 // extracted project routes into this module).
 import { writeProjectMetadata } from './raccoonui/git-project-bridge.js';
 
-export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids'> {}
+export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry'> {}
 
 export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
   const { db, design } = ctx;
@@ -411,6 +411,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     });
     // Bump the parent project's updatedAt so the project list re-orders.
     updateProject(db, req.params.id, {});
+    ctx.telemetry?.reportFinalizedMessage(saved, m);
     res.json({ message: saved });
   });
 
