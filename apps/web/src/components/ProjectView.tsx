@@ -295,6 +295,7 @@ export function ProjectView({
   const [previewComments, setPreviewComments] = useState<PreviewComment[]>([]);
   const [attachedComments, setAttachedComments] = useState<PreviewComment[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioVoiceOptionsError, setAudioVoiceOptionsError] = useState<string | null>(null);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
@@ -362,6 +363,7 @@ export function ProjectView({
   const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<AbortController | null>(null);
+  const streamingConversationIdRef = useRef<string | null>(null);
   const sendTextBufferRef = useRef<BufferedTextUpdates | null>(null);
   const reattachTextBuffersRef = useRef<Set<BufferedTextUpdates>>(new Set());
   const reattachControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -413,7 +415,7 @@ export function ProjectView({
       && messagesConversationId !== activeConversationId
       && failedMessagesConversationId !== activeConversationId,
   );
-  const currentConversationStreaming = streaming;
+  const currentConversationStreaming = streaming && streamingConversationId === activeConversationId;
   const currentConversationBusy = currentConversationLoading
     || currentConversationStreaming
     || currentConversationHasActiveRun;
@@ -440,6 +442,8 @@ export function ProjectView({
     setPreviewComments([]);
     setAttachedComments([]);
     setStreaming(false);
+    streamingConversationIdRef.current = null;
+    setStreamingConversationId(null);
     setError(null);
     setAudioVoiceOptionsError(null);
     setArtifact(null);
@@ -492,6 +496,8 @@ export function ProjectView({
       setFailedMessagesConversationId(null);
       messagesConversationIdRef.current = null;
       setStreaming(false);
+      streamingConversationIdRef.current = null;
+      setStreamingConversationId(null);
       return;
     }
     let cancelled = false;
@@ -502,6 +508,8 @@ export function ProjectView({
     setMessagesConversationId(null);
     setFailedMessagesConversationId(null);
     setStreaming(false);
+    streamingConversationIdRef.current = null;
+    setStreamingConversationId(null);
     savedArtifactRef.current = null;
     pendingWritesRef.current.clear();
     if (messagesConversationIdRef.current !== activeConversationId) {
@@ -978,6 +986,35 @@ export function ProjectView({
     [project.id, activeConversationId],
   );
 
+  const markStreamingConversation = useCallback((conversationId: string) => {
+    streamingConversationIdRef.current = conversationId;
+    setStreaming(true);
+    setStreamingConversationId(conversationId);
+  }, []);
+
+  const clearStreamingMarker = useCallback((conversationId?: string | null) => {
+    const next = clearStreamingConversationMarker(
+      streamingConversationIdRef.current,
+      conversationId,
+    );
+    if (next === streamingConversationIdRef.current) return;
+    streamingConversationIdRef.current = next;
+    setStreamingConversationId(next);
+    setStreaming(next !== null);
+  }, []);
+
+  const clearActiveRunRefs = useCallback((
+    conversationId: string,
+    controller: AbortController,
+    cancelController: AbortController,
+  ) => {
+    if (!shouldClearActiveRunRefs(streamingConversationIdRef.current, conversationId)) {
+      return;
+    }
+    if (abortRef.current === controller) abortRef.current = null;
+    if (cancelRef.current === cancelController) cancelRef.current = null;
+  }, []);
+
   const handleAssistantFeedback = useCallback(
     (assistantMessage: ChatMessage, change: ChatMessageFeedbackChange) => {
       const now = Date.now();
@@ -1095,12 +1132,13 @@ export function ProjectView({
   useEffect(() => {
     if (!daemonLive || !activeConversationId || streaming) return;
     let cancelled = false;
+    const reattachConversationId = activeConversationId;
 
     const attachRecoverableRuns = async () => {
       const activeRuns = messages.some(
         (m) => m.role === 'assistant' && isActiveRunStatus(m.runStatus) && !m.runId,
       )
-        ? await listActiveChatRuns(project.id, activeConversationId)
+        ? await listActiveChatRuns(project.id, reattachConversationId)
         : [];
       if (cancelled) return;
       const activeByMessage = new Map(
@@ -1151,7 +1189,7 @@ export function ProjectView({
         if (!isTerminalRunStatus(status.status)) {
           abortRef.current = controller;
           cancelRef.current = cancelController;
-          setStreaming(true);
+          markStreamingConversation(reattachConversationId);
         }
 
         let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1203,9 +1241,8 @@ export function ProjectView({
               completedReattachRunsRef.current.add(runId);
               reattachControllersRef.current.delete(runId);
               reattachCancelControllersRef.current.delete(runId);
-              if (abortRef.current === controller) abortRef.current = null;
-              if (cancelRef.current === cancelController) cancelRef.current = null;
-              setStreaming(false);
+              clearActiveRunRefs(reattachConversationId, controller, cancelController);
+              clearStreamingMarker(reattachConversationId);
               persistNow({ telemetryFinalized: true });
               void refreshProjectFiles();
               onProjectsRefresh();
@@ -1224,9 +1261,8 @@ export function ProjectView({
               completedReattachRunsRef.current.add(runId);
               reattachControllersRef.current.delete(runId);
               reattachCancelControllersRef.current.delete(runId);
-              if (abortRef.current === controller) abortRef.current = null;
-              if (cancelRef.current === cancelController) cancelRef.current = null;
-              setStreaming(false);
+              clearActiveRunRefs(reattachConversationId, controller, cancelController);
+              clearStreamingMarker(reattachConversationId);
               persistNow({ telemetryFinalized: true });
             },
           },
@@ -1247,9 +1283,8 @@ export function ProjectView({
               completedReattachRunsRef.current.add(runId);
               reattachControllersRef.current.delete(runId);
               reattachCancelControllersRef.current.delete(runId);
-              if (abortRef.current === controller) abortRef.current = null;
-              if (cancelRef.current === cancelController) cancelRef.current = null;
-              setStreaming(false);
+              clearActiveRunRefs(reattachConversationId, controller, cancelController);
+              clearStreamingMarker(reattachConversationId);
               persistNow({ telemetryFinalized: true });
             }
           },
@@ -1279,8 +1314,7 @@ export function ProjectView({
             if (persistTimer) clearTimeout(persistTimer);
             reattachControllersRef.current.delete(runId);
             reattachCancelControllersRef.current.delete(runId);
-            if (abortRef.current === controller) abortRef.current = null;
-            if (cancelRef.current === cancelController) cancelRef.current = null;
+            clearActiveRunRefs(reattachConversationId, controller, cancelController);
           });
       }
     };
@@ -1297,6 +1331,9 @@ export function ProjectView({
     project.id,
     updateMessageById,
     persistMessageById,
+    markStreamingConversation,
+    clearStreamingMarker,
+    clearActiveRunRefs,
     refreshProjectFiles,
     onProjectsRefresh,
   ]);
@@ -1312,6 +1349,7 @@ export function ProjectView({
       if (messagesConversationIdRef.current !== activeConversationId) return;
       if (currentConversationBusy) return;
       if (!prompt.trim() && attachments.length === 0 && commentAttachments.length === 0) return;
+      const runConversationId = activeConversationId;
       setError(null);
       const startedAt = Date.now();
       const userMsg: ChatMessage = {
@@ -1354,10 +1392,36 @@ export function ProjectView({
         runStatus: config.mode === 'daemon' ? 'running' : undefined,
         startedAt,
       };
+      const updateConversationLatestRun = (
+        status: NonNullable<ChatMessage['runStatus']>,
+        endedAt?: number,
+      ) => {
+        setConversations((curr) =>
+          curr.map((conversation) =>
+            conversation.id === runConversationId
+              ? {
+                  ...conversation,
+                  updatedAt: endedAt ?? startedAt,
+                  latestRun: {
+                    status,
+                    startedAt,
+                    ...(endedAt === undefined
+                      ? {}
+                      : {
+                          endedAt,
+                          durationMs: Math.max(0, endedAt - startedAt),
+                        }),
+                  },
+                }
+              : conversation,
+          ),
+        );
+      };
       activeCompletionNotificationRunsRef.current.add(assistantId);
       const nextHistory = [...messages, userMsg];
       setMessages([...nextHistory, assistantMsg]);
-      setStreaming(true);
+      markStreamingConversation(runConversationId);
+      updateConversationLatestRun(config.mode === 'daemon' ? 'running' : 'queued');
       setArtifact(null);
       savedArtifactRef.current = null;
       onTouchProject();
@@ -1375,10 +1439,10 @@ export function ProjectView({
         if (title) {
           setConversations((curr) =>
             curr.map((c) =>
-              c.id === activeConversationId ? { ...c, title } : c,
+              c.id === runConversationId ? { ...c, title } : c,
             ),
           );
-          void patchConversation(project.id, activeConversationId, { title });
+          void patchConversation(project.id, runConversationId, { title });
         }
       }
 
@@ -1522,12 +1586,13 @@ export function ProjectView({
             !streamedText.trim() &&
             !liveHtml.trim();
           if (emptyApiResponse) {
+            const endedAt = Date.now();
             const diagnostic = t('assistant.emptyResponseMessage');
             updateMessageById(
               assistantId,
               (prev) => ({
                 ...prev,
-                endedAt: Date.now(),
+                endedAt,
                 runStatus: 'failed',
                 events: [
                   ...(prev.events ?? []),
@@ -1541,24 +1606,29 @@ export function ProjectView({
             if (commentAttachments.length > 0) {
               void patchAttachedStatuses(commentAttachments, 'failed');
             }
-            setStreaming(false);
-            abortRef.current = null;
-            cancelRef.current = null;
+            clearActiveRunRefs(runConversationId, controller, cancelController);
+            clearStreamingMarker(runConversationId);
+            updateConversationLatestRun('failed', endedAt);
             void refreshProjectFiles();
             onProjectsRefresh();
             return;
           }
-          updateAssistant((prev) => ({
-            ...prev,
-            endedAt: Date.now(),
-            runStatus: resolveSucceededRunStatus(prev.runStatus),
-          }));
+          const endedAt = Date.now();
+          let finalRunStatus: ChatMessage['runStatus'] = 'succeeded';
+          updateAssistant((prev) => {
+            finalRunStatus = resolveSucceededRunStatus(prev.runStatus);
+            return {
+              ...prev,
+              endedAt,
+              runStatus: finalRunStatus,
+            };
+          });
           if (commentAttachments.length > 0) {
             void patchAttachedStatuses(commentAttachments, 'needs_review');
           }
-          setStreaming(false);
-          abortRef.current = null;
-          cancelRef.current = null;
+          clearActiveRunRefs(runConversationId, controller, cancelController);
+          clearStreamingMarker(runConversationId);
+          updateConversationLatestRun(finalRunStatus ?? 'succeeded', endedAt);
           // Persist the finished artifact to the project folder so it shows
           // up as a real tab (not just the synthetic "live" stream).
           setArtifact((prev) => {
@@ -1586,6 +1656,7 @@ export function ProjectView({
           onProjectsRefresh();
         },
         onError: (err: Error) => {
+          const endedAt = Date.now();
           textBuffer.flush();
           textBuffer.cancel();
           cancelSendTextBuffer();
@@ -1593,7 +1664,7 @@ export function ProjectView({
           appendAssistantErrorEvent(assistantId, err.message);
           updateAssistant((prev) => ({
             ...prev,
-            endedAt: Date.now(),
+            endedAt,
             runStatus: config.mode === 'api' || prev.runId || isActiveRunStatus(prev.runStatus)
               ? 'failed'
               : prev.runStatus,
@@ -1601,9 +1672,9 @@ export function ProjectView({
           if (commentAttachments.length > 0) {
             void patchAttachedStatuses(commentAttachments, 'failed');
           }
-          setStreaming(false);
-          abortRef.current = null;
-          cancelRef.current = null;
+          clearActiveRunRefs(runConversationId, controller, cancelController);
+          clearStreamingMarker(runConversationId);
+          updateConversationLatestRun('failed', endedAt);
           setMessages((curr) => {
             const finalized = curr.find((m) => m.id === assistantId);
             if (finalized) persistMessage(finalized, { telemetryFinalized: true });
@@ -1626,7 +1697,7 @@ export function ProjectView({
           cancelSignal: cancelController.signal,
           handlers,
           projectId: project.id,
-          conversationId: activeConversationId,
+          conversationId: runConversationId,
           assistantMessageId: assistantId,
           clientRequestId: randomUUID(),
           skillId: project.skillId ?? null,
@@ -1641,16 +1712,22 @@ export function ProjectView({
             updateMessageById(assistantId, (prev) => ({ ...prev, runId, runStatus: 'queued' }), true);
           },
           onRunStatus: (runStatus) => {
+            const endedAt = isTerminalRunStatus(runStatus) ? Date.now() : undefined;
             updateMessageById(
               assistantId,
               (prev) => ({
                 ...prev,
                 runStatus,
-                endedAt: isTerminalRunStatus(runStatus) ? prev.endedAt ?? Date.now() : prev.endedAt,
+                endedAt: endedAt === undefined ? prev.endedAt : prev.endedAt ?? endedAt,
               }),
               true,
               runStatus === 'canceled' ? { telemetryFinalized: true } : undefined,
             );
+            updateConversationLatestRun(runStatus, endedAt);
+            if (isTerminalRunStatus(runStatus)) {
+              clearActiveRunRefs(runConversationId, controller, cancelController);
+              clearStreamingMarker(runConversationId);
+            }
           },
           onRunEventId: (lastRunEventId) => {
             updateMessageById(assistantId, (prev) => ({ ...prev, lastRunEventId }));
@@ -1699,7 +1776,7 @@ export function ProjectView({
               body: JSON.stringify({
                 userMessage: userText,
                 projectId: project.id,
-                conversationId: activeConversationId,
+                conversationId: runConversationId,
                 chatProvider: byokChatProvider,
               }),
             });
@@ -1730,7 +1807,7 @@ export function ProjectView({
                 userMessage: userText,
                 assistantMessage: accumulatedAssistantText,
                 projectId: project.id,
-                conversationId: activeConversationId,
+                conversationId: runConversationId,
                 chatProvider: byokChatProvider,
               }),
             }).catch(() => {
@@ -1759,6 +1836,9 @@ export function ProjectView({
       persistMessageById,
       patchAttachedStatuses,
       updateMessageById,
+      markStreamingConversation,
+      clearStreamingMarker,
+      clearActiveRunRefs,
       onProjectsRefresh,
     ],
   );
@@ -1945,22 +2025,10 @@ export function ProjectView({
     }
     reattachControllersRef.current.clear();
     setStreaming(false);
+    streamingConversationIdRef.current = null;
+    setStreamingConversationId(null);
     setMessages((curr) => {
-      const finalized: ChatMessage[] = [];
-      const next = curr.map((m) => {
-        if (m.role !== 'assistant') return m;
-        if (isActiveRunStatus(m.runStatus)) {
-          const updated = { ...m, runStatus: 'canceled' as const, endedAt: m.endedAt ?? stoppedAt };
-          finalized.push(updated);
-          return updated;
-        }
-        if (m.endedAt === undefined) {
-          const updated = { ...m, endedAt: stoppedAt };
-          finalized.push(updated);
-          return updated;
-        }
-        return m;
-      });
+      const { messages: next, finalized } = finalizeActiveAssistantMessagesOnStop(curr, stoppedAt);
       for (const message of finalized) persistMessage(message, { telemetryFinalized: true });
       return next;
     });
@@ -1986,6 +2054,8 @@ export function ProjectView({
       // duplicate empty conversations before the effect resolves.
       setMessages([]);
       setStreaming(false);
+      streamingConversationIdRef.current = null;
+      setStreamingConversationId(null);
       setMessagesConversationId(null);
       messagesConversationIdRef.current = fresh.id;
       setConversations((curr) => [fresh, ...curr]);
@@ -2008,6 +2078,8 @@ export function ProjectView({
     setAttachedComments([]);
     setArtifact(null);
     setStreaming(false);
+    streamingConversationIdRef.current = null;
+    setStreamingConversationId(null);
     setMessagesConversationId(null);
     setFailedMessagesConversationId(null);
     setConversationLoadError(null);
@@ -2636,8 +2708,55 @@ function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
   return status === 'queued' || status === 'running';
 }
 
+function isStoppableAssistantMessage(message: ChatMessage): boolean {
+  if (message.role !== 'assistant') return false;
+  if (isActiveRunStatus(message.runStatus)) return true;
+  return message.runStatus === undefined && message.endedAt === undefined && message.startedAt !== undefined;
+}
+
 export function resolveSucceededRunStatus(status: ChatMessage['runStatus']): ChatMessage['runStatus'] {
   return status === 'failed' || status === 'canceled' ? status : 'succeeded';
+}
+
+export function clearStreamingConversationMarker(
+  currentConversationId: string | null,
+  completedConversationId?: string | null,
+): string | null {
+  if (
+    completedConversationId !== undefined
+    && completedConversationId !== null
+    && currentConversationId !== completedConversationId
+  ) {
+    return currentConversationId;
+  }
+  return null;
+}
+
+export function shouldClearActiveRunRefs(
+  currentConversationId: string | null,
+  completedConversationId: string,
+): boolean {
+  return currentConversationId === completedConversationId;
+}
+
+export function finalizeActiveAssistantMessagesOnStop(
+  messages: ChatMessage[],
+  stoppedAt: number,
+): { messages: ChatMessage[]; finalized: ChatMessage[] } {
+  const finalized: ChatMessage[] = [];
+  const next = messages.map((message) => {
+    if (!isStoppableAssistantMessage(message)) {
+      return message;
+    }
+    const updated = {
+      ...message,
+      runStatus: 'canceled' as const,
+      endedAt: message.endedAt ?? stoppedAt,
+    };
+    finalized.push(updated);
+    return updated;
+  });
+  return { messages: next, finalized };
 }
 
 type BufferedTextUpdates = ReturnType<typeof createBufferedTextUpdates>;
