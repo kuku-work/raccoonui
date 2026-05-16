@@ -6,7 +6,7 @@ on `127.0.0.1:17456`, web on `:17573`, and an Electron window opens on top.
 
 | script | platform | purpose |
 |--------|----------|---------|
-| `install.{ps1,sh}` | win / mac+linux | first-time setup — checks node 22+ / git / pnpm / native build toolchain (VS C++ on Win, Xcode CLT on mac, build-essential on Linux), installs deps. Also seeds `.raccoonui/` + builds dist for the legacy launcher path; the dev start path doesn't need either, but the seed/build are kept for `tools/pack` packaged release. |
+| `install.{ps1,sh}` | win / mac+linux | first-time setup — checks node 24+ / git / pnpm / native build toolchain (VS C++ on Win, Xcode CLT on mac, build-essential on Linux), installs deps. Also seeds `.raccoonui/` + builds dist for the legacy launcher path; the dev start path doesn't need either, but the seed/build are kept for `tools/pack` packaged release. |
 | `start.{ps1,sh}`   | same | spawn `pnpm tools-dev run` (daemon @ 17456 + web @ 17573, both from source) → wait web listen → `pnpm tools-dev start desktop` to attach Electron window → sit on tools-dev process. Reads SKILL.md / design-systems / craft directly from `creative/raccoonui/` so edits show up immediately. |
 | `update.{ps1,sh}`  | same | `git fetch origin && git pull --ff-only` → reinstall |
 | `install.cmd` / `start.cmd` / `update.cmd` | win | double-click wrappers around the `.ps1` scripts — for non-engineering coworkers who don't want to type `pwsh -File ...` |

@@ -3,7 +3,7 @@
 .SYNOPSIS
   RaccoonUI installer for Windows.
 .DESCRIPTION
-  Detects node 22+, git, pnpm, and Visual Studio C++ Build Tools workload
+  Detects node 24+, git, pnpm, and Visual Studio C++ Build Tools workload
   (required by better-sqlite3 native compilation). Installs missing
   components when possible, then installs deps, seeds .raccoonui/, and
   builds daemon + web.
@@ -72,12 +72,15 @@ function Seed-RaccoonUIResources {
     }
 }
 
-# ── 1. node 22+ ──
+# ── 1. node 24+ ──
+# package.json pins engines.node "~24", so pnpm install refuses to run on
+# older majors. Track that exactly here rather than letting users hit the
+# error 200 lines into the install run.
 if (Get-Command node -ErrorAction SilentlyContinue) {
     $v = (node -v).TrimStart('v')
     $major = [int]$v.Split('.')[0]
-    if ($major -lt 22) {
-        Fail "node $v 太舊，需要 v22+" "winget install OpenJS.NodeJS.LTS"
+    if ($major -lt 24) {
+        Fail "node $v 太舊，需要 v24+" "winget install OpenJS.NodeJS.LTS"
     } else {
         Ok "node $v"
     }

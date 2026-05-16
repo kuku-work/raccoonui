@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # RaccoonUI installer for macOS / Linux.
-# Detects node 22+, git, pnpm, native build toolchain (Xcode CLT on macOS,
+# Detects node 24+, git, pnpm, native build toolchain (Xcode CLT on macOS,
 # build-essential on Linux), installs deps, seeds .raccoonui/, builds.
 
 set -euo pipefail
@@ -63,24 +63,27 @@ seed_raccoonui_resources() {
     done
 }
 
-# ── 1. node 22+ ──
+# ── 1. node 24+ ──
+# package.json pins engines.node "~24", so pnpm install refuses to run on
+# older majors. Track that exactly here rather than letting users hit the
+# error 200 lines into the install run.
 if command -v node >/dev/null 2>&1; then
     version=$(node -v | tr -d 'v')
     major=${version%%.*}
-    if [ "$major" -lt 22 ]; then
+    if [ "$major" -lt 24 ]; then
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            fail "node $version 太舊，需要 v22+" "brew install node@22"
+            fail "node $version 太舊，需要 v24+" "brew install node@24"
         else
-            fail "node $version 太舊，需要 v22+" "use nvm: https://github.com/nvm-sh/nvm  →  nvm install 22"
+            fail "node $version 太舊，需要 v24+" "use nvm: https://github.com/nvm-sh/nvm  →  nvm install 24"
         fi
     else
         ok "node $version"
     fi
 else
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        fail "node 未安裝" "brew install node@22"
+        fail "node 未安裝" "brew install node@24"
     else
-        fail "node 未安裝" "use nvm: https://github.com/nvm-sh/nvm  →  nvm install 22"
+        fail "node 未安裝" "use nvm: https://github.com/nvm-sh/nvm  →  nvm install 24"
     fi
 fi
 
