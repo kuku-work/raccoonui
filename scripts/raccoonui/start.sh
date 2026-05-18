@@ -29,12 +29,12 @@ if [ ! -d "node_modules" ]; then
     exit 1
 fi
 
-# ── pre-start update check ──
-# Default Y (auto-update on timeout) so coworkers never silently run a
-# stale source tree. Detect phase is best-effort (network down / detached
-# HEAD / no upstream silently skip with a visible note so the user knows
-# they are running un-checked source); the update phase fails loud so the
-# user never starts a half-rebuilt source.
+# ── pre-start update ──
+# Auto-update with no prompt so coworkers always boot the latest source.
+# Detect phase is best-effort (network down / detached HEAD / no upstream
+# silently skip with a visible note so the user knows they are running
+# un-checked source); the update phase fails loud so the user never
+# starts a half-rebuilt source.
 detect_ok=1
 detect_skip_reason=""
 branch=""
@@ -64,23 +64,12 @@ behind=0
 if [ $detect_ok -eq 0 ]; then
     printf "ℹ️  跳過更新檢查 (%s) — 跑 local source\n" "$detect_skip_reason"
 elif [ "$behind" -gt 0 ] 2>/dev/null; then
-    printf "\n⚠️  origin/%s 領先本地 %s commits — 建議更新\n" "$branch" "$behind"
-    printf "   立即更新? [Y/n]  (5 秒未輸入 → 自動更新): "
-    choice=""
-    read -r -t 5 -n 1 choice || true
-    printf "\n"
-    case "${choice:-y}" in
-        [Nn])
-            printf "→ skipping update, starting current source\n"
-            ;;
-        *)
-            printf "🔄 Pulling origin/%s...\n" "$branch"
-            git pull origin "$branch" --ff-only
-            printf "📦 pnpm install...\n"
-            pnpm install
-            printf "✅ updated, continuing to start\n"
-            ;;
-    esac
+    printf "\n⚠️  origin/%s 領先本地 %s commits — 自動更新中\n" "$branch" "$behind"
+    printf "🔄 Pulling origin/%s...\n" "$branch"
+    git pull origin "$branch" --ff-only
+    printf "📦 pnpm install...\n"
+    pnpm install
+    printf "✅ updated, continuing to start\n"
 fi
 
 printf "🦝 RaccoonUI starting (dev mode, source-of-truth)\n"

@@ -61,12 +61,12 @@ try {
         exit 1
     }
 
-    # ── pre-start update check ──
-    # Default Y (auto-update on timeout) so coworkers never silently run a
-    # stale source tree. Detect phase is best-effort (network down / detached
-    # HEAD / no upstream silently skip with a visible note so the user knows
-    # they are running un-checked source); the update phase fails loud so the
-    # user never starts a half-rebuilt daemon.
+    # ── pre-start update ──
+    # Auto-update with no prompt so coworkers always boot the latest source.
+    # Detect phase is best-effort (network down / detached HEAD / no upstream
+    # silently skip with a visible note so the user knows they are running
+    # un-checked source); the update phase fails loud so the user never
+    # starts a half-rebuilt daemon.
     $detectOk = $true
     $detectSkipReason = $null
     $branch = $null
@@ -100,29 +100,14 @@ try {
         Write-Host "ℹ️  跳過更新檢查 ($detectSkipReason) — 跑 local source" -ForegroundColor DarkGray
     } elseif ($behind -gt 0) {
         Write-Host ""
-        Write-Host "⚠️  origin/$branch 領先本地 $behind commits — 建議更新" -ForegroundColor Yellow
-        Write-Host "   立即更新? [Y/n]  (5 秒未輸入 → 自動更新)" -ForegroundColor Yellow
-        $deadline = (Get-Date).AddSeconds(5)
-        $choice = $null
-        while ((Get-Date) -lt $deadline) {
-            if ([Console]::KeyAvailable) {
-                $choice = [Console]::ReadKey($true).KeyChar
-                break
-            }
-            Start-Sleep -Milliseconds 100
-        }
-        if ($choice -eq 'N' -or $choice -eq 'n') {
-            Write-Host "→ skipping update, starting current source" -ForegroundColor DarkGray
-        } else {
-            Write-Host ""
-            Write-Host "🔄 Pulling origin/$branch..." -ForegroundColor Cyan
-            git pull origin $branch --ff-only
-            if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
-            Write-Host "📦 pnpm install..." -ForegroundColor Cyan
-            pnpm install
-            if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
-            Write-Host "✅ updated, continuing to start" -ForegroundColor Green
-        }
+        Write-Host "⚠️  origin/$branch 領先本地 $behind commits — 自動更新中" -ForegroundColor Yellow
+        Write-Host "🔄 Pulling origin/$branch..." -ForegroundColor Cyan
+        git pull origin $branch --ff-only
+        if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
+        Write-Host "📦 pnpm install..." -ForegroundColor Cyan
+        pnpm install
+        if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+        Write-Host "✅ updated, continuing to start" -ForegroundColor Green
     }
 
     Write-Host "🦝 RaccoonUI starting (dev mode, source-of-truth)" -ForegroundColor Cyan
