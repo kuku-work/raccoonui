@@ -74,7 +74,7 @@ OD stands on four open-source shoulders:
 | **Persistence** | SQLite at `.od/app.sqlite`: projects · conversations · messages · tabs · saved templates. Reopen tomorrow, todo card and open files are exactly where you left them. |
 | **Lifecycle** | One entry point: `pnpm tools-dev` (start / stop / run / status / logs / inspect / check) — boots daemon + web (+ desktop) under typed sidecar stamps |
 | **Desktop** | Optional Electron shell with sandboxed renderer + sidecar IPC (STATUS / EVAL / SCREENSHOT / CONSOLE / CLICK / SHUTDOWN) — drives `tools-dev inspect desktop screenshot` for E2E |
-| **Deployable to** | Local (`pnpm tools-dev`) · Vercel web layer · packaged Electron desktop app for macOS (Apple Silicon) and Windows (x64) — download from [open-design.ai](https://open-design.ai/) or the [latest release](https://github.com/nexu-io/open-design/releases) |
+| **Deployable to** | Local (`pnpm tools-dev`) · Vercel web layer · packaged Electron desktop app for macOS (Apple Silicon, plus Intel x64 ZIP builds verified on Monterey) and Windows (x64) — download from [open-design.ai](https://open-design.ai/) or the [latest release](https://github.com/nexu-io/open-design/releases) |
 | **License** | Apache-2.0 |
 
 Linux AppImage packaging is available through the optional release lane and is covered by the Linux packaged smoke workflow, but public stable downloads remain gated until the release maintainers enable the Linux stable lane.
@@ -982,7 +982,7 @@ Long-form provenance write-up — what we take from each, what we deliberately d
 - [ ] Vercel + tunnel deployment recipe (Topology B)
 - [ ] One-command `npx od init` to scaffold a project with `DESIGN.md`
 - [ ] Skill marketplace (`od skills install <github-repo>`) and `od skill add | list | remove | test` CLI surface (drafted in [`docs/skills-protocol.md`](docs/skills-protocol.md), implementation pending)
-- [x] Packaged Electron build out of `apps/packaged/` — macOS (Apple Silicon) and Windows (x64) downloads on [open-design.ai](https://open-design.ai/) and the [GitHub releases page](https://github.com/nexu-io/open-design/releases)
+- [x] Packaged Electron build out of `apps/packaged/` — macOS (Apple Silicon, with Intel x64 ZIP builds verified on Monterey) and Windows (x64) downloads on [open-design.ai](https://open-design.ai/) and the [GitHub releases page](https://github.com/nexu-io/open-design/releases)
 
 Phased delivery → [`docs/roadmap.md`](docs/roadmap.md).
 
@@ -1017,7 +1017,7 @@ Full walkthrough, bar-for-merging, code style, and what we don't accept → [`CO
 Thanks to everyone who has helped move Open Design forward — through code, docs, feedback, new skills, new design systems, or even a sharp issue. Every real contribution counts, and the wall below is the easiest way to say so out loud.
 
 <a href="https://github.com/nexu-io/open-design/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-16" alt="Open Design contributors" />
+  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-18" alt="Open Design contributors" />
 </a>
 
 If you've shipped your first PR — welcome. The [`good-first-issue`/`help-wanted`](https://github.com/nexu-io/open-design/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22%2C%22help+wanted%22) label is the entry point.
@@ -1034,9 +1034,9 @@ The SVG above is regenerated daily by [`.github/workflows/metrics.yml`](.github/
 
 <a href="https://star-history.com/#nexu-io/open-design&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-16" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
-    <img alt="Open Design star history" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-18" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
+    <img alt="Open Design star history" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
   </picture>
 </a>
 

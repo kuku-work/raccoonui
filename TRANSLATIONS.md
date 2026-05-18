@@ -30,7 +30,7 @@ cp README.md README.it.md
 **What to translate:**
 - ✅ All text, headings, descriptions
 - ✅ Alt text: `alt="Open Design banner"`
-- ✅ Link text: `[Quickstart](QUICKSTART.md)` → `[Guida rapida](QUICKSTART.it.md)`
+- ✅ Link text: `[Quickstart](QUICKSTART.md)` → `[Guida rapida](QUICKSTART.it.md)` (if that file exists; otherwise keep `QUICKSTART.md` target)
 
 **What NOT to translate:**
 - ❌ Code snippets, commands, file paths
@@ -181,6 +181,12 @@ The `LOCALES` array in [`apps/web/src/i18n/types.ts`](apps/web/src/i18n/types.ts
    expect(LOCALE_LABEL.it).toBe('Italiano');
    ```
 
+   **If your locale is RTL (Arabic, Hebrew, Persian, Urdu, etc.):** also append your code to `RTL_LOCALES` in [`apps/web/src/i18n/index.tsx`](apps/web/src/i18n/index.tsx). This array controls the `dir="rtl"` attribute on `<html>` at runtime — without it the web UI renders LTR regardless of language. The current list is:
+
+   ```typescript
+   const RTL_LOCALES: Locale[] = ['ar', 'fa'];
+   ```
+
 3. **Create the dictionary** at `apps/web/src/i18n/locales/<code>.ts`:
    - Copy from `en.ts` and translate the values
    - Keys must match `en.ts` exactly
@@ -259,7 +265,7 @@ The `LOCALES` array in [`apps/web/src/i18n/types.ts`](apps/web/src/i18n/types.ts
 - ✅ Alt text in images: `alt="Open Design banner"` → `alt="Banner di Open Design"`
 - ✅ Badge labels where appropriate: `discord-join` → `discord-unisciti`
 - ✅ Code comments in examples (if instructional)
-- ✅ Link text: `[Quickstart](QUICKSTART.md)` → `[Guida rapida](QUICKSTART.it.md)`
+- ✅ Link text: `[Quickstart](QUICKSTART.md)` → `[Guida rapida](QUICKSTART.it.md)` (if that file exists; otherwise keep `QUICKSTART.md` target)
 
 **What NOT to translate:**
 - ❌ Code snippets (commands, file paths, variable names)
@@ -386,24 +392,26 @@ These mappings needed human judgment in #194 — OpenCC won't catch them and the
 
 Use Brazilian Portuguese for `pt-BR` translations. If a contributor wants to add European Portuguese, use code `pt-PT`.
 
-### Spanish: Neutral vs Regional
+### Spanish: `es-ES` (Spain)
 
-**Spanish (`es`)** should use neutral terminology understood across all Spanish-speaking regions:
+The shipped UI locale is **`es-ES`** with label `Español (España)`, so the dictionary and root README target European Spanish. The README filename `README.es.md` is a docs-precedent code that differs from the UI code (see the [adding a new locale](#adding-a-new-locale) step that documents this pattern); both surfaces describe the same Spain Spanish locale.
 
-| English    | Neutral (use) | Regional (avoid)           |
-| ---------- | ------------- | -------------------------- |
-| computer   | computadora   | ordenador (Spain only)     |
-| app        | aplicación    | app (anglicism)            |
-| to download| descargar     | bajar (informal)           |
-| file       | archivo       | fichero (Spain)            |
+| English    | es-ES (use)  | Avoid (Latin American) |
+| ---------- | ------------ | ---------------------- |
+| computer   | ordenador    | computadora (LatAm)    |
+| app        | aplicación   | app (anglicism)        |
+| to download| descargar    | bajar (informal)       |
+| file       | archivo      | fichero (dated Spain)  |
+| mobile     | móvil        | celular (LatAm)        |
 
-Avoid region-specific slang. When in doubt, prefer Latin American Spanish as it's more widely understood.
+If a contributor wants neutral or Latin American Spanish, propose a separate locale (e.g. `es-419`) in a follow-up PR — do not drift `es-ES` toward a different regional variant, as the existing `Español (España)` label sets reader expectations.
 
 ### Arabic: RTL and Technical Terms
 
 **Arabic (`ar`)** uses Modern Standard Arabic (MSA) understood across all Arabic-speaking regions:
 
-- Use right-to-left (RTL) text direction (Markdown handles this automatically)
+- Use right-to-left (RTL) text direction — **Markdown handles this automatically for `README.*.md` files**
+- The **web UI requires manual registration**: append your locale code to `RTL_LOCALES` in [`apps/web/src/i18n/index.tsx`](apps/web/src/i18n/index.tsx) (currently `['ar', 'fa']`), otherwise `<html dir="rtl">` is never set and the UI renders LTR
 - Technical terms are often kept in English with Arabic explanation
 - Numbers and dates can use Western Arabic numerals (0-9) for technical content
 - Keep code blocks and URLs left-to-right
@@ -687,10 +695,12 @@ After the first use, you can use just the English term.
 
 ### Q: How do I handle right-to-left (RTL) languages like Arabic?
 
-**A:** Markdown and GitHub automatically handle RTL text direction. Just write naturally in your language. Keep code blocks and URLs left-to-right.
+**README:** Markdown and GitHub automatically handle RTL text direction — just write naturally in your language and keep code blocks / URLs left-to-right.
+
+**UI locale:** The web app does not auto-detect. You must append your locale code to `RTL_LOCALES` in [`apps/web/src/i18n/index.tsx`](apps/web/src/i18n/index.tsx) (currently `['ar', 'fa']`). Without this, the `<html dir="rtl">` attribute is never set and the UI renders LTR regardless of language. See the [detailed steps](#adding-a-new-locale) under step 2.
 
 ```markdown
-<!-- Arabic text flows RTL automatically -->
+<!-- README: Arabic text flows RTL automatically -->
 Open Design هو البديل مفتوح المصدر لـ Claude Design
 
 <!-- Code blocks stay LTR -->

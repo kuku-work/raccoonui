@@ -333,6 +333,8 @@ pnpm tools-dev run web
 
 متطلّبات البيئة: Node `~24` و pnpm `10.33.x`. أدوات `nvm`/`fnm` اختيارية فقط؛ إن استخدمت إحداها فشغّل `nvm install 24 && nvm use 24` أو `fnm install 24 && fnm use 24` قبل `pnpm install`.
 
+يمكن لمستخدمي ويندوز اتباع [`docs/windows-troubleshooting.md`](docs/windows-troubleshooting.md) للحصول على مسار التثبيت الأصلي ومُشغّل صغير بنقرة مزدوجة.
+
 لتشغيل سطح المكتب / الخلفية، إعادة التشغيل بمنافذ ثابتة، وفحوص dispatcher توليد الوسائط (`OD_BIN`، `OD_DAEMON_URL`، `apps/daemon/dist/cli.js`) راجع [`QUICKSTART.md`](QUICKSTART.md).
 
 عند أوّل تحميل:
@@ -798,7 +800,7 @@ Issues و PRs و skills جديدة وأنظمة تصميم جديدة، كلّه
 شكراً لكلّ من ساعد في دفع Open Design للأمام — بكود، بوثائق، بملاحظات، بـ skills جديدة، بأنظمة تصميم جديدة، أو حتى بـ issue حادّة. كلّ مساهمة حقيقية تهمّ، والجدار أدناه أسهل طريقة لقول ذلك علناً.
 
 <a href="https://github.com/nexu-io/open-design/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-16" alt="Open Design contributors" />
+  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-18" alt="Open Design contributors" />
 </a>
 
 إن شحنت أوّل PR — مرحباً. تصنيف [`good-first-issue`](https://github.com/nexu-io/open-design/labels/good-first-issue) هو نقطة الدخول.
@@ -815,9 +817,9 @@ Issues و PRs و skills جديدة وأنظمة تصميم جديدة، كلّه
 
 <a href="https://star-history.com/#nexu-io/open-design&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-16" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
-    <img alt="Open Design star history" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-18" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
+    <img alt="Open Design star history" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
   </picture>
 </a>
 

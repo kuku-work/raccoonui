@@ -36,6 +36,7 @@ export interface Dict {
   'common.close': string;
   'common.delete': string;
   'common.rename': string;
+  'common.edit': string;
   'common.preview': string;
   'common.share': string;
   'common.search': string;
@@ -206,6 +207,7 @@ export interface Dict {
   'settings.privacyConsentFooter': string;
   'settings.privacyConsentShare': string;
   'settings.privacyConsentDecline': string;
+  'settings.privacyConsentPolicyLink': string;
   'settings.privacyMetrics': string;
   'settings.privacyMetricsHint': string;
   'settings.privacyContent': string;
@@ -294,6 +296,8 @@ export interface Dict {
   'settings.skillsSaving': string;
   'settings.skillsFiles': string;
   'settings.skillsNoFiles': string;
+  'settings.skillsNameRequired': string;
+  'settings.skillsBodyRequired': string;
   'settings.designSystems': string;
   'settings.designSystemsHint': string;
   'settings.librarySkills': string;
@@ -1003,6 +1007,7 @@ export interface Dict {
   'project.metaFreeform': string;
   'project.customInstructions': string;
   'project.customInstructionsPlaceholder': string;
+  'project.instructionsActive': string;
   'project.resizeChatPanel': string;
   'chat.tabChat': string;
   'chat.tabComments': string;
@@ -1153,6 +1158,9 @@ export interface Dict {
   'designFiles.groupBy': string;
   'designFiles.groupByKind': string;
   'designFiles.groupByModified': string;
+  'designFiles.filterBy': string;
+  'designFiles.filterClear': string;
+  'designFiles.filterCount': string;
   'designFiles.expandGroup': string;
   'designFiles.collapseGroup': string;
   'designFiles.sectionPages': string;

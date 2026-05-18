@@ -331,6 +331,8 @@ pnpm tools-dev run web
 
 Требования к окружению: Node `~24` и pnpm `10.33.x`. `nvm`/`fnm` — только вспомогательные инструменты; если вы ими пользуетесь, выполните `nvm install 24 && nvm use 24` или `fnm install 24 && fnm use 24` перед `pnpm install`.
 
+Пользователи Windows могут воспользоваться [`docs/windows-troubleshooting.md`](docs/windows-troubleshooting.md), где описаны нативный путь установки и небольшой лаунчер для запуска по двойному клику.
+
 Для desktop/background startup, перезапуска на фиксированных портах и проверки dispatcher’а media generation (`OD_BIN`, `OD_DAEMON_URL`, `apps/daemon/dist/cli.js`) смотрите [`QUICKSTART.md`](QUICKSTART.md).
 
 При первой загрузке:
@@ -727,7 +729,7 @@ Issues, PR, новые skills и новые design systems приветству�
 Спасибо всем, кто помогает двигать Open Design вперёд — кодом, документацией, обратной связью, новыми skills, новыми design systems или просто точным issue. Вклад любого реального масштаба здесь важен, а стена ниже — самый простой способ сказать это вслух.
 
 <a href="https://github.com/nexu-io/open-design/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-16" alt="Contributors Open Design" />
+  <img src="https://contrib.rocks/image?repo=nexu-io/open-design&cache_bust=2026-05-18" alt="Contributors Open Design" />
 </a>
 
 Если вы только что отправили свой первый PR — добро пожаловать. Метка [`good-first-issue`/`help-wanted`](https://github.com/nexu-io/open-design/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22%2C%22help+wanted%22) — хорошая точка входа.
@@ -744,9 +746,9 @@ SVG выше ежедневно пересобирается workflow [`.github/
 
 <a href="https://star-history.com/#nexu-io/open-design&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-16" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
-    <img alt="История звёзд Open Design" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-16" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&theme=dark&cache_bust=2026-05-18" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
+    <img alt="История звёзд Open Design" src="https://api.star-history.com/svg?repos=nexu-io/open-design&type=Date&cache_bust=2026-05-18" />
   </picture>
 </a>
 
