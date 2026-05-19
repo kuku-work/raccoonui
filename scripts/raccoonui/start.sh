@@ -9,7 +9,9 @@
 #   - Daemon API port: $OD_PORT or 17456
 #   - Web UI port:     $OD_WEB_PORT or 17573
 #   - Electron desktop window opens automatically once web is ready.
-#   - Closing the console (Ctrl-C / SIGTERM) terminates daemon + web + desktop.
+#   - Closing the console (Ctrl-C / SIGTERM) OR the Electron window both
+#     shut down daemon + web + desktop together (Electron-watchdog polls
+#     main PID alongside DEV_PID).
 #
 # Note: this is the in-repo author/operator entry point. The packaged release
 # path (for installable .app distribution) lives in `tools/pack` and still
@@ -136,6 +138,48 @@ if ! pnpm tools-dev start desktop; then
     printf "⚠️  desktop 啟動失敗 — 仍可在瀏覽器開 http://127.0.0.1:%s/\n" "$WEB_PORT"
 fi
 
-# Sit on tools-dev `run` (daemon+web). When user closes the console or the
-# Electron window via tools-dev stop, this returns and trap cleanup runs.
-wait "$DEV_PID"
+# ── Electron watchdog ──
+# `tools-dev run` only supervises daemon+web; closing the Electron window
+# leaves the supervisor + its pnpm/cmd wrapper chain as orphans (matches the
+# zombie shape we kept cleaning up before this patch). Find the Electron main
+# PID (parent NOT in the electron family — helpers/renderers are children of
+# main) and poll. When either Electron or DEV_PID exits, fall through to the
+# trap cleanup which kills the supervisor + runs `tools-dev stop`.
+get_electron_pids() {
+    if command -v pgrep >/dev/null 2>&1; then
+        pgrep -f "${RACCOONUI_DIR}.*[Ee]lectron" 2>/dev/null || true
+    else
+        ps -e -o pid=,args= 2>/dev/null | grep -E "${RACCOONUI_DIR}.*[Ee]lectron" | grep -v grep | awk '{print $1}' || true
+    fi
+}
+
+electron_main=""
+for i in $(seq 1 30); do
+    electron_pids=$(get_electron_pids)
+    if [ -n "$electron_pids" ]; then
+        for pid in $electron_pids; do
+            ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+            if [ -n "$ppid" ] && ! printf '%s\n' "$electron_pids" | grep -qx "$ppid"; then
+                electron_main="$pid"
+                break
+            fi
+        done
+        [ -n "$electron_main" ] && break
+    fi
+    sleep 0.5
+done
+
+if [ -z "$electron_main" ]; then
+    printf "⚠️  could not locate Electron main PID — close console to stop\n"
+    wait "$DEV_PID"
+else
+    printf "🔗 watching Electron PID %s — close window or console to stop\n" "$electron_main"
+    while true; do
+        kill -0 "$DEV_PID" 2>/dev/null || break
+        if ! kill -0 "$electron_main" 2>/dev/null; then
+            printf "🏁 Electron closed — shutting down daemon + web\n"
+            break
+        fi
+        sleep 1
+    done
+fi

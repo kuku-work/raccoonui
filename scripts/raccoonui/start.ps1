@@ -11,8 +11,8 @@
   - Daemon API port: $env:OD_PORT or 17456
   - Web UI port:     $env:OD_WEB_PORT or 17573
   - Electron desktop window opens automatically once web is ready.
-  - Closing the console (Ctrl-C / window close) terminates daemon + web +
-    desktop together.
+  - Closing the console OR the Electron window both shut down daemon +
+    web + desktop together (Electron-watchdog polls main PID).
 
   Note: this is the in-repo author/operator entry point. The packaged
   release path (for installable .exe / .app distribution) lives in
@@ -172,9 +172,41 @@ try {
         Write-Host "⚠️  desktop 啟動失敗 — 仍可在瀏覽器開 http://127.0.0.1:$WebPort/" -ForegroundColor Yellow
     }
 
-    # Sit on tools-dev `run` (daemon+web). When user closes the console or
-    # the Electron window via tools-dev stop, this returns and we clean up.
-    Wait-Process -Id $devProc.Id
+    # ── Electron watchdog ──
+    # `tools-dev run` only supervises daemon+web; closing the Electron window
+    # leaves the supervisor + its pnpm/cmd wrapper chain as orphans (the same
+    # zombie shape we kept cleaning up manually before this patch). Find the
+    # Electron main PID (the one whose parent is NOT itself an electron.exe —
+    # helper / renderer / utility processes are children of main) and poll.
+    # When either Electron or devProc exits, fall through to the finally block
+    # which kills the supervisor + runs `tools-dev stop`.
+    $electronMain = $null
+    for ($i = 0; $i -lt 30; $i++) {
+        $candidates = Get-CimInstance Win32_Process -Filter "Name = 'electron.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match [regex]::Escape($RaccoonUIDir) }
+        if ($candidates) {
+            $electronPidSet = @($candidates | ForEach-Object { $_.ProcessId })
+            $electronMain = $candidates | Where-Object { $_.ParentProcessId -notin $electronPidSet } | Select-Object -First 1
+            if ($electronMain) { break }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    if (-not $electronMain) {
+        Write-Host "⚠️  could not locate Electron main PID — close console to stop" -ForegroundColor Yellow
+        Wait-Process -Id $devProc.Id
+    } else {
+        Write-Host "🔗 watching Electron PID $($electronMain.ProcessId) — close window or console to stop" -ForegroundColor DarkGray
+        while ($true) {
+            if ($devProc.HasExited) { break }
+            $electronAlive = Get-Process -Id $electronMain.ProcessId -ErrorAction SilentlyContinue
+            if (-not $electronAlive) {
+                Write-Host "🏁 Electron closed — shutting down daemon + web" -ForegroundColor Cyan
+                break
+            }
+            Start-Sleep -Seconds 1
+        }
+    }
 } finally {
     if ($devProc -and -not $devProc.HasExited) {
         Stop-Process -Id $devProc.Id -Force -ErrorAction SilentlyContinue
