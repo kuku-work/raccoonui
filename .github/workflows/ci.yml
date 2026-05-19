@@ -116,8 +116,8 @@ jobs:
             echo "tools_pack_tests_required=$tools_pack_tests_required"
           } >> "$GITHUB_OUTPUT"
 
-  validate:
-    name: Validate workspace
+  preflight:
+    name: Preflight
     needs: [packaged_changes]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -139,9 +139,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright browsers
-        run: pnpm -C e2e exec playwright install --with-deps chromium
 
       # `scripts/postinstall.mjs` only prebuilds package/tool entrypoints that
       # are needed immediately after install for linked bins and shared
@@ -173,12 +170,67 @@ jobs:
       - name: Check i18n structure
         run: pnpm i18n:check
 
+  core_tests:
+    name: Core package tests
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Core package tests
         run: |
           pnpm --filter @open-design/contracts test
           pnpm --filter @open-design/platform test
           pnpm --filter @open-design/sidecar test
           pnpm --filter @open-design/sidecar-proto test
+
+  app_tests:
+    name: App workspace tests
+    needs: [preflight, packaged_changes]
+    if: ${{ needs.packaged_changes.outputs.tools_dev_tests_required == 'true' || needs.packaged_changes.outputs.tools_pack_tests_required == 'true' || needs.packaged_changes.outputs.daemon_tests_required == 'true' || needs.packaged_changes.outputs.web_tests_required == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild workspace type declarations
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
 
       - name: App workspace smoke tests
         if: ${{ needs.packaged_changes.outputs.tools_dev_tests_required == 'true' || needs.packaged_changes.outputs.tools_pack_tests_required == 'true' }}
@@ -200,19 +252,167 @@ jobs:
         run: |
           pnpm --filter @open-design/web test
 
+  e2e_vitest:
+    name: E2E vitest
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: E2E vitest
         run: pnpm --filter @open-design/e2e test
+
+  ui_e2e_critical:
+    name: Playwright critical
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache Playwright browser binaries between runs. The key follows the
+      # @playwright/test version so browser revisions update with package bumps.
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -p "require('./e2e/package.json').devDependencies['@playwright/test'].replace(/[^0-9.]/g,'')")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      - name: Prebuild workspace type declarations
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
 
       - name: Playwright critical
         run: |
           pnpm -C e2e exec tsx scripts/playwright.ts clean
           pnpm --filter @open-design/e2e run test:ui:critical
 
+  ui_e2e_extended:
+    name: Playwright extended
+    needs: [preflight]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache Playwright browser binaries between runs. The key follows the
+      # @playwright/test version so browser revisions update with package bumps.
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -p "require('./e2e/package.json').devDependencies['@playwright/test'].replace(/[^0-9.]/g,'')")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      - name: Prebuild workspace type declarations
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
+
       - name: Playwright extended
-        if: ${{ github.event_name != 'pull_request' }}
         run: |
           pnpm -C e2e exec tsx scripts/playwright.ts clean
           pnpm --filter @open-design/e2e run test:ui:extended
+
+  build_workspaces:
+    name: Build workspaces
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild workspace type declarations
+        run: |
+          pnpm --filter @open-design/daemon build
+          pnpm --filter @open-design/desktop build
+          pnpm --filter @open-design/web build:sidecar
 
       # Keep workspace builds serialized so generated dist output and local
       # runtime artifacts are produced in a deterministic order. Parallel
@@ -222,9 +422,37 @@ jobs:
       - name: Build workspaces
         run: pnpm -r --workspace-concurrency=1 --if-present run build
 
+  validate:
+    name: Validate workspace
+    needs:
+      - preflight
+      - core_tests
+      - app_tests
+      - e2e_vitest
+      - ui_e2e_critical
+      - ui_e2e_extended
+      - build_workspaces
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check workspace validation jobs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS_JSON" | jq .
+          failures="$(echo "$NEEDS_JSON" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')"
+          if [ -n "$failures" ]; then
+            echo "Workspace validation failed:"
+            echo "$failures"
+            exit 1
+          fi
+
   packaged_smoke_mac:
     name: Packaged mac smoke
-    needs: [validate, packaged_changes]
+    needs: [preflight, build_workspaces, packaged_changes]
     if: ${{ needs.packaged_changes.outputs.required == 'true' }}
     runs-on: macos-14
     timeout-minutes: 45
@@ -285,7 +513,7 @@ jobs:
 
   packaged_smoke_win:
     name: Packaged windows smoke
-    needs: [validate, packaged_changes]
+    needs: [preflight, build_workspaces, packaged_changes]
     if: ${{ needs.packaged_changes.outputs.required == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 60
@@ -528,7 +756,7 @@ jobs:
 
   packaged_smoke_linux_headless:
     name: Packaged linux headless smoke
-    needs: [validate, packaged_changes]
+    needs: [preflight, build_workspaces, packaged_changes]
     if: ${{ needs.packaged_changes.outputs.required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45

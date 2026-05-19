@@ -954,6 +954,7 @@ export interface PluginMarketplaceEntry {
   };
   homepage?: string;
   license?: string;
+  permissions?: string[];
   capabilitiesSummary?: string[];
   deprecated?: boolean | string;
   yanked?: boolean;
