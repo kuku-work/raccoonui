@@ -34,6 +34,8 @@ import {
   uploadProjectFiles,
 } from './providers/registry';
 import { navigate, useRoute } from './router';
+// RACCOONUI-PATCH: picker-default invariant lives in a fork namespace helper — 2026-05-02
+import { pickDefaultDesignSystemId } from './raccoonui/default-design-system';
 import {
   fetchDaemonConfig,
   DEFAULT_PET,
@@ -476,12 +478,9 @@ export function App() {
   useEffect(() => {
     if (!daemonConfigLoaded || dsLoading) return;
     if (config.designSystemId) return;
-    if (designSystems.length === 0) return;
     // RACCOONUI-PATCH: prefer raccoonai design system as default (internal fork) — 2026-05-02
-    const id =
-      designSystems.find((d) => d.id === 'raccoonai')?.id
-      ?? designSystems.find((d) => d.id === 'default')?.id
-      ?? designSystems[0]!.id;
+    const id = pickDefaultDesignSystemId(designSystems);
+    if (id === null) return;
     setConfig((prev) => {
       if (prev.designSystemId) return prev;
       const next: AppConfig = { ...prev, designSystemId: id };

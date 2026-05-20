@@ -290,17 +290,24 @@ test('C1 raigc workflows endpoint returns documented shape (200 or 503)', async 
 
 // ── D. raccoonai picker default ───────────────────────────────────────
 
-test('D1 design-systems list contains raccoonai entry', async () => {
+test('D1 design-systems list contains raccoonai entry with swatches', async () => {
   const res = await fetch(`${baseUrl}/api/design-systems`);
   assert.equal(res.status, 200);
   const body = (await res.json()) as {
-    designSystems: { id: string; title?: string }[];
+    designSystems: { id: string; title?: string; swatches?: string[] }[];
   };
   assert.ok(Array.isArray(body.designSystems));
   const raccoonai = body.designSystems.find((s) => s.id === 'raccoonai');
   assert.ok(
     raccoonai,
     'raccoonai design system missing — RACCOONUI-PATCH picker default would break',
+  );
+  // Swatches drive the picker's colour-preview row. The entry can stay present
+  // while extractSwatches() regex drift (see project memory) silently empties
+  // the preview, so assert the brand still parses at least one hex swatch.
+  assert.ok(
+    Array.isArray(raccoonai.swatches) && raccoonai.swatches.length >= 1,
+    'raccoonai swatches failed to extract — swatch parser regex drift',
   );
 });
 
