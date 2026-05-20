@@ -12,10 +12,12 @@
 import type { ReactNode } from 'react';
 import { EntryHelpMenu } from './EntryHelpMenu';
 import { Icon } from './Icon';
+import { UpdaterPopup } from './UpdaterPopup';
 import { useT } from '../i18n';
 
 export type EntryView =
   | 'home'
+  | 'onboarding'
   | 'projects'
   | 'tasks'
   | 'plugins'
@@ -75,6 +77,7 @@ export function EntryNavRail({ view, onViewChange, onNewProject }: Props) {
             draggable={false}
           />
         </button>
+        <UpdaterPopup />
         <NavButton
           ariaLabel={t('entry.navNewProject')}
           tooltip={t('entry.navNewProject')}
@@ -103,8 +106,8 @@ export function EntryNavRail({ view, onViewChange, onNewProject }: Props) {
         </NavButton>
         <NavButton
           active={view === 'tasks'}
-          ariaLabel="Automations"
-          tooltip="Automations"
+          ariaLabel={t('entry.navTasks')}
+          tooltip={t('entry.navTasks')}
           onClick={() => onViewChange('tasks')}
           testId="entry-nav-tasks"
         >
@@ -112,8 +115,8 @@ export function EntryNavRail({ view, onViewChange, onNewProject }: Props) {
         </NavButton>
         <NavButton
           active={view === 'plugins'}
-          ariaLabel="Plugins"
-          tooltip="Plugins"
+          ariaLabel={t('entry.navPlugins')}
+          tooltip={t('entry.navPlugins')}
           onClick={() => onViewChange('plugins')}
           testId="entry-nav-plugins"
         >
@@ -130,8 +133,8 @@ export function EntryNavRail({ view, onViewChange, onNewProject }: Props) {
         </NavButton>
         <NavButton
           active={view === 'integrations'}
-          ariaLabel="Integrations"
-          tooltip="Integrations"
+          ariaLabel={t('entry.navIntegrations')}
+          tooltip={t('entry.navIntegrations')}
           onClick={() => onViewChange('integrations')}
           testId="entry-nav-integrations"
         >
