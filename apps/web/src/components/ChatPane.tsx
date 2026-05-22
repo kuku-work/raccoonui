@@ -1,10 +1,13 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
+import { useAnalytics } from '../analytics/provider';
+import { trackChatPanelClick } from '../analytics/events';
 import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectRawUrl } from '../providers/registry';
 import type { TodoItem } from '../runtime/todos';
 import type { AppliedPluginSnapshot } from '@open-design/contracts';
+import type { TrackingProjectKind } from '@open-design/contracts/analytics';
 import {
   DESIGN_SYSTEM_WORKSPACE_DISPLAY_DESCRIPTION,
   DESIGN_SYSTEM_WORKSPACE_DISPLAY_TITLE,
@@ -12,7 +15,7 @@ import {
 } from '../design-system-auto-prompt';
 import { latestTodoWriteInputForPinnedCard } from '../runtime/todos';
 import { TodoCard } from './ToolCard';
-import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, ChatMessageFeedbackChange, Conversation, PreviewComment, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
+import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, ChatMessageFeedbackChange, Conversation, DesignSystemSummary, PreviewComment, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
 import { dayKey, dayLabel, exactDateTime, messageTime, relativeTimeLong } from '../utils/chatTime';
 import { commentsToAttachments, simplePositionLabel } from '../comments';
 import { AssistantMessage } from './AssistantMessage';
@@ -208,8 +211,14 @@ interface Props {
   streaming: boolean;
   error: string | null;
   projectId: string | null;
+  // Analytics-only — forwarded to AssistantMessage so the feedback
+  // events know which project surface the rating applies to. Optional
+  // (defaults to null/'prototype') so unit tests can mount ChatPane
+  // without project context.
+  projectKindForTracking?: TrackingProjectKind | null;
   projectFiles: ProjectFile[];
   hasActiveDesignSystem?: boolean;
+  activeDesignSystem?: DesignSystemSummary | null;
   sendDisabled?: boolean;
   // Names that exist in the project folder. Tool cards and chips use this
   // set to decide whether a path can be opened as a tab.
@@ -226,6 +235,7 @@ interface Props {
     commentAttachments: ChatCommentAttachment[],
     meta?: ChatSendMeta,
   ) => void;
+  onRetry?: (assistantMessage: ChatMessage) => void;
   onStop: () => void;
   // Skills available for @-mention assembly. ProjectView filters out the
   // user's disabled set before passing them in here.
@@ -247,6 +257,10 @@ interface Props {
   // Header "+" button — kicks off ProjectView's create-conversation flow.
   onNewConversation?: () => void;
   newConversationDisabled?: boolean;
+  // Header "resume" button — synthesizes a handoff prompt from the
+  // current transcript and opens a fresh conversation seeded with it.
+  onResumeConversation?: () => void;
+  resumeConversationDisabled?: boolean;
   // Conversation list that used to live in the topbar. The chat tab now
   // owns the list so users can browse + switch conversations without
   // leaving the pane.
@@ -285,6 +299,7 @@ interface Props {
   byokApiProtocol?: AppConfig['apiProtocol'];
   byokImageModel?: string;
   onChangeByokImageModel?: (model: string) => void;
+  composerFooterAccessory?: ReactNode;
 }
 
 type Tab = 'chat' | 'comments';
@@ -295,8 +310,10 @@ export function ChatPane({
   sendDisabled = false,
   error,
   projectId,
+  projectKindForTracking = null,
   projectFiles,
   hasActiveDesignSystem = false,
+  activeDesignSystem = null,
   projectFileNames,
   onEnsureProject,
   previewComments = [],
@@ -305,6 +322,7 @@ export function ChatPane({
   onDetachComment,
   onDeleteComment,
   onSend,
+  onRetry,
   onStop,
   onRequestOpenFile,
   onRequestPluginFolderAgentAction,
@@ -314,6 +332,8 @@ export function ChatPane({
   onAssistantFeedback,
   onNewConversation,
   newConversationDisabled = false,
+  onResumeConversation,
+  resumeConversationDisabled = false,
   conversations,
   activeConversationId,
   onSelectConversation,
@@ -336,11 +356,14 @@ export function ChatPane({
   byokApiProtocol,
   byokImageModel,
   onChangeByokImageModel,
+  composerFooterAccessory,
 }: Props) {
   const t = useT();
+  const analytics = useAnalytics();
   const logRef = useRef<HTMLDivElement | null>(null);
   const historyWrapRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
+  const pinnedTodoRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   // Tracks whether the user is glued close enough to the bottom that
   // streamed content should auto-follow. Distinct from the jump-button
@@ -362,6 +385,7 @@ export function ChatPane({
   const hasActiveRunMessage = messages.some(
     (m) => m.role === 'assistant' && isActiveRunStatus(m.runStatus),
   );
+  const retryAssistant = retryableAssistantMessage(messages, lastAssistantId, streaming);
   // Only the first user message gets the active-plugin chip — the
   // plugin is project-scoped so re-stamping it on every reply would be
   // noise. Subsequent messages still run under the same snapshot.
@@ -589,12 +613,32 @@ export function ChatPane({
       }
     };
 
+    // The PinnedTodoSlot renders outside the scroll container. When the todo
+    // card grows, the chat-log's clientHeight shrinks (flex layout) and the
+    // user drifts away from the bottom. Observe the pinned-todo div so
+    // followLatestIfPinned fires whenever the card changes height.
+    let observedPinnedTodo: Element | null = null;
+    const syncPinnedTodo = () => {
+      if (!resizeObserver) return;
+      const pinnedEl = pinnedTodoRef.current;
+      if (pinnedEl && observedPinnedTodo !== pinnedEl) {
+        if (observedPinnedTodo) resizeObserver.unobserve(observedPinnedTodo);
+        resizeObserver.observe(pinnedEl);
+        observedPinnedTodo = pinnedEl;
+      } else if (!pinnedEl && observedPinnedTodo) {
+        resizeObserver.unobserve(observedPinnedTodo);
+        observedPinnedTodo = null;
+      }
+    };
+
     syncObservedChildren();
+    syncPinnedTodo();
 
     const mutationObserver =
       typeof MutationObserver !== 'undefined'
         ? new MutationObserver(() => {
             syncObservedChildren();
+            syncPinnedTodo();
             followLatestIfPinned();
           })
         : null;
@@ -603,6 +647,15 @@ export function ChatPane({
       subtree: true,
       characterData: true,
     });
+    // PinnedTodoSlot lives outside the chat-log subtree (it is a sibling of
+    // .chat-log-wrap inside .pane). The MutationObserver above only fires for
+    // changes inside el, so it cannot detect the slot mounting or unmounting.
+    // Watch the nearest common ancestor (.pane) with childList-only to catch
+    // those transitions and keep syncPinnedTodo current.
+    const paneEl = el.parentElement?.parentElement ?? null;
+    if (paneEl && mutationObserver) {
+      mutationObserver.observe(paneEl, { childList: true });
+    }
 
     return () => {
       if (followFrame !== null) cancelAnimationFrame(followFrame);
@@ -632,6 +685,65 @@ export function ChatPane({
 
   const activeConversation =
     conversations.find((c) => c.id === activeConversationId) ?? null;
+  const activeConversationMissing = !activeConversation;
+  const activeConversationTitle =
+    activeConversation
+      ? activeConversation.title || t('chat.untitledConversation')
+      : t('chat.conversationsHeading');
+  const activeConversationRenameLabel = activeConversation
+    ? t('chat.renameConversationLabel', { title: activeConversationTitle })
+    : '';
+  const titleEditClosedRef = useRef(false);
+  const [editingActiveTitle, setEditingActiveTitle] = useState(false);
+  const [activeTitleDraft, setActiveTitleDraft] = useState('');
+
+  useEffect(() => {
+    if (editingActiveTitle) return;
+    setActiveTitleDraft(activeConversation?.title ?? '');
+  }, [activeConversation?.title, editingActiveTitle]);
+
+  // Switching conversations should always close the inline editor so the
+  // old draft cannot leak into the next conversation.
+  useEffect(() => {
+    titleEditClosedRef.current = true;
+    setEditingActiveTitle(false);
+  }, [activeConversationId]);
+
+  // The selected id can stay stable while the record temporarily vanishes
+  // during a reload; cancel the editor in that case as well.
+  useEffect(() => {
+    if (!activeConversationMissing) return;
+    titleEditClosedRef.current = true;
+    setEditingActiveTitle(false);
+  }, [activeConversationMissing]);
+
+  function beginActiveTitleRename() {
+    if (!activeConversation || !onRenameConversation) return;
+    titleEditClosedRef.current = false;
+    setActiveTitleDraft(activeConversation.title ?? '');
+    setEditingActiveTitle(true);
+  }
+
+  function commitActiveTitleRename() {
+    if (titleEditClosedRef.current) return;
+    titleEditClosedRef.current = true;
+    if (activeConversation && onRenameConversation) {
+      const nextTitle = normalizeConversationRename(
+        activeConversation.title,
+        activeTitleDraft,
+      );
+      if (nextTitle !== null) {
+        onRenameConversation(activeConversation.id, nextTitle);
+      }
+    }
+    setEditingActiveTitle(false);
+  }
+
+  function cancelActiveTitleRename() {
+    titleEditClosedRef.current = true;
+    setActiveTitleDraft(activeConversation?.title ?? '');
+    setEditingActiveTitle(false);
+  }
 
   function jumpToBottom() {
     const el = logRef.current;
@@ -642,6 +754,49 @@ export function ChatPane({
   return (
     <div className="pane">
       <div className="chat-header">
+        <div className="chat-active-conversation">
+          {editingActiveTitle && activeConversation && onRenameConversation ? (
+            <input
+              autoFocus
+              className="chat-active-conversation-input"
+              data-testid="chat-active-conversation-rename-input"
+              aria-label={activeConversationRenameLabel}
+              value={activeTitleDraft}
+              onChange={(e) => setActiveTitleDraft(e.target.value)}
+              onBlur={commitActiveTitleRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitActiveTitleRename();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelActiveTitleRename();
+                }
+              }}
+            />
+          ) : (
+            <>
+              <span
+                className="chat-active-conversation-title"
+                data-testid="chat-active-conversation-title"
+                title={activeConversationTitle}
+              >
+                {activeConversationTitle}
+              </span>
+              {activeConversation && onRenameConversation ? (
+                <button
+                  type="button"
+                  className="chat-active-conversation-rename"
+                  aria-label={activeConversationRenameLabel}
+                  title={t('common.rename')}
+                  onClick={beginActiveTitleRename}
+                >
+                  <Icon name="pencil" size={13} />
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
         <div className="chat-header-actions">
           <div
             className={`chat-history-wrap${showConvList ? ' open' : ''}`}
@@ -659,7 +814,19 @@ export function ChatPane({
               aria-label={t('chat.conversationsAria')}
               aria-haspopup="menu"
               aria-expanded={showConvList}
-              onClick={() => setShowConvList((v) => !v)}
+              onClick={() => {
+                setShowConvList((v) => {
+                  const next = !v;
+                  if (next) {
+                    trackChatPanelClick(analytics.track, {
+                      page_name: 'chat_panel',
+                      area: 'chat_panel',
+                      element: 'history',
+                    });
+                  }
+                  return next;
+                });
+              }}
             >
               <Icon name="history" size={15} />
             </button>
@@ -717,11 +884,32 @@ export function ChatPane({
             data-testid="new-conversation"
             title={t('chat.newConversationsTitle')}
             aria-label={t('chat.newConversation')}
-            onClick={onNewConversation}
+            onClick={() => {
+              if (!onNewConversation || newConversationDisabled) return;
+              trackChatPanelClick(analytics.track, {
+                page_name: 'chat_panel',
+                area: 'chat_panel',
+                element: 'new_chat',
+              });
+              onNewConversation();
+            }}
             disabled={!onNewConversation || newConversationDisabled}
           >
             <Icon name="plus" size={16} />
           </button>
+          {onResumeConversation ? (
+            <button
+              type="button"
+              className="icon-only"
+              data-testid="resume-conversation"
+              title={t('chat.resumeConversation')}
+              aria-label={t('chat.resumeConversation')}
+              onClick={onResumeConversation}
+              disabled={resumeConversationDisabled}
+            >
+              <Icon name="reload" size={16} />
+            </button>
+          ) : null}
           {onCollapse ? (
             <button
               type="button"
@@ -729,7 +917,14 @@ export function ChatPane({
               data-testid="chat-collapse"
               title={t('workspace.focusMode')}
               aria-label={t('workspace.focusMode')}
-              onClick={onCollapse}
+              onClick={() => {
+                trackChatPanelClick(analytics.track, {
+                  page_name: 'chat_panel',
+                  area: 'chat_panel',
+                  element: 'back',
+                });
+                onCollapse();
+              }}
             >
               <Icon name="chevron-left" size={15} />
             </button>
@@ -755,7 +950,14 @@ export function ChatPane({
                         role="listitem"
                         className="chat-example"
                         style={{ animationDelay: `${i * 70}ms` }}
-                        onClick={() => composerRef.current?.setDraft(ex.prompt)}
+                        onClick={() => {
+                          trackChatPanelClick(analytics.track, {
+                            page_name: 'chat_panel',
+                            area: 'chat_panel',
+                            element: 'template_card',
+                          });
+                          composerRef.current?.setDraft(ex.prompt);
+                        }}
                         title={t('chat.fillInputTitle')}
                       >
                         <span className="chat-example-icon" aria-hidden>
@@ -798,12 +1000,19 @@ export function ChatPane({
                             ? activePluginSnapshot ?? null
                             : null
                         }
+                        activeDesignSystem={
+                          m.id === firstUserMessageId
+                            ? activeDesignSystem ?? null
+                            : null
+                        }
                       />
                     ) : (
                       <AssistantMessage
                         message={m}
                         streaming={messageStreaming}
                         projectId={projectId}
+                        projectKind={projectKindForTracking}
+                        conversationId={activeConversationId}
                         projectFiles={projectFiles}
                         projectFileNames={projectFileNames}
                         onRequestOpenFile={onRequestOpenFile}
@@ -811,6 +1020,7 @@ export function ChatPane({
                         isLast={m.id === lastAssistantId}
                         nextUserContent={nextUserContentByAssistantId.get(m.id)}
                         suppressDirectionForms={hasActiveDesignSystem}
+                        hasDesignSystemContext={hasActiveDesignSystem || !!activeDesignSystem}
                         onSubmitForm={(text) => {
                           pinnedToBottomRef.current = true;
                           scrolledToFormRef.current = new Set();
@@ -831,7 +1041,20 @@ export function ChatPane({
                   </Fragment>
                 );
               })}
-              {error ? <div className="msg error">{error}</div> : null}
+              {error ? (
+                <div className="msg error">
+                  <span className="chat-error-text">{error}</span>
+                  {retryAssistant && onRetry ? (
+                    <button
+                      type="button"
+                      className="ghost chat-error-retry"
+                      onClick={() => onRetry(retryAssistant)}
+                    >
+                      {t('promptTemplates.retry')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {/* Always mounted so the CSS transition can play in both
                 directions; the `chat-jump-btn-active` class flips the
@@ -854,6 +1077,7 @@ export function ChatPane({
             streaming={streaming}
             dismissedKey={dismissedPinnedTodoKey}
             onDismiss={setDismissedPinnedTodoKey}
+            containerRef={pinnedTodoRef}
           />
           <ChatComposer
             ref={composerRef}
@@ -887,6 +1111,7 @@ export function ChatPane({
             currentSkillId={currentSkillId}
             onProjectSkillChange={onProjectSkillChange}
             pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
+            footerAccessory={composerFooterAccessory}
           />
         </>
       ) : null}
@@ -905,11 +1130,13 @@ function PinnedTodoSlot({
   streaming,
   dismissedKey,
   onDismiss,
+  containerRef,
 }: {
   messages: ChatMessage[];
   streaming: boolean;
   dismissedKey: string | null;
   onDismiss: (key: string | null) => void;
+  containerRef?: MutableRefObject<HTMLDivElement | null>;
 }) {
   // `exiting` lets the dismiss click play a slide-down transition before
   // the slot tears down. Without it React would unmount immediately and
@@ -925,7 +1152,7 @@ function PinnedTodoSlot({
   }
   if (snapshotKey === dismissedKey) return null;
   return (
-    <div className={`chat-pinned-todo${exiting ? ' chat-pinned-todo-exit' : ''}`}>
+    <div className={`chat-pinned-todo${exiting ? ' chat-pinned-todo-exit' : ''}`} ref={containerRef}>
       <TodoCard
         input={input}
         runStreaming={streaming}
@@ -1064,6 +1291,18 @@ function isTerminalRunStatus(status: ChatMessage['runStatus']): boolean {
   return status === 'succeeded' || status === 'failed' || status === 'canceled';
 }
 
+export function retryableAssistantMessage(
+  messages: ChatMessage[],
+  lastAssistantId: string | null | undefined,
+  paneStreaming: boolean,
+): ChatMessage | null {
+  if (paneStreaming) return null;
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== 'assistant') return null;
+  if (last.id !== lastAssistantId) return null;
+  return last.runStatus === 'failed' ? last : null;
+}
+
 export function isAssistantMessageStreaming(
   message: ChatMessage,
   paneStreaming: boolean,
@@ -1095,8 +1334,35 @@ function ConversationRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(conversation.title ?? '');
+  const titleEditClosedRef = useRef(false);
   const displayTitle =
     conversation.title || t('chat.untitledConversation');
+
+  function beginConversationRename() {
+    if (!onRename) return;
+    titleEditClosedRef.current = false;
+    setDraft(conversation.title ?? '');
+    setEditing(true);
+  }
+
+  function commitConversationRename() {
+    if (titleEditClosedRef.current) return;
+    titleEditClosedRef.current = true;
+    if (onRename) {
+      const nextTitle = normalizeConversationRename(conversation.title, draft);
+      if (nextTitle !== null) {
+        onRename(conversation.id, nextTitle);
+      }
+    }
+    setEditing(false);
+  }
+
+  function cancelConversationRename() {
+    titleEditClosedRef.current = true;
+    setDraft(conversation.title ?? '');
+    setEditing(false);
+  }
+
   return (
     <div
       className={`chat-conv-item${active ? ' active' : ''}`}
@@ -1108,16 +1374,14 @@ function ConversationRow({
           className="chat-conv-rename-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            onRename(conversation.id, draft);
-            setEditing(false);
-          }}
+          onBlur={commitConversationRename}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
-              onRename(conversation.id, draft);
-              setEditing(false);
+              e.preventDefault();
+              commitConversationRename();
             } else if (e.key === 'Escape') {
-              setEditing(false);
+              e.preventDefault();
+              cancelConversationRename();
             }
           }}
           style={{ flex: 1, padding: '2px 6px', fontSize: 12 }}
@@ -1129,11 +1393,7 @@ function ConversationRow({
           data-testid={`conversation-select-${conversation.id}`}
           style={{ background: 'transparent', border: 'none', padding: 0, textAlign: 'left' }}
           onClick={onSelect}
-          onDoubleClick={() => {
-            if (!onRename) return;
-            setDraft(conversation.title ?? '');
-            setEditing(true);
-          }}
+          onDoubleClick={beginConversationRename}
         >
           {displayTitle}
         </button>
@@ -1159,6 +1419,15 @@ function ConversationRow({
   );
 }
 
+function normalizeConversationRename(
+  currentTitle: string | null | undefined,
+  draft: string,
+): string | null {
+  const current = (currentTitle ?? '').trim();
+  const next = draft.trim();
+  return next === current ? null : next;
+}
+
 function UserMessage({
   message,
   projectId,
@@ -1166,6 +1435,7 @@ function UserMessage({
   onRequestOpenFile,
   t,
   activePluginSnapshot,
+  activeDesignSystem,
 }: {
   message: ChatMessage;
   projectId: string | null;
@@ -1173,6 +1443,7 @@ function UserMessage({
   onRequestOpenFile?: (name: string) => void;
   t: TranslateFn;
   activePluginSnapshot?: AppliedPluginSnapshot | null;
+  activeDesignSystem?: DesignSystemSummary | null;
 }) {
   const attachments = message.attachments ?? [];
   const commentAttachments = message.commentAttachments ?? [];
@@ -1207,6 +1478,9 @@ function UserMessage({
       </div>
       {activePluginSnapshot ? (
         <ActivePluginChip snapshot={activePluginSnapshot} t={t} />
+      ) : null}
+      {activeDesignSystem ? (
+        <ActiveDesignSystemChip system={activeDesignSystem} />
       ) : null}
       {attachments.length > 0 ? (
         <div className="user-attachments">
@@ -1254,7 +1528,7 @@ function UserMessage({
         <div className="user-text-wrap user-status-wrap">
           <div className="user-status-card design-system-generation-status">
             <span className="user-status-card__icon">
-              <Icon name="palette" size={15} />
+              <Icon name="blocks" size={15} />
             </span>
             <span className="user-status-card__copy">
               <strong>{DESIGN_SYSTEM_WORKSPACE_DISPLAY_TITLE}</strong>
@@ -1305,6 +1579,25 @@ function ActivePluginChip({
       </span>
       {taskKind ? (
         <span className="msg-plugin-chip__task">{taskKind}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function ActiveDesignSystemChip({
+  system,
+}: {
+  system: DesignSystemSummary;
+}) {
+  return (
+    <div className="msg-plugin-chip msg-plugin-chip--design-system" data-testid="msg-design-system-chip">
+      <span className="msg-plugin-chip__dot" aria-hidden />
+      <span className="msg-plugin-chip__label">
+        <span className="msg-plugin-chip__kind">Design System</span>
+        <span className="msg-plugin-chip__title">{system.title}</span>
+      </span>
+      {system.category ? (
+        <span className="msg-plugin-chip__task">{system.category}</span>
       ) : null}
     </div>
   );

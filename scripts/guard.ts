@@ -23,6 +23,7 @@ const allowedE2eScripts = new Set([
   // RACCOONUI-PATCH: raccoonui contract suite invoked from the daily
   // upstream-audit cron — 2026-05-06
   "e2e/scripts/raccoonui-protocol.e2e.live.test.ts",
+  "e2e/scripts/visual-report.ts",
 ]);
 
 type GuardCheck = {
@@ -508,6 +509,7 @@ async function checkE2eLayout(): Promise<boolean> {
       repositoryPath === "e2e/tsconfig.json" ||
       repositoryPath === "e2e/vitest.config.ts" ||
       repositoryPath === "e2e/playwright.config.ts" ||
+      repositoryPath === "e2e/playwright.visual.config.ts" ||
       repositoryPath === "e2e/AGENTS.md"
     ) {
       continue;

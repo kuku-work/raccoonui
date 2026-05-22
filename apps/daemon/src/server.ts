@@ -12,12 +12,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
 import {
-  defaultScenarioPluginIdForKind,
+  defaultScenarioPluginIdForProjectMetadata,
+  type OpenDesignGithubLatestReleaseResponse,
+  type OpenDesignGithubRepoResponse,
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
 } from '@open-design/contracts';
 import {
   composeSystemPrompt,
   renderCodexImagegenOverride,
+  resolveExclusiveSurface,
   shouldRenderCodexImagegenOverride,
 } from './prompts/system.js';
 import { expandHomePrefix, resolveProjectRelativePath } from './home-expansion.js';
@@ -56,7 +59,12 @@ export {
   signDesktopImportToken,
   verifyDesktopImportToken,
 } from './desktop-auth.js';
-import { findSkillById, listSkills, splitDerivedSkillId } from './skills.js';
+import {
+  findSkillById,
+  listSkills,
+  resolveSkillId,
+  splitDerivedSkillId,
+} from './skills.js';
 import { validateLinkedDirs } from './linked-dirs.js';
 import { installFromTarget, uninstallById, sanitizeRepoName } from './library-install.js';
 import { buildWindowsFolderDialogCommand, parseFolderDialogStdout } from './native-folder-dialog.js';
@@ -183,12 +191,18 @@ import { subscribe as subscribeFileEvents } from './project-watchers.js';
 import { renderDesignSystemPreview } from './design-system-preview.js';
 import { renderDesignSystemShowcase } from './design-system-showcase.js';
 import { createChatRunService } from './runs.js';
+import { deriveRunErrorCode, runResultFromStatus } from './run-result.js';
 import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
 import {
   createAnalyticsService,
+  newInsertId,
   readAnalyticsContext,
   readPublicConfigResponse,
 } from './analytics.js';
+import {
+  agentIdToTracking,
+  deriveConfigureGlobals,
+} from '@open-design/contracts/analytics';
 import {
   redactSecrets,
   testAgentConnection,
@@ -209,7 +223,7 @@ import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
-import { stageActiveSkill } from './cwd-aliases.js';
+import { skillCwdAliasSegment, stageActiveSkill } from './cwd-aliases.js';
 import { buildDesktopPdfExportInput } from './pdf-export.js';
 import { generateMedia } from './media.js';
 import { listElevenLabsVoiceOptions } from './elevenlabs-voices.js';
@@ -239,6 +253,7 @@ import {
   MCP_TEMPLATES,
   buildAcpMcpServers,
   buildClaudeMcpJson,
+  buildOpenCodeMcpConfigContent,
   isManagedProjectCwd,
   readMcpConfig,
   writeMcpConfig,
@@ -290,8 +305,10 @@ import {
   writeProjectFile,
 } from './projects.js';
 import { validateArtifactManifestInput } from './artifact-manifest.js';
+import { ArtifactPublicationBlockedError } from './artifact-publication-guard.js';
 import { readCurrentAppVersionInfo } from './app-version.js';
 import {
+  appendMessageAgentEvent,
   appendMessageStatusEvent,
   deleteConversation,
   deletePreviewComment,
@@ -351,6 +368,7 @@ import { LiveArtifactRefreshUnavailableError, refreshLiveArtifact } from './live
 import { LiveArtifactRefreshAbortError } from './live-artifacts/refresh.js';
 import { registerConnectorRoutes } from './connectors/routes.js';
 import { registerActiveContextRoutes } from './active-context-routes.js';
+import { registerHostToolsRoutes } from './host-tools-routes.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './xai-routes.js';
 import { registerLiveArtifactRoutes } from './live-artifact-routes.js';
@@ -359,6 +377,9 @@ import { registerDeployRoutes, registerDeploymentCheckRoutes } from './deploy-ro
 import { registerMediaRoutes } from './media-routes.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './project-routes.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
+import { registerHandoffRoutes } from './handoff-routes.js';
+import { EmptyTranscriptError, synthesizeHandoffPrompt } from './handoff-design.js';
+import { TranscriptExportLockedError } from './transcript-export.js';
 import { registerChatRoutes } from './chat-routes.js';
 import { registerStaticResourceRoutes } from './static-resource-routes.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routine-routes.js';
@@ -1337,11 +1358,32 @@ async function refreshAndPersistToken(dataDir, serverId, current) {
 
 const activeChatAgentEventSinks = new Map();
 const activeProjectEventSinks = new Map();
+// Per-chat-run handles, keyed by runId. Lets non-stream side effects
+// (live-artifact create, project events) reach back into the chat
+// run's local state — currently used by the artifact quiet-period
+// shortcut (#1451) so a successful artifact registration can shorten
+// the inactivity watchdog without the chat path having to poll a
+// store.
+const activeChatRunHandles = new Map();
 
 function emitChatAgentEvent(runId, payload) {
   const sink = activeChatAgentEventSinks.get(runId);
   if (!sink) return false;
   return sink(payload);
+}
+
+// Exported for tests covering the artifact quiet-period plumbing
+// (#1451). The chat run path is a deep closure inside startServer, so
+// pin the hook contract at the emit/handle boundary instead of
+// driving a full fake-agent e2e for every invariant.
+export const __forTestChatRunHandles = activeChatRunHandles;
+
+export function __forTestEmitLiveArtifactEvent(
+  grant: { runId?: string; projectId?: string },
+  action: 'created' | 'updated' | 'deleted',
+  artifact: { id: string; projectId?: string; title?: string; refreshStatus?: string },
+) {
+  return emitLiveArtifactEvent(grant, action, artifact);
 }
 
 function emitLiveArtifactEvent(grant, action, artifact) {
@@ -1356,6 +1398,18 @@ function emitLiveArtifactEvent(grant, action, artifact) {
   };
   let emitted = emitProjectEvent(payload.projectId, payload);
   if (grant?.runId) emitted = emitChatAgentEvent(grant.runId, payload) || emitted;
+  // After the deliverable exists, switch the chat run into a shorter
+  // "quiet period" watchdog: agents sometimes keep their child process
+  // alive after a successful artifact write (post-write reasoning, log
+  // flushes, claude-code stream-json's idle stdin) and the 10-minute
+  // default leaves the UI parked on Working until the watchdog fires
+  // an unrelated "stalled" error. See #1451.
+  if (action === 'created' && grant?.runId) {
+    const handle = activeChatRunHandles.get(grant.runId);
+    if (handle?.noteArtifactRegistered) {
+      try { handle.noteArtifactRegistered(); } catch {}
+    }
+  }
   return emitted;
 }
 
@@ -1880,6 +1934,152 @@ function reconcileAssistantMessageOnRunEnd(db, runs, run) {
     });
 }
 
+function persistRunEventToAssistantMessage(db, run, event, data) {
+  if (!run.assistantMessageId) return;
+  const persisted = runSseEventToPersistedAgentEvent(event, data);
+  if (!persisted) return;
+  try {
+    appendMessageAgentEvent(db, run.assistantMessageId, persisted);
+  } catch (err) {
+    console.warn('[runs] message event persistence failed', err);
+  }
+}
+
+function runSseEventToPersistedAgentEvent(event, data) {
+  if (event === 'start') {
+    return {
+      kind: 'status',
+      label: 'starting',
+      ...(typeof data?.bin === 'string' ? { detail: data.bin } : {}),
+    };
+  }
+  if (event === 'stdout') {
+    const chunk = typeof data?.chunk === 'string' ? data.chunk : '';
+    return chunk ? { kind: 'text', text: chunk } : null;
+  }
+  if (event === 'error') {
+    const message = typeof data?.error?.message === 'string'
+      ? data.error.message
+      : typeof data?.message === 'string'
+        ? data.message
+        : '';
+    return {
+      kind: 'status',
+      label: 'error',
+      ...(message ? { detail: message } : {}),
+    };
+  }
+  if (event !== 'agent') return null;
+  return daemonAgentPayloadToPersistedAgentEvent(data);
+}
+
+function daemonAgentPayloadToPersistedAgentEvent(data) {
+  const type = data?.type;
+  if (type === 'status' && typeof data.label === 'string') {
+    const detail =
+      typeof data.detail === 'string'
+        ? data.detail
+        : typeof data.model === 'string'
+          ? data.model
+          : typeof data.ttftMs === 'number'
+            ? `first token in ${Math.round(data.ttftMs / 100) / 10}s`
+            : undefined;
+    return { kind: 'status', label: data.label, ...(detail ? { detail } : {}) };
+  }
+  if (type === 'text_delta' && typeof data.delta === 'string') {
+    return { kind: 'text', text: data.delta };
+  }
+  if (type === 'thinking_delta' && typeof data.delta === 'string') {
+    return { kind: 'thinking', text: data.delta };
+  }
+  if (type === 'thinking_start') return { kind: 'status', label: 'thinking' };
+  if (type === 'live_artifact') {
+    return {
+      kind: 'live_artifact',
+      action: data.action,
+      projectId: data.projectId,
+      artifactId: data.artifactId,
+      title: data.title,
+      ...(data.refreshStatus ? { refreshStatus: data.refreshStatus } : {}),
+    };
+  }
+  if (type === 'live_artifact_refresh') {
+    return {
+      kind: 'live_artifact_refresh',
+      phase: data.phase,
+      projectId: data.projectId,
+      artifactId: data.artifactId,
+      ...(data.refreshId ? { refreshId: data.refreshId } : {}),
+      ...(data.title ? { title: data.title } : {}),
+      ...(typeof data.refreshedSourceCount === 'number'
+        ? { refreshedSourceCount: data.refreshedSourceCount }
+        : {}),
+      ...(data.error ? { error: data.error } : {}),
+    };
+  }
+  if (type === 'tool_use' && typeof data.id === 'string' && typeof data.name === 'string') {
+    return { kind: 'tool_use', id: data.id, name: data.name, input: normalizePersistedToolInput(data.input) };
+  }
+  if (type === 'tool_result' && typeof data.toolUseId === 'string') {
+    return {
+      kind: 'tool_result',
+      toolUseId: data.toolUseId,
+      content: String(data.content ?? ''),
+      isError: Boolean(data.isError),
+    };
+  }
+  if (type === 'usage') {
+    const usage = data.usage && typeof data.usage === 'object' ? data.usage : {};
+    return {
+      kind: 'usage',
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      ...(typeof data.costUsd === 'number' ? { costUsd: data.costUsd } : {}),
+      ...(typeof data.durationMs === 'number' ? { durationMs: data.durationMs } : {}),
+    };
+  }
+  if (type === 'raw' && typeof data.line === 'string') return { kind: 'raw', line: data.line };
+  return null;
+}
+
+function normalizePersistedToolInput(input) {
+  if (!input || typeof input !== 'object') return input;
+  if ('filePath' in input && typeof input.filePath === 'string') {
+    return { ...input, file_path: input.filePath };
+  }
+  return input;
+}
+
+function pinAssistantMessageOnRunCreate(db, run) {
+  if (!run.conversationId || !run.assistantMessageId) return;
+  const existing = db
+    .prepare(`SELECT id FROM messages WHERE id = ?`)
+    .get(run.assistantMessageId);
+  if (existing) {
+    db.prepare(
+      `UPDATE messages
+          SET run_id = ?,
+              run_status = CASE
+                WHEN run_status IN ('succeeded', 'failed', 'canceled') THEN run_status
+                ELSE ?
+              END,
+              started_at = COALESCE(started_at, ?)
+        WHERE id = ?`,
+    ).run(run.id, run.status, run.createdAt, run.assistantMessageId);
+    return;
+  }
+  upsertMessage(db, run.conversationId, {
+    id: run.assistantMessageId,
+    role: 'assistant',
+    content: '',
+    agentId: run.agentId ?? undefined,
+    events: [],
+    runId: run.id,
+    runStatus: run.status,
+    startedAt: run.createdAt,
+  });
+}
+
 export function shouldReportRunCompletedFromMessage(saved, body = {}) {
   return Boolean(
     saved &&
@@ -2346,6 +2546,122 @@ function setLiveArtifactCodeHeaders(res) {
   res.setHeader('Referrer-Policy', 'no-referrer');
 }
 
+const OPEN_DESIGN_GITHUB_REPO_API = 'https://api.github.com/repos/nexu-io/open-design';
+const OPEN_DESIGN_GITHUB_RELEASE_LATEST_API = 'https://api.github.com/repos/nexu-io/open-design/releases/latest';
+const OPEN_DESIGN_GITHUB_CACHE_TTL_MS = 60 * 60 * 1000;
+const OPEN_DESIGN_GITHUB_TIMEOUT_MS = 4_000;
+
+let openDesignGithubRepoCache = null;
+let openDesignGithubRepoInflight = null;
+let openDesignGithubLatestReleaseCache = null;
+let openDesignGithubLatestReleaseInflight = null;
+
+async function readOpenDesignGithubRepoStats() {
+  const now = Date.now();
+  if (
+    openDesignGithubRepoCache &&
+    now - openDesignGithubRepoCache.fetchedAt < OPEN_DESIGN_GITHUB_CACHE_TTL_MS
+  ) {
+    return { ...openDesignGithubRepoCache, stale: false };
+  }
+
+  if (openDesignGithubRepoInflight) {
+    return openDesignGithubRepoInflight;
+  }
+
+  openDesignGithubRepoInflight = (async () => {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), OPEN_DESIGN_GITHUB_TIMEOUT_MS);
+    try {
+      const response = await fetch(OPEN_DESIGN_GITHUB_REPO_API, {
+        headers: {
+          accept: 'application/vnd.github+json',
+          'user-agent': 'open-design-daemon',
+        },
+        signal: ctrl.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`GitHub repo metadata request failed with HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      const count = payload && typeof payload.stargazers_count === 'number'
+        ? payload.stargazers_count
+        : null;
+      if (!Number.isFinite(count) || count == null || count < 0) {
+        throw new Error('GitHub repo metadata did not include a numeric stargazers_count');
+      }
+      openDesignGithubRepoCache = {
+        stargazersCount: count,
+        fetchedAt: Date.now(),
+      };
+      return { ...openDesignGithubRepoCache, stale: false };
+    } catch (error) {
+      if (openDesignGithubRepoCache) {
+        return { ...openDesignGithubRepoCache, stale: true };
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      openDesignGithubRepoInflight = null;
+    }
+  })();
+
+  return openDesignGithubRepoInflight;
+}
+
+async function readOpenDesignLatestReleaseInfo() {
+  const now = Date.now();
+  if (
+    openDesignGithubLatestReleaseCache &&
+    now - openDesignGithubLatestReleaseCache.fetchedAt < OPEN_DESIGN_GITHUB_CACHE_TTL_MS
+  ) {
+    return { ...openDesignGithubLatestReleaseCache, stale: false };
+  }
+
+  if (openDesignGithubLatestReleaseInflight) {
+    return openDesignGithubLatestReleaseInflight;
+  }
+
+  openDesignGithubLatestReleaseInflight = (async () => {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), OPEN_DESIGN_GITHUB_TIMEOUT_MS);
+    try {
+      const response = await fetch(OPEN_DESIGN_GITHUB_RELEASE_LATEST_API, {
+        headers: {
+          accept: 'application/vnd.github+json',
+          'user-agent': 'open-design-daemon',
+        },
+        signal: ctrl.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`GitHub latest release request failed with HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      const tagName = payload && typeof payload.tag_name === 'string' ? payload.tag_name : null;
+      const htmlUrl = payload && typeof payload.html_url === 'string' ? payload.html_url : null;
+      if (!tagName || !htmlUrl) {
+        throw new Error('GitHub latest release metadata did not include tag_name/html_url');
+      }
+      openDesignGithubLatestReleaseCache = {
+        tagName,
+        htmlUrl,
+        fetchedAt: Date.now(),
+      };
+      return { ...openDesignGithubLatestReleaseCache, stale: false };
+    } catch (error) {
+      if (openDesignGithubLatestReleaseCache) {
+        return { ...openDesignGithubLatestReleaseCache, stale: true };
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      openDesignGithubLatestReleaseInflight = null;
+    }
+  })();
+
+  return openDesignGithubLatestReleaseInflight;
+}
+
 function bearerTokenFromRequest(req) {
   const header = req.get('authorization');
   if (typeof header !== 'string') return undefined;
@@ -2754,6 +3070,12 @@ export interface StartServerOptions {
 
 const DEFAULT_CHAT_RUN_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_CHAT_RUN_INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+// After a successful live-artifact registration the daemon switches the
+// chat-run inactivity watchdog from the long pre-artifact ceiling
+// (DEFAULT_CHAT_RUN_INACTIVITY_TIMEOUT_MS) down to a much shorter
+// "quiet period" — the deliverable exists, so further silence almost
+// always means the agent is winding down or hanging. See #1451.
+const DEFAULT_CHAT_RUN_ARTIFACT_QUIET_PERIOD_MS = 60 * 1000;
 
 function resolveChatRunInactivityTimeoutMs() {
   const raw = Number(process.env.OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS);
@@ -2765,6 +3087,67 @@ function resolveChatRunInactivityTimeoutMs() {
   // makes an oversized override fail almost immediately while reporting a huge
   // timeout. Keep explicit overrides bounded to a practical, timer-safe value.
   return Math.min(MAX_CHAT_RUN_INACTIVITY_TIMEOUT_MS, Math.max(0, Math.floor(raw)));
+}
+
+// Resolve the post-artifact quiet-period window. Same clamp as the outer
+// inactivity watchdog so an oversized override doesn't get Node-downgraded
+// to a 1ms timer. Exported so tests can pin the env behavior without
+// reaching into chat-run internals.
+export function resolveChatRunArtifactQuietPeriodMs() {
+  const raw = Number(process.env.OD_CHAT_RUN_ARTIFACT_QUIET_PERIOD_MS);
+  if (!Number.isFinite(raw)) return DEFAULT_CHAT_RUN_ARTIFACT_QUIET_PERIOD_MS;
+  return Math.min(MAX_CHAT_RUN_INACTIVITY_TIMEOUT_MS, Math.max(0, Math.floor(raw)));
+}
+
+// Pure resolver for the chat run's *currently active* inactivity
+// ceiling. Used by both `noteAgentActivity` and `noteArtifactRegistered`
+// to pick between the pre-artifact watchdog and the shortened quiet
+// period. Extracted so the `OD_CHAT_RUN_ARTIFACT_QUIET_PERIOD_MS=0`
+// "disable the quiet period" semantics can be pinned with focused unit
+// tests (#1451 review: a 0-value override must not strand the pre-artifact
+// timer or stop further reschedules — it has to fall back to the
+// pre-artifact ceiling so subsequent activity keeps refreshing the timer).
+export function resolveActiveInactivityTimeoutMs(params: {
+  inactivityTimeoutMs: number;
+  artifactQuietPeriodMs: number;
+  artifactRegistered: boolean;
+}): number {
+  if (params.artifactRegistered && params.artifactQuietPeriodMs > 0) {
+    return params.artifactQuietPeriodMs;
+  }
+  return params.inactivityTimeoutMs;
+}
+
+// Pure final-status classifier for the chat run's child-close handler.
+// Extracted so the per-branch invariants can be unit-tested without
+// driving a full child process — in particular:
+//   - cancel always wins over success/failure classification.
+//   - the ACP forced-shutdown override is scoped to SIGTERM + clean
+//     completion only (signed-32-bit-overflow SIGKILL or non-clean ACP
+//     state still report `failed`).
+//   - the artifact quiet-period override is gated on a daemon-initiated
+//     flag, NOT on `artifactRegistered` alone — see #1451 review:
+//     an external `kill -9` after the artifact write must still report
+//     `failed`, only the watchdog-initiated SIGTERM/SIGKILL escalation
+//     is allowed to flip the status to `succeeded`.
+export function classifyChatRunCloseStatus(params: {
+  cancelRequested: boolean;
+  code: number | null;
+  signal: NodeJS.Signals | string | null;
+  acpCleanCompletion: boolean;
+  artifactQuietShutdownRequested: boolean;
+}): 'canceled' | 'succeeded' | 'failed' {
+  if (params.cancelRequested) return 'canceled';
+  if (params.code === 0) return 'succeeded';
+  const acpForcedShutdown =
+    params.code === null && params.signal === 'SIGTERM' && params.acpCleanCompletion;
+  if (acpForcedShutdown) return 'succeeded';
+  const artifactQuietShutdown =
+    params.artifactQuietShutdownRequested &&
+    params.code === null &&
+    (params.signal === 'SIGTERM' || params.signal === 'SIGKILL');
+  if (artifactQuietShutdown) return 'succeeded';
+  return 'failed';
 }
 
 function resolveChatRunShutdownGraceMs() {
@@ -3311,6 +3694,41 @@ export async function startServer({
   app.get('/api/version', async (_req, res) => {
     const version = await readCurrentAppVersionInfo();
     res.json({ version });
+  });
+
+  app.get('/api/github/open-design', async (_req, res) => {
+    try {
+      const stats = await readOpenDesignGithubRepoStats();
+      const payload = /** @type {OpenDesignGithubRepoResponse} */ ({
+        repo: 'nexu-io/open-design',
+        stargazers_count: stats.stargazersCount,
+        fetchedAt: stats.fetchedAt,
+        stale: stats.stale,
+      });
+      res.json(payload);
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/api/github/open-design/releases/latest', async (_req, res) => {
+    try {
+      const release = await readOpenDesignLatestReleaseInfo();
+      const payload = /** @type {OpenDesignGithubLatestReleaseResponse} */ ({
+        repo: 'nexu-io/open-design',
+        tag_name: release.tagName,
+        html_url: release.htmlUrl,
+        fetchedAt: release.fetchedAt,
+        stale: release.stale,
+      });
+      res.json(payload);
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   // Plan §3.F2 / spec §11.7 — daemon lifecycle status. Returns the
@@ -4349,6 +4767,13 @@ export async function startServer({
     isFinalizeProviderProtocol,
     redactSecrets,
   };
+  const handoffDeps = {
+    synthesizeHandoffPrompt,
+    FinalizeUpstreamError,
+    TranscriptExportLockedError,
+    EmptyTranscriptError,
+    redactSecrets,
+  };
   const validationDeps = { isSafeId, validateExternalApiBaseUrl, validateBaseUrl, validateProjectDesignSystemId };
   const agentDeps = {
     listProviderModels,
@@ -4381,6 +4806,13 @@ export async function startServer({
     db,
     http: httpDeps,
     projectStore: projectStoreDeps,
+  });
+  registerHostToolsRoutes(app, {
+    db,
+    http: httpDeps,
+    paths: pathDeps,
+    projectStore: projectStoreDeps,
+    projectFiles: projectFileDeps,
   });
   registerProjectRoutes(app, {
     db,
@@ -4461,6 +4893,15 @@ export async function startServer({
     projectStore: projectStoreDeps,
     validation: validationDeps,
     finalize: finalizeDeps,
+  });
+  registerHandoffRoutes(app, {
+    db,
+    http: httpDeps,
+    paths: pathDeps,
+    projectStore: projectStoreDeps,
+    conversations: conversationDeps,
+    validation: validationDeps,
+    handoff: handoffDeps,
   });
   registerDeploymentCheckRoutes(app, { db, http: httpDeps, deploy: deployDeps });
   app.use('/frames', express.static(FRAMES_DIR));
@@ -5835,7 +6276,31 @@ export async function startServer({
         return;
       }
       let contentPath = resolved;
+      let contentRel = resolvedRel;
       let buf = await fsp.readFile(resolved);
+      if (resolvedRel && /\.html?$/i.test(resolvedRel)) {
+        const shellTarget = iframeOnlyHtmlShellTarget(buf.toString('utf8'));
+        if (shellTarget) {
+          const targetFull = path.resolve(path.dirname(resolved), shellTarget);
+          const rootDir = path.resolve(plugin.fsPath);
+          const insideRoot =
+            (targetFull + path.sep).startsWith(root) ||
+            targetFull === rootDir;
+          if (insideRoot) {
+            try {
+              const st = await fsp.stat(targetFull);
+              const lst = await fsp.lstat(targetFull);
+              if (!lst.isSymbolicLink() && st.isFile() && st.size <= 5 * 1024 * 1024) {
+                buf = await fsp.readFile(targetFull);
+                contentPath = targetFull;
+                contentRel = path.relative(plugin.fsPath, targetFull).split(path.sep).join('/');
+              }
+            } catch {
+              // Keep the wrapper HTML if the iframe target cannot be read.
+            }
+          }
+        }
+      }
       if (resolvedRel && /(^|\/)example-slides\.html$/i.test(resolvedRel)) {
         const templateRel = resolvedRel.replace(
           /(^|\/)example-slides\.html$/i,
@@ -5860,6 +6325,7 @@ export async function startServer({
               const slidesHtml = buf.toString('utf8');
               buf = Buffer.from(assembleExample(tplHtml, slidesHtml, title), 'utf8');
               contentPath = templateFull;
+              contentRel = templateRel;
             }
           } catch {
             // Keep the raw fallback if the companion template is missing.
@@ -5882,10 +6348,77 @@ export async function startServer({
         : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
         : 'application/octet-stream';
       res.setHeader('Content-Type', ct);
+      if (ext === '.html' && typeof contentRel === 'string') {
+        buf = Buffer.from(
+          rewritePluginAssetUrls(
+            buf.toString('utf8'),
+            req.params.id,
+            path.posix.dirname(contentRel.replace(/\\/g, '/')),
+          ),
+          'utf8',
+        );
+      }
       res.send(buf);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
+  }
+
+  function iframeOnlyHtmlShellTarget(html: string): string | null {
+    if (typeof html !== 'string' || html.length === 0) return null;
+    const bodyMatch = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+    if (!bodyMatch) return null;
+    const body = bodyMatch[1].replace(/<!--[\s\S]*?-->/g, '').trim();
+    const iframeMatch = /^<iframe\b[^>]*\bsrc\s*=\s*(['"])([^'"]+)\1[^>]*>\s*(?:<\/iframe>)?\s*$/i.exec(body);
+    if (!iframeMatch) return null;
+    const src = iframeMatch[2].trim();
+    if (
+      !src ||
+      src.startsWith('/') ||
+      src.startsWith('//') ||
+      src.includes('\0') ||
+      /^[a-z][a-z0-9+.-]*:/i.test(src)
+    ) {
+      return null;
+    }
+    const pathOnly = src.split(/[?#]/)[0] ?? '';
+    if (!/\.html?$/i.test(pathOnly)) return null;
+    return pathOnly;
+  }
+
+  function rewritePluginAssetUrls(html: string, pluginId: string, baseDir: string) {
+    if (typeof html !== 'string' || html.length === 0) return html;
+    const safeBase = baseDir === '.' ? '' : baseDir;
+    return html.replace(
+      /(\s(?:src|href|poster)\s*=\s*)(['"])([^'"]+)(\2)/gi,
+      (match, attr, quote, rawValue, closeQuote) => {
+        const value = String(rawValue).trim();
+        if (
+          !value ||
+          value.startsWith('#') ||
+          value.startsWith('/') ||
+          value.startsWith('//') ||
+          value.includes('\0') ||
+          /^[a-z][a-z0-9+.-]*:/i.test(value)
+        ) {
+          return match;
+        }
+        const splitAt = value.search(/[?#]/);
+        const rel = splitAt === -1 ? value : value.slice(0, splitAt);
+        const suffix = splitAt === -1 ? '' : value.slice(splitAt);
+        const normalized = path.posix.normalize(path.posix.join(safeBase, rel));
+        if (
+          normalized === '.' ||
+          normalized === '..' ||
+          normalized.startsWith('../') ||
+          path.posix.isAbsolute(normalized)
+        ) {
+          return match;
+        }
+        const url = `/api/plugins/${encodeURIComponent(pluginId)}/asset/${normalized}${suffix}`;
+        return `${attr}${quote}${url}${closeQuote}`;
+      },
+    );
   }
 
   // Plan §6 Phase 2B + spec §11.6 / §9.2 — plugin preview + examples.
@@ -8117,6 +8650,11 @@ export async function startServer({
         const body = { file: meta };
         res.json(body);
       } catch (err) {
+        if (err instanceof ArtifactPublicationBlockedError) {
+          return sendApiError(res, 422, 'ARTIFACT_PUBLICATION_BLOCKED', err.message, {
+            details: { placeholders: err.placeholders },
+          });
+        }
         sendApiError(res, 500, 'INTERNAL_ERROR', 'upload failed');
       }
     },
@@ -8222,7 +8760,8 @@ export async function startServer({
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
     try {
-      res.json(await orbitService.start('manual'));
+      const locale = typeof req.body?.locale === 'string' ? req.body.locale : null;
+      res.json(await orbitService.start('manual', { locale }));
     } catch (err) {
       res
         .status(500)
@@ -8509,8 +9048,10 @@ export async function startServer({
     agentId,
     projectId,
     skillId,
+    skillIds,
     designSystemId,
     streamFormat,
+    locale,
     connectedExternalMcp,
     appliedPluginSnapshotId,
   }) => {
@@ -8525,33 +9066,129 @@ export async function startServer({
         ? designSystemId
         : project?.designSystemId;
     const metadata = project?.metadata;
+    let allSkillsPromise: ReturnType<typeof listAllSkillLikeEntries> | null = null;
+    const loadAllSkills = async () => {
+      allSkillsPromise ??= listAllSkillLikeEntries();
+      return await allSkillsPromise;
+    };
+
+    // Per-turn skills picked via the composer's @-mention popover. They
+    // never persist on the project — we just append their bodies after the
+    // primary skill so the agent sees one combined block this turn.
+    const effectiveCanonicalSkillId =
+      typeof effectiveSkillId === 'string' && effectiveSkillId
+        ? resolveSkillId(effectiveSkillId)
+        : null;
+    const adHocSkillIds = Array.isArray(skillIds)
+      ? skillIds
+          .map((s) => (typeof s === 'string' ? s.trim() : ''))
+          .filter(Boolean)
+          .filter((id) => resolveSkillId(id) !== effectiveCanonicalSkillId)
+      : [];
 
     let skillBody;
     let skillName;
     let skillMode;
+    const skillModes = new Set<NonNullable<Parameters<typeof composeSystemPrompt>[0]['skillMode']>>();
     let skillCraftRequires = [];
     let activeSkillDir = null;
+    const activeSkillDirs: string[] = [];
     // Per-skill Critique Theater override sourced from
     // `od.critique.policy` in the resolved skill's SKILL.md frontmatter.
     // `null` means the skill has no opinion and the lower-priority tiers
     // (project override, env override, rollout phase default) decide.
     let skillCritiquePolicy: SkillCritiquePolicy = null;
+    let critiqueSkillId = effectiveCanonicalSkillId;
+    const registerSkillMode = (
+      mode: NonNullable<Parameters<typeof composeSystemPrompt>[0]['skillMode']> | null | undefined,
+    ) => {
+      if (!mode) return;
+      skillModes.add(mode);
+    };
+    const registerPrimarySkillMode = (
+      mode: NonNullable<Parameters<typeof composeSystemPrompt>[0]['skillMode']> | null | undefined,
+    ) => {
+      if (!mode) return;
+      skillMode ??= mode;
+      registerSkillMode(mode);
+    };
+    const registerSkillDir = (dir: string | null | undefined) => {
+      if (typeof dir !== 'string' || dir.length === 0) return;
+      if (!activeSkillDir) activeSkillDir = dir;
+      if (!activeSkillDirs.includes(dir)) activeSkillDirs.push(dir);
+    };
+    const mergeSkillCritiquePolicy = (
+      current: SkillCritiquePolicy,
+      next: SkillCritiquePolicy,
+    ): SkillCritiquePolicy => {
+      if (next === 'opt-out') return 'opt-out';
+      if (next === 'required') return current === 'opt-out' ? current : 'required';
+      if (next === 'opt-in') {
+        return current === 'required' || current === 'opt-out' ? current : 'opt-in';
+      }
+      return current;
+    };
     if (effectiveSkillId) {
       // Span both functional skills and design templates so a project
       // saved against either surface keeps its system prompt after the
       // skills/design-templates split. See specs/current/skills-and-design-templates.md.
-      const skill = findSkillById(
-        await listAllSkillLikeEntries(),
-        effectiveSkillId,
-      );
+      const allSkills = await loadAllSkills();
+      const skill = findSkillById(allSkills, effectiveSkillId);
       if (skill) {
         skillBody = skill.body;
         skillName = skill.name;
-        skillMode = skill.mode;
-        activeSkillDir = skill.dir;
-        skillCritiquePolicy = skill.critiquePolicy;
+        registerPrimarySkillMode(skill.mode);
+        registerSkillDir(skill.dir);
+        skillCritiquePolicy = mergeSkillCritiquePolicy(
+          skillCritiquePolicy,
+          skill.critiquePolicy,
+        );
         if (Array.isArray(skill.craftRequires))
           skillCraftRequires = skill.craftRequires;
+      }
+    }
+    let composedSkillBlocks = '';
+    if (adHocSkillIds.length > 0) {
+      const allSkills = await loadAllSkills();
+      const seen = new Set(
+        effectiveCanonicalSkillId ? [String(effectiveCanonicalSkillId)] : [],
+      );
+      const blocks = [];
+      const baseBody = skillBody && skillBody.trim().length > 0 ? skillBody : '';
+      for (const id of adHocSkillIds) {
+        const canonicalId = resolveSkillId(id);
+        if (typeof canonicalId !== 'string' || canonicalId.length === 0) continue;
+        if (seen.has(canonicalId)) continue;
+        seen.add(canonicalId);
+        const extra = findSkillById(allSkills, id);
+        if (!extra) continue;
+        registerSkillDir(extra.dir);
+        registerSkillMode(extra.mode);
+        if (!effectiveCanonicalSkillId && adHocSkillIds.length === 1) {
+          registerPrimarySkillMode(extra.mode);
+        }
+        if (!critiqueSkillId || extra.critiquePolicy !== null) critiqueSkillId = canonicalId;
+        skillCritiquePolicy = mergeSkillCritiquePolicy(
+          skillCritiquePolicy,
+          extra.critiquePolicy,
+        );
+        if (Array.isArray(extra.craftRequires)) {
+          for (const craft of extra.craftRequires) {
+            if (!skillCraftRequires.includes(craft)) skillCraftRequires.push(craft);
+          }
+        }
+        blocks.push(
+          `\n\n---\n\n## Composed skill — ${extra.name || id}\n\n${(extra.body || '').trim()}`,
+        );
+      }
+      if (blocks.length > 0) {
+        composedSkillBlocks = blocks.join('');
+        skillBody = baseBody + composedSkillBlocks;
+        if (!skillName) {
+          skillName = adHocSkillIds.length === 1
+            ? findSkillById(allSkills, adHocSkillIds[0])?.name ?? null
+            : 'composed';
+        }
       }
     }
 
@@ -8573,9 +9210,10 @@ export async function startServer({
             const { loadPluginLocalSkill } = await import('./plugins/local-skill.js');
             const local = await loadPluginLocalSkill(plugin);
             if (local) {
-              skillBody = local.body;
+              skillBody = local.body + composedSkillBlocks;
               skillName = local.name;
               activeSkillDir = local.dir;
+              registerSkillDir(local.dir);
             }
           }
         }
@@ -8744,8 +9382,8 @@ export async function startServer({
       && typeof designSystemBody === 'string'
       ? { name: designSystemTitle, design_md: designSystemBody }
       : undefined;
-    const critiqueSkill = critiqueEnabledForRun && typeof effectiveSkillId === 'string'
-      ? { id: effectiveSkillId }
+    const critiqueSkill = critiqueEnabledForRun && typeof critiqueSkillId === 'string'
+      ? { id: critiqueSkillId }
       : undefined;
     // Single-source-of-truth eligibility check. The composer downstream
     // appends <CRITIQUE_RUN> instructions only when this check passes, and
@@ -8759,13 +9397,15 @@ export async function startServer({
     // panel addendum has to be suppressed here too: otherwise the model
     // is instructed to emit Critique Theater tags that no orchestrator
     // consumes.
+    const resolvedExclusiveSurface = resolveExclusiveSurface({
+      metadata,
+      skillMode,
+      skillModes: skillModes.size > 0 ? Array.from(skillModes) : undefined,
+    });
     const isMediaSurface =
-      skillMode === 'image' ||
-      skillMode === 'video' ||
-      skillMode === 'audio' ||
-      metadata?.kind === 'image' ||
-      metadata?.kind === 'video' ||
-      metadata?.kind === 'audio';
+      resolvedExclusiveSurface === 'image'
+      || resolvedExclusiveSurface === 'video'
+      || resolvedExclusiveSurface === 'audio';
     const isPlainAdapter = (streamFormat ?? 'plain') === 'plain';
     const critiqueShouldRun = critiqueEnabledForRun
       && critiqueBrand !== undefined
@@ -8832,6 +9472,7 @@ export async function startServer({
       skillBody,
       skillName,
       skillMode,
+      skillModes: skillModes.size > 0 ? Array.from(skillModes) : undefined,
       designSystemBody,
       designSystemTitle,
       designSystemUsageMd,
@@ -8859,6 +9500,7 @@ export async function startServer({
       critique: critiqueShouldRun ? { ...critiqueCfg, enabled: true } : undefined,
       critiqueBrand: critiqueShouldRun ? critiqueBrand : undefined,
       critiqueSkill: critiqueShouldRun ? critiqueSkill : undefined,
+      locale: typeof locale === 'string' ? locale : undefined,
       streamFormat,
       connectedExternalMcp: Array.isArray(connectedExternalMcp)
         ? connectedExternalMcp
@@ -8874,7 +9516,7 @@ export async function startServer({
     // `listSkills()` scan in `startChatRun`. critiqueShouldRun threads
     // the same panel-eligibility decision down to the spawn-path
     // orchestrator gate so prompt and orchestrator stay in lockstep.
-    return { prompt, activeSkillDir, critiqueShouldRun };
+    return { prompt, activeSkillDir, activeSkillDirs, critiqueShouldRun };
   };
 
   // Plan §3.I1 / §3.D / spec §10.1: fire the pipeline schedule on a
@@ -8964,11 +9606,13 @@ export async function startServer({
       assistantMessageId,
       clientRequestId,
       skillId,
+      skillIds,
       designSystemId,
       attachments = [],
       commentAttachments = [],
       model,
       reasoning,
+      locale,
       research,
       context,
     } = chatBody;
@@ -9198,13 +9842,19 @@ export async function startServer({
       .filter((s) => typeof oauthTokensForSpawn[s.id] === 'string')
       .map((s) => ({ id: s.id, label: s.label }));
 
-    const { prompt: daemonSystemPrompt, activeSkillDir, critiqueShouldRun } =
+    const {
+      prompt: daemonSystemPrompt,
+      activeSkillDirs,
+      critiqueShouldRun,
+    } =
       await composeDaemonSystemPrompt({
         agentId,
         projectId,
         skillId,
+        skillIds,
         designSystemId,
         streamFormat: def?.streamFormat ?? 'plain',
+        locale,
         connectedExternalMcp,
         // Plan §3.M2 / §3.V1 — forward the run's snapshot id so the
         // prompt composer can splice in `## Active stage` blocks.
@@ -9217,11 +9867,11 @@ export async function startServer({
     // advertises both the cwd-relative path (1) and the absolute path
     // (2/3) so the agent can pick whichever works.
     //
-    //   1. CWD-relative copy. Stage the *active* skill into
+    //   1. CWD-relative copy. Stage every active/composed skill into
     //      `<cwd>/.od-skills/<folder>/` so any agent CLI — not just the
     //      ones that honour `--add-dir` — can reach those files via a
     //      path inside its working directory. We copy (not symlink) so
-    //      the staged directory is a true write barrier — agents cannot
+    //      each staged directory is a true write barrier — agents cannot
     //      mutate the shipped repo resource through their cwd.
     //   2. `--add-dir` allowlist. For non-Codex agents, pass `SKILLS_DIR`
     //      and `DESIGN_SYSTEMS_DIR` so the absolute fallback path in the
@@ -9239,17 +9889,19 @@ export async function startServer({
     // daemon and folded into the system prompt directly (see
     // `readDesignSystem`), so an agent never has to open them via the
     // filesystem.
-    if (cwd && activeSkillDir) {
-      const result = await stageActiveSkill(
-        cwd,
-        path.basename(activeSkillDir),
-        activeSkillDir,
-        (msg) => console.warn(msg),
-      );
-      if (!result.staged) {
-        console.warn(
-          `[od] skill-stage skipped: ${result.reason ?? 'unknown reason'}; falling back to absolute paths`,
+    if (cwd && activeSkillDirs.length > 0) {
+      for (const skillDir of activeSkillDirs) {
+        const result = await stageActiveSkill(
+          cwd,
+          skillCwdAliasSegment(skillDir),
+          skillDir,
+          (msg) => console.warn(msg),
         );
+        if (!result.staged) {
+          console.warn(
+            `[od] skill-stage skipped: ${result.reason ?? 'unknown reason'}; falling back to absolute paths`,
+          );
+        }
       }
     }
     // Resolve the agent's effective working directory once and use it
@@ -9369,7 +10021,17 @@ export async function startServer({
     // We also unlink a stale `.mcp.json` we previously wrote when the user has
     // since disabled all servers, so removing a server actually takes effect
     // on the next run.
-    if (def.id === 'claude' && isManagedProjectCwd(cwd, PROJECTS_DIR)) {
+    // Dispatch on `def.externalMcpInjection` rather than hard-coding agent
+    // id / stream-format checks. The three branches are functionally
+    // equivalent to the previous shape (claude/acp), with the OpenCode
+    // env-content branch added to fix #2142. Runtimes that leave the field
+    // undefined fall through unchanged — the settings UI surfaces an
+    // explicit "external MCP is not forwarded to <agent>" banner for them
+    // so the previous silent-failure UX is gone.
+    if (
+      def.externalMcpInjection === 'claude-mcp-json' &&
+      isManagedProjectCwd(cwd, PROJECTS_DIR)
+    ) {
       {
         const target = path.join(cwd, '.mcp.json');
         if (enabledExternalMcp.length > 0) {
@@ -9406,9 +10068,38 @@ export async function startServer({
         }
       }
     }
-    if (enabledExternalMcp.length > 0 && def.streamFormat === 'acp-json-rpc') {
+    if (
+      enabledExternalMcp.length > 0 &&
+      def.externalMcpInjection === 'acp-merge'
+    ) {
       const acpExternal = buildAcpMcpServers(enabledExternalMcp);
       mcpServers.push(...acpExternal);
+    }
+    // OpenCode: serialise enabled MCP servers into its `mcp` config schema
+    // and hand the JSON to the child via `OPENCODE_CONFIG_CONTENT`. The env
+    // var is *merged* with the user's saved `~/.config/opencode/opencode
+    // .json` (per OpenCode's documented config layering), so adding a
+    // server here does not erase whatever the user already has in their
+    // global config. We deliberately leave the env unset when no servers
+    // are enabled — overwriting with `{}` would wipe the user's saved
+    // mcp section for this single invocation, which is exactly the kind
+    // of surprise the previous silent-failure UX taught us to avoid.
+    let opencodeConfigContent: string | null = null;
+    if (
+      def.externalMcpInjection === 'opencode-env-content' &&
+      enabledExternalMcp.length > 0
+    ) {
+      try {
+        opencodeConfigContent = buildOpenCodeMcpConfigContent(
+          enabledExternalMcp,
+          oauthTokensForSpawn,
+        );
+      } catch (err) {
+        console.warn(
+          '[mcp-config] failed to build OPENCODE_CONFIG_CONTENT:',
+          err && err.message ? err.message : err,
+        );
+      }
     }
 
     // Pre-flight the composed prompt against any argv-byte budget the
@@ -9506,13 +10197,31 @@ export async function startServer({
       return design.runs.finish(run, 'failed', 1, null);
     }
 
-    const send = (event, data) => design.runs.emit(run, event, data);
+    const send = (event, data) => {
+      persistRunEventToAssistantMessage(db, run, event, data);
+      design.runs.emit(run, event, data);
+    };
     const inactivityTimeoutMs = resolveChatRunInactivityTimeoutMs();
+    const artifactQuietPeriodMs = resolveChatRunArtifactQuietPeriodMs();
     const inactivityKillGraceMs = 3_000;
     let inactivityTimer = null;
     let childStdoutSeen = false;
     let lastAgentEventPhase = 'spawn pending';
     let lastToolResultChars = 0;
+    // Becomes true once any live-artifact create has been registered for
+    // this run. Subsequent watchdog scheduling uses the shorter quiet
+    // period, and a watchdog trip after this point is treated as
+    // "agent finished the deliverable and went idle" rather than
+    // "agent stalled with nothing to show" (issue #1451).
+    let artifactRegistered = false;
+    // Only daemon-initiated quiet-period termination should be treated
+    // as `succeeded` in the close handler. A later unrelated SIGTERM /
+    // SIGKILL (external `kill`, OOM, container shutdown) must keep its
+    // existing `failed` classification even when `artifactRegistered`
+    // is true — those signals don't mean the agent finished cleanly,
+    // they just terminated the process. Set strictly inside
+    // `failForInactivity`'s quiet-period branch.
+    let artifactQuietShutdownRequested = false;
     const summarizeAgentEventForInactivity = (payload) => {
       const type = payload?.type ? String(payload.type) : 'unknown';
       if (type === 'tool_result') {
@@ -9547,13 +10256,35 @@ export async function startServer({
     };
     const failForInactivity = () => {
       if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
+      clearInactivityWatchdog();
+      if (artifactRegistered) {
+        // The deliverable already exists. The agent process is either
+        // genuinely idle (claude-code's stream-json child sitting on an
+        // open stdin) or wedged in post-write reasoning that never
+        // emits stdout. Either way, finishing the run via the normal
+        // child-exit path (status decision in child.on('close') below)
+        // is safer than tearing it down with a failure banner — the
+        // tool token, cancel state, and exit-code classification stay
+        // owned by the existing lifecycle. SIGTERM the child and let
+        // the close handler classify the run as succeeded (via the
+        // artifactQuietShutdown branch). Mark this termination as
+        // daemon-initiated so an unrelated later signal (external
+        // kill, OOM) is NOT silently reclassified to `succeeded` —
+        // only signals from this watchdog branch should be.
+        artifactQuietShutdownRequested = true;
+        if (acpSession?.abort) {
+          acpSession.abort();
+        }
+        if (child && !child.killed) child.kill('SIGTERM');
+        scheduleForcedChildShutdown();
+        return;
+      }
       const message =
         `Agent stalled without emitting any new output for ${Math.round(inactivityTimeoutMs / 1000)}s. ` +
         'The model or CLI likely hung while generating. ' +
         `Phase details: spawned agent binary ${resolvedBin}; stdout arrived: ${childStdoutSeen ? 'yes' : 'no'}; ` +
         `last agent event: ${lastAgentEventPhase}; largest tool result observed: ${lastToolResultChars} chars. ` +
         'Retry the turn, pick a different model, or start a new conversation if the prior context is very large.';
-      clearInactivityWatchdog();
       send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', message, { retryable: true }));
       design.runs.finish(run, 'failed', 1, null);
       if (acpSession?.abort) {
@@ -9562,14 +10293,41 @@ export async function startServer({
       if (child && !child.killed) child.kill('SIGTERM');
       scheduleForcedChildShutdown();
     };
+    const activeInactivityTimeoutMs = () =>
+      resolveActiveInactivityTimeoutMs({
+        inactivityTimeoutMs,
+        artifactQuietPeriodMs,
+        artifactRegistered,
+      });
     const noteAgentActivity = () => {
-      if (inactivityTimeoutMs <= 0) return;
+      const delay = activeInactivityTimeoutMs();
+      if (delay <= 0) return;
       clearInactivityWatchdog();
-      inactivityTimer = setTimeout(failForInactivity, inactivityTimeoutMs);
+      inactivityTimer = setTimeout(failForInactivity, delay);
       inactivityTimer.unref?.();
     };
+    const noteArtifactRegistered = () => {
+      if (artifactRegistered) return;
+      artifactRegistered = true;
+      // Switch the watchdog to the shorter quiet-period window
+      // immediately so we don't have to wait for the next agent event
+      // before the new ceiling takes effect. Call unconditionally:
+      // an earlier `if (inactivityTimer)` gate left the run in limbo
+      // when `OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS=0` but
+      // `OD_CHAT_RUN_ARTIFACT_QUIET_PERIOD_MS>0` — noteAgentActivity()
+      // had returned early at run start (pre-artifact delay = 0,
+      // no timer set), so the guard then skipped the re-arm and the
+      // newly-positive quiet-period delay never armed a timer at all.
+      // `noteAgentActivity` itself is the one that decides whether to
+      // schedule (it bails when the active delay is 0), so leaving the
+      // decision there keeps the behavior coherent across all four
+      // combinations of pre / quiet timeouts.
+      noteAgentActivity();
+    };
     const unregisterChatAgentEventSink = () => {
-      activeChatAgentEventSinks.delete(toolTokenGrant?.runId ?? runId);
+      const sinkRunId = toolTokenGrant?.runId ?? runId;
+      activeChatAgentEventSinks.delete(sinkRunId);
+      activeChatRunHandles.delete(sinkRunId);
     };
     if (toolTokenGrant?.runId) {
       activeChatAgentEventSinks.set(toolTokenGrant.runId, (payload) => {
@@ -9577,6 +10335,7 @@ export async function startServer({
         noteAgentActivity();
         send('agent', payload);
       });
+      activeChatRunHandles.set(toolTokenGrant.runId, { noteArtifactRegistered });
     }
     // If detection can't find the binary, surface a friendly SSE error
     // pointing at /api/agents instead of silently falling back to
@@ -9648,6 +10407,19 @@ export async function startServer({
           configuredAgentEnv,
         ),
         ...odMediaEnv,
+        // OpenCode external-MCP injection (issue #2142). Layered AFTER
+        // spawnEnvForAgent / odMediaEnv / configuredAgentEnv so the
+        // daemon-built MCP config wins over a stale value the user
+        // might have exported in their shell — that would let an
+        // outdated content string suppress the user's freshly-saved
+        // MCP servers, which is exactly the bug we are fixing.
+        // `opencodeConfigContent === null` means "no enabled servers";
+        // we deliberately leave the env unset in that case so the
+        // user's saved `~/.config/opencode/opencode.json` continues
+        // to apply as-is.
+        ...(opencodeConfigContent
+          ? { OPENCODE_CONFIG_CONTENT: opencodeConfigContent }
+          : {}),
       }, agentLaunch);
       spawnedAgentEnv = env;
       const invocation = createCommandInvocation({
@@ -10195,13 +10967,13 @@ export async function startServer({
       const acpCleanCompletion =
         typeof acpSession?.completedSuccessfully === 'function' &&
         acpSession.completedSuccessfully();
-      const acpForcedShutdown =
-        code === null && signal === 'SIGTERM' && acpCleanCompletion;
-      const status = run.cancelRequested
-        ? 'canceled'
-        : code === 0 || acpForcedShutdown
-          ? 'succeeded'
-          : 'failed';
+      const status = classifyChatRunCloseStatus({
+        cancelRequested: !!run.cancelRequested,
+        code,
+        signal,
+        acpCleanCompletion,
+        artifactQuietShutdownRequested,
+      });
       if (status === 'failed') {
         const diagnostic = diagnoseClaudeCliFailure({
           agentId: def.id,
@@ -10384,7 +11156,7 @@ export async function startServer({
       const cwd = await ensureProject(PROJECTS_DIR, projectId);
       const result = await stageActiveSkill(
         cwd,
-        path.basename(template.dir),
+        skillCwdAliasSegment(template.dir),
         template.dir,
         (msg) => console.warn(msg),
       );
@@ -10472,11 +11244,11 @@ export async function startServer({
     //
     // Stage A of plugin-driven-flow-plan: when neither the body nor the
     // project carries plugin info we fall back to the bundled scenario
-    // plugin for the project's `metadata.kind` so direct callers (CLI /
-    // SDK / agent-headless runs) get the same auto-binding the web
-    // create flow already produces. The fallback is silent — a bundled
-    // scenario that is not installed leaves the run plugin-less, which
-    // matches the legacy path.
+    // plugin for the project's metadata kind/intent so direct callers
+    // (CLI / SDK / agent-headless runs) get the same auto-binding the
+    // web create flow already produces. The fallback is silent — a
+    // bundled scenario that is not installed leaves the run plugin-less,
+    // which matches the legacy path.
     let resolvedSnapshot = null;
     if (typeof req.body?.projectId === 'string' && req.body.projectId) {
       let registryView;
@@ -10494,9 +11266,7 @@ export async function startServer({
           typeof projectRow?.appliedPluginSnapshotId === 'string'
           && projectRow.appliedPluginSnapshotId.length > 0;
         if (!hasPin) {
-          const fallbackPluginId = defaultScenarioPluginIdForKind(
-            projectRow?.metadata?.kind,
-          );
+          const fallbackPluginId = defaultScenarioPluginIdForProjectMetadata(projectRow?.metadata);
           if (fallbackPluginId && getInstalledPlugin(db, fallbackPluginId)) {
             runResolveBody = { ...req.body, pluginId: fallbackPluginId };
           }
@@ -10536,6 +11306,24 @@ export async function startServer({
       }
     }
     const run = design.runs.create(meta);
+    try {
+      pinAssistantMessageOnRunCreate(db, run);
+    } catch (err) {
+      console.warn('[runs] message create pin failed', err);
+    }
+    // Capture clientType for downstream telemetry (Langfuse uses it on
+    // run-completed metadata; PostHog gets it via the request header
+    // bridge). Prefer the explicit `x-od-client` header from desktop /
+    // web sidecars, fall back to user-agent detection. Without this the
+    // run object's `clientType` stays undefined and Langfuse traces lose
+    // the surface dimension.
+    const declaredClient = String(req.get('x-od-client') ?? '').toLowerCase();
+    if (declaredClient === 'desktop' || declaredClient === 'web') {
+      run.clientType = declaredClient;
+    } else {
+      const ua = String(req.get('user-agent') ?? '');
+      run.clientType = ua.includes('Electron/') ? 'desktop' : 'web';
+    }
     if (resolvedSnapshot?.ok) {
       try {
         const { linkSnapshotToRun } = await import('./plugins/snapshots.js');
@@ -10574,6 +11362,173 @@ export async function startServer({
     }
     reconcileAssistantMessageOnRunEnd(db, design.runs, run);
     design.runs.start(run, () => startChatRun(meta, run));
+
+    // Analytics v2: emit run_created (daemon-side authoritative) and
+    // schedule run_finished on terminal state. The matching `chat-routes.ts`
+    // handler is shadowed by this earlier registration in Express; emit
+    // here so PostHog actually receives the event. Both fire under the
+    // same insert_id prefix so any web-side mirror dedupes by $insert_id.
+    const analyticsContext = readAnalyticsContext(req);
+    if (analyticsContext) {
+      const reqBody = (req.body || {}) as Record<string, unknown>;
+      const runInsertId = newInsertId();
+      const runStartedAt = Date.now();
+      // Configure-state triplet — v2 schema requires every event to carry
+      // these so PostHog dashboards can split run lifecycle by execution
+      // setup. Web-side captures inherit them from a PostHog global
+      // register, but daemon-side captures (run_created/run_finished) need
+      // to populate them at capture time. Best-effort derivation from
+      // `detectAgents()` + the request's `agentId`:
+      //   - has_available_configure_cli: any CLI on PATH appears installed
+      //   - configure_type: 'local_cli' when the run targets an installed
+      //     CLI, otherwise 'unknown' (BYOK keys live in the web client
+      //     storage and are not visible to the daemon at this layer)
+      //   - configure_availability: 'available' when the requested CLI is
+      //     installed; 'unavailable' when it's known but not installed;
+      //     'unknown' otherwise
+      const appCfgForAnalytics = await readAppConfig(RUNTIME_DATA_DIR).catch(
+        () => ({} as Record<string, unknown>),
+      );
+      const detectedAgentsForAnalytics = await detectAgents(
+        (appCfgForAnalytics as { agentCliEnv?: Record<string, unknown> }).agentCliEnv ?? {},
+      ).catch(() => [] as Array<{ id: string; available: boolean }>);
+      // BYOK credentials live in the web client (localStorage / store) and
+      // are not visible to the daemon at this layer, so we pass
+      // `byokConfigured: undefined` and let the helper fall back to the
+      // installed-CLI signal. Web-side captures use the same helper with
+      // the full credential view to keep dashboards aligned.
+      //
+      // `mode: 'daemon'` pins the call into the helper's daemon branch so
+      // `configure_availability` is judged from the requested agent's
+      // install status (not the cohort-wide "any CLI installed?" fallback).
+      // Without it, a run for an uninstalled agent would still report
+      // `available` whenever any unrelated CLI was on PATH — see PR #2285
+      // review.
+      const configureGlobals = deriveConfigureGlobals({
+        mode: 'daemon',
+        agentId: typeof reqBody.agentId === 'string' ? reqBody.agentId : null,
+        agents: detectedAgentsForAnalytics,
+      });
+      const promptText =
+        typeof reqBody.currentPrompt === 'string'
+          ? reqBody.currentPrompt
+          : typeof reqBody.message === 'string'
+            ? reqBody.message
+            : '';
+      const userQueryTokens = promptText.length > 0
+        ? Math.ceil(promptText.length / 4)
+        : 0;
+      // Only fields the current `/api/runs` create payload actually
+      // sends. The v2 schema documents extended context props
+      // (entry_from / project_kind / target_platforms / fidelity /
+      // companion_surfaces / connectors / use_speaker_notes /
+      // include_animations / reference_template / aspect /
+      // project_source) but `packages/contracts/src/api/chat.ts` and
+      // `apps/web/src/providers/daemon.ts` do not yet thread them onto
+      // the wire, so reading them here would always produce null/undef
+      // — better to omit until a follow-up extends the create payload.
+      const baseProps: Record<string, unknown> = {
+        page_name: 'chat_panel',
+        area: 'chat_composer',
+        ...configureGlobals,
+        project_id: typeof reqBody.projectId === 'string' ? reqBody.projectId : null,
+        conversation_id:
+          typeof reqBody.conversationId === 'string' ? reqBody.conversationId : null,
+        run_id: run.id,
+        design_system_id:
+          typeof reqBody.designSystemId === 'string'
+            ? reqBody.designSystemId
+            : undefined,
+        // `design_system_source` is required in the v2 contract
+        // (RunCreatedProps / RunFinishedProps). The daemon doesn't see
+        // whether the chosen design system was the workspace default,
+        // a user pick, or template-inherited — that signal lives only
+        // in the web client. Derive what we honestly know from the
+        // wire payload: 'not_applicable' when no design system was
+        // selected, 'unknown' otherwise. A follow-up that threads
+        // `designSystemSource` through `CreateRunRequest` can replace
+        // this with the precise value. See PR #2285 review 2026-05-20
+        // 04:35 for the rationale.
+        design_system_source:
+          typeof reqBody.designSystemId === 'string' && reqBody.designSystemId
+            ? 'unknown'
+            : 'not_applicable',
+        has_attachment: Array.isArray(reqBody.attachments)
+          ? (reqBody.attachments as unknown[]).length > 0
+          : false,
+        user_query_tokens: userQueryTokens,
+        model_id: typeof reqBody.model === 'string' ? reqBody.model : null,
+        agent_provider_id:
+          typeof reqBody.agentId === 'string'
+            ? agentIdToTracking(reqBody.agentId)
+            : null,
+        skill_id: typeof reqBody.skillId === 'string' ? reqBody.skillId : null,
+        mcp_id: null,
+        token_count_source: userQueryTokens > 0 ? 'estimated' : 'unknown',
+      };
+      design.analytics.capture({
+        eventName: 'run_created',
+        context: analyticsContext,
+        appVersion: design.getAppVersion(),
+        properties: baseProps,
+        insertId: runInsertId,
+      });
+      design.runs.wait(run).then((status: {
+        status: string;
+        error?: string | null;
+        errorCode?: string | null;
+        exitCode?: number | null;
+        signal?: string | null;
+      }) => {
+        // `deriveRunErrorCode` is the invariant: when `result === 'failed'`
+        // it always returns a non-empty string so dashboards keyed on
+        // `error_code` never see a blank cell. Live in `run-result.ts`
+        // with unit coverage for the fall-through cases (ACP fatal,
+        // child close without error event, etc.).
+        const result = runResultFromStatus(status.status);
+        const errorCode = deriveRunErrorCode(status);
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
+        for (let i = run.events.length - 1; i >= 0; i -= 1) {
+          const ev = run.events[i];
+          const data = ev?.data as
+            | { type?: string; usage?: Record<string, unknown> | null }
+            | null
+            | undefined;
+          if (ev?.event === 'agent' && data?.type === 'usage' && data.usage) {
+            const u = data.usage;
+            if (typeof u.input_tokens === 'number') inputTokens = u.input_tokens;
+            if (typeof u.output_tokens === 'number') outputTokens = u.output_tokens;
+            if (inputTokens !== undefined || outputTokens !== undefined) break;
+          }
+        }
+        const haveUsage = inputTokens !== undefined || outputTokens !== undefined;
+        const totalTokens =
+          inputTokens !== undefined && outputTokens !== undefined
+            ? inputTokens + outputTokens
+            : undefined;
+        design.analytics.capture({
+          eventName: 'run_finished',
+          context: analyticsContext,
+          appVersion: design.getAppVersion(),
+          properties: {
+            ...baseProps,
+            area: 'chat_panel',
+            result,
+            artifact_count: 0,
+            total_duration_ms: Date.now() - runStartedAt,
+            ...(errorCode ? { error_code: errorCode } : {}),
+            ...(inputTokens !== undefined ? { input_tokens: inputTokens } : {}),
+            ...(outputTokens !== undefined ? { output_tokens: outputTokens } : {}),
+            ...(totalTokens !== undefined ? { total_tokens: totalTokens } : {}),
+            ...(haveUsage ? { token_count_source: 'provider_usage' } : {}),
+          },
+          insertId: `${runInsertId}-finish`,
+        });
+      }).catch(() => {
+        // wait() can't reject in current runs.ts impl, but guard anyway.
+      });
+    }
   });
 
   app.get('/api/runs', (req, res) => {
@@ -10931,6 +11886,7 @@ export async function startServer({
     routines: { routineService },
     validation: validationDeps,
     finalize: finalizeDeps,
+    handoff: handoffDeps,
     chat: { startChatRun, submitToolResultToRun },
     agents: agentDeps,
     critique: critiqueDeps,
