@@ -12,6 +12,31 @@ const deckHtml = `<!doctype html>
   </body>
 </html>`;
 
+// A deck whose real content (diagram nodes, columns) lives several layers
+// below each slide, plus chrome divs that sit OUTSIDE any slide. Used to
+// prove the deck-aware annotator tags deep divs inside slide roots while
+// leaving non-slide layout wrappers alone.
+const deepDeckHtml = `<!doctype html>
+<html>
+  <head><title>Deck</title></head>
+  <body>
+    <div class="deck-shell">
+      <div class="deck-stage">
+        <section class="slide active" data-screen-label="01 Flywheel">
+          <div class="fw-wrap">
+            <div class="fw-diagram">
+              <div class="fw-node">Plan</div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="chrome-outer">
+        <div class="chrome-inner">Counter</div>
+      </div>
+    </div>
+  </body>
+</html>`;
+
 describe('buildSrcdoc', () => {
   it('injects an initial slide index for deck previews', () => {
     const doc = buildSrcdoc(deckHtml, { deck: true, initialSlideIndex: 2 });
@@ -346,5 +371,49 @@ describe('buildSrcdoc', () => {
     // Its direct-child divs are matched by [id] > div[class] / [id] > div[id]
     expect(srcdoc).toContain('<div class="content" data-od-id=');
     expect(srcdoc).toContain('<div id="named" data-od-id=');
+  });
+
+  // Regression: in a deck, every slide's real content is nested several
+  // layers below the <section class="slide">, so the conservative
+  // direct-child rule resolves every click to the whole slide. When the host
+  // has identified the artifact as a deck, class/id-bearing divs anywhere
+  // inside a slide root must become individually pickable.
+  it('annotates deeply nested divs inside deck slides so the picker can isolate them', () => {
+    const dom = new JSDOM('');
+    globalThis.DOMParser = dom.window.DOMParser;
+    const srcdoc = buildSrcdoc(deepDeckHtml, { deck: true, commentBridge: true });
+    Reflect.deleteProperty(globalThis, 'DOMParser');
+
+    // Direct-child slide div is annotated regardless (existing behavior).
+    expect(srcdoc).toContain('<div class="fw-wrap" data-od-id=');
+    // Deep diagram + node divs inside the slide now become pickable targets.
+    expect(srcdoc).toContain('<div class="fw-diagram" data-od-id=');
+    expect(srcdoc).toContain('<div class="fw-node" data-od-id=');
+  });
+
+  // Gate: the deep-div extension is deck-only. Without the deck flag the
+  // conservative direct-child rule still applies, so the same diagram/node
+  // divs stay unannotated to avoid layout noise on ordinary pages.
+  it('leaves the same deep slide divs unannotated when the artifact is not a deck', () => {
+    const dom = new JSDOM('');
+    globalThis.DOMParser = dom.window.DOMParser;
+    const srcdoc = buildSrcdoc(deepDeckHtml, { commentBridge: true });
+    Reflect.deleteProperty(globalThis, 'DOMParser');
+
+    expect(srcdoc).toContain('<div class="fw-wrap" data-od-id=');
+    expect(srcdoc).not.toContain('<div class="fw-diagram" data-od-id=');
+    expect(srcdoc).not.toContain('<div class="fw-node" data-od-id=');
+  });
+
+  // Scope: the deck rule is bounded to slide roots, not a blanket "annotate
+  // every deep div when the deck flag is on". Chrome that lives outside any
+  // slide must stay unannotated even in deck mode.
+  it('does not annotate deep divs outside slide roots even in deck mode', () => {
+    const dom = new JSDOM('');
+    globalThis.DOMParser = dom.window.DOMParser;
+    const srcdoc = buildSrcdoc(deepDeckHtml, { deck: true, commentBridge: true });
+    Reflect.deleteProperty(globalThis, 'DOMParser');
+
+    expect(srcdoc).not.toContain('<div class="chrome-inner" data-od-id=');
   });
 });

@@ -49,7 +49,7 @@ export function buildSrcdoc(
   </head>
   <body>${html}</body>
 </html>`;
-  const withOdIds = annotateMissingOdIds(wrapped);
+  const withOdIds = annotateMissingOdIds(wrapped, options.deck);
   const withSourcePaths = options.editBridge ? annotateManualEditSourcePaths(withOdIds) : withOdIds;
   const withBase = options.baseHref ? injectBaseHref(withSourcePaths, options.baseHref) : withSourcePaths;
   const withShim = injectSandboxShim(withBase);
@@ -491,7 +491,7 @@ function serializeHtmlDocument(doc: Document): string {
  * generated outside of Open Design and therefore carries no OD-specific
  * annotations.
  */
-function annotateMissingOdIds(doc: string): string {
+function annotateMissingOdIds(doc: string, deck = false): string {
   if (typeof DOMParser === 'undefined') return doc;
   try {
     const parsed = new DOMParser().parseFromString(doc, 'text/html');
@@ -514,17 +514,36 @@ function annotateMissingOdIds(doc: string): string {
     ].join(', ');
     const skipTags = new Set(['script', 'style', 'template', 'noscript', 'iframe', 'object', 'embed']);
     let fallbackIndex = 0;
-    parsed.body.querySelectorAll(selector).forEach((el) => {
+    const annotate = (el: Element) => {
       if (el.hasAttribute('data-od-id') || el.hasAttribute('data-screen-label')) return;
       const tag = el.tagName.toLowerCase();
       if (skipTags.has(tag)) return;
       const path = sourcePathForElement(el);
       el.setAttribute('data-od-id', path || `od-${tag}-${fallbackIndex++}`);
-    });
+    };
+    parsed.body.querySelectorAll(selector).forEach(annotate);
+    // Decks nest their real content (stat blocks, diagram nodes, columns)
+    // several layers below each slide, so the conservative direct-child rule
+    // above only ever tags the whole slide and the picker resolves every
+    // click to the enclosing <section class="slide">. When the host has
+    // identified this artifact as a deck, additionally tag every class/id
+    // div inside a slide root so inner divs become individually pickable.
+    // Scope stays inside slide roots, so non-slide layout wrappers elsewhere
+    // keep the conservative rule.
+    if (deck) annotateDeckSlideDivs(parsed, annotate);
     return serializeHtmlDocument(parsed);
   } catch {
     return doc;
   }
+}
+
+// Slide roots carry data-screen-label (the deck framework stamps every slide)
+// or a `slide` class. Within each, tag class/id-bearing divs at any depth so
+// the deck picker can isolate inner content instead of the whole slide.
+function annotateDeckSlideDivs(parsed: Document, annotate: (el: Element) => void): void {
+  parsed.body.querySelectorAll('[data-screen-label], .slide').forEach((root) => {
+    root.querySelectorAll('div[class], div[id]').forEach(annotate);
+  });
 }
 
 function injectManualEditBridge(doc: string): string {
