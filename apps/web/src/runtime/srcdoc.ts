@@ -151,6 +151,33 @@ export function canActivateSrcDocTransport(state: SrcDocActivationInputs): boole
   return true;
 }
 
+/**
+ * Decide whether a srcDoc transport iframe `load` event is a genuine shell
+ * remount that should clear the activation dedupe and re-activate.
+ *
+ * The lazy transport injects the artifact by doing
+ * `document.open()+write()+close()` inside the shell iframe. In Chromium the
+ * `close()` fires the iframe's `load` event a SECOND time, on the SAME
+ * contentWindow (the "echo"). The host's onLoad handler used to treat every
+ * load as a fresh shell and clear `activatedHtml` + re-activate; on the echo
+ * that posts another `transport-activate`, which writes again, which fires
+ * another load — an infinite ~15Hz loop that re-runs the artifact's bootstrap
+ * every cycle. For a deck whose script calls `show(0)` on init, that pins it
+ * to slide 1 and makes navigation impossible.
+ *
+ * A genuine remount (preview -> source -> preview, or a transport reset-key
+ * bump) replaces the iframe and yields a NEW contentWindow; the close() echo
+ * keeps the same one. Comparing window identity separates the two. A null
+ * loaded window is treated as "not a remount" so we never act on a detached
+ * frame.
+ */
+export function isSrcDocShellRemount(
+  prevWindow: unknown,
+  loadedWindow: unknown,
+): boolean {
+  return loadedWindow != null && loadedWindow !== prevWindow;
+}
+
 function injectSrcdocTransportActivationBridge(doc: string): string {
   const script = `<script data-od-srcdoc-transport-activation>(function(){
   window.addEventListener('message', function(ev){

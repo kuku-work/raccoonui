@@ -63,7 +63,7 @@ import {
   requestPreviewSnapshot,
 } from '../runtime/exports';
 import { buildReactComponentSrcdoc } from '../runtime/react-component';
-import { buildLazySrcdocTransport, buildSrcdoc, canActivateSrcDocTransport } from '../runtime/srcdoc';
+import { buildLazySrcdocTransport, buildSrcdoc, canActivateSrcDocTransport, isSrcDocShellRemount } from '../runtime/srcdoc';
 import {
   hasTweaksTemplate,
   hasUrlModeBridge,
@@ -3609,6 +3609,15 @@ function HtmlViewer({
   const urlPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const srcDocPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const activatedSrcDocTransportHtmlRef = useRef<string | null>(null);
+  // The contentWindow we last treated as a fresh transport shell. A lazy-shell
+  // `document.open()+write()+close()` fires the iframe's `load` event AGAIN on
+  // the SAME window (the close() echo). Without distinguishing that echo from a
+  // genuine remount, onLoad clears the activation dedupe and re-activates,
+  // which writes again, which fires another load — an infinite ~15Hz loop that
+  // re-runs the artifact bootstrap every cycle (e.g. resetting a deck to slide
+  // 1 so it can never be navigated). We compare contentWindow identity: a true
+  // remount yields a new window; the close() echo keeps the same one.
+  const lastShellWindowRef = useRef<Window | null>(null);
   const isActivePreviewIframeSource = useCallback((source: MessageEventSource | null) => {
     return !!source && source === iframeRef.current?.contentWindow;
   }, []);
@@ -6366,8 +6375,24 @@ function HtmlViewer({
                       onLoad={() => {
                         const frame = srcDocPreviewIframeRef.current;
                         if (!useUrlLoadPreview) iframeRef.current = frame;
-                        // Any srcDoc iframe load means we are talking to a
-                        // fresh document shell. Clear the activation dedupe so
+                        // Distinguish a genuine shell remount from the `load`
+                        // echo fired by our own document.open()+write()+close()
+                        // inside the lazy transport shell. The echo keeps the
+                        // SAME contentWindow; a real remount yields a new one.
+                        // Re-activating on the echo posts another transport-
+                        // activate -> writes again -> fires another load: an
+                        // infinite loop that re-runs the artifact bootstrap and,
+                        // for decks, resets slide position every cycle so the
+                        // deck can never be navigated. Skip everything but the
+                        // ready latch when the window is unchanged.
+                        const loadedWindow = frame?.contentWindow ?? null;
+                        if (!isSrcDocShellRemount(lastShellWindowRef.current, loadedWindow)) {
+                          if (useLazySrcDocTransport) setSrcDocShellReady(true);
+                          return;
+                        }
+                        lastShellWindowRef.current = loadedWindow;
+                        // A fresh shell load means we are talking to a new
+                        // document shell. Clear the activation dedupe so
                         // switching preview -> source -> preview cannot strand
                         // the new shell on the blank transport page.
                         activatedSrcDocTransportHtmlRef.current = null;
