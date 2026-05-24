@@ -49,6 +49,7 @@ export function buildSrcdoc(
   </head>
   <body>${html}</body>
 </html>`;
+  // RACCOONUI-PATCH: pass deck flag so deck previews get deep-div annotation — 2026-05-24
   const withOdIds = annotateMissingOdIds(wrapped, options.deck);
   const withSourcePaths = options.editBridge ? annotateManualEditSourcePaths(withOdIds) : withOdIds;
   const withBase = options.baseHref ? injectBaseHref(withSourcePaths, options.baseHref) : withSourcePaths;
@@ -522,6 +523,9 @@ function serializeHtmlDocument(doc: Document): string {
  * Tweaks) can target them. This fixes imported designs whose HTML was
  * generated outside of Open Design and therefore carries no OD-specific
  * annotations.
+ *
+ * RACCOONUI-PATCH: `deck` param added so deck previews additionally annotate
+ * deep slide divs via annotateDeckSlideDivs — 2026-05-24
  */
 function annotateMissingOdIds(doc: string, deck = false): string {
   if (typeof DOMParser === 'undefined') return doc;
@@ -554,6 +558,7 @@ function annotateMissingOdIds(doc: string, deck = false): string {
       el.setAttribute('data-od-id', path || `od-${tag}-${fallbackIndex++}`);
     };
     parsed.body.querySelectorAll(selector).forEach(annotate);
+    // RACCOONUI-PATCH: deck-aware deep-div annotation — 2026-05-24
     // Decks nest their real content (stat blocks, diagram nodes, columns)
     // several layers below each slide, so the conservative direct-child rule
     // above only ever tags the whole slide and the picker resolves every
@@ -569,6 +574,7 @@ function annotateMissingOdIds(doc: string, deck = false): string {
   }
 }
 
+// RACCOONUI-PATCH: fork-added deck helper, no upstream equivalent — 2026-05-24
 // Slide roots carry data-screen-label (the deck framework stamps every slide)
 // or a `slide` class. Within each, tag class/id-bearing divs at any depth so
 // the deck picker can isolate inner content instead of the whole slide.
