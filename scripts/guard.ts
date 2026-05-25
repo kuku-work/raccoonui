@@ -65,6 +65,7 @@ const residualAllowedExactPaths = new Set([
   "packages/agui-adapter/esbuild.config.mjs",
   "packages/contracts/esbuild.config.mjs",
   "packages/diagnostics/esbuild.config.mjs",
+  "packages/download/esbuild.config.mjs",
   "packages/host/esbuild.config.mjs",
   "packages/platform/esbuild.config.mjs",
   "packages/plugin-runtime/esbuild.config.mjs",
@@ -88,8 +89,6 @@ const residualAllowedExactPaths = new Set([
   "tools/dev/esbuild.config.mjs",
   "tools/pack/bin/tools-pack.mjs",
   "tools/pack/esbuild.config.mjs",
-  "tools/pr/bin/tools-pr.mjs",
-  "tools/pr/esbuild.config.mjs",
   "tools/serve/bin/tools-serve.mjs",
   "tools/serve/esbuild.config.mjs",
   "tools/pack/resources/mac/notarize.cjs",
@@ -605,7 +604,6 @@ const toolsRootAllowlist = new Map<string, "directory" | "file">([
   ["AGENTS.md", "file"],
   ["dev", "directory"],
   ["pack", "directory"],
-  ["pr", "directory"],
   // RACCOONUI-PATCH: daily upstream-audit script lives here — 2026-05-07
   ["raccoonui", "directory"],
   ["serve", "directory"],
@@ -622,7 +620,7 @@ async function checkToolsLayout(): Promise<boolean> {
     const repositoryPath = `tools/${entry.name}${entry.isDirectory() ? "/" : ""}`;
 
     if (expected == null) {
-      violations.push(`${repositoryPath} -> tools/ top-level entries are allowlisted; expected only AGENTS.md, dev/, pack/, pr/, raccoonui/, and serve/`);
+      violations.push(`${repositoryPath} -> tools/ top-level entries are allowlisted; expected only AGENTS.md, dev/, pack/, raccoonui/, and serve/`);
       continue;
     }
 
