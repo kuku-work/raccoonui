@@ -1,0 +1,117 @@
+/* ============================================================
+   RACCOONUI-PATCH: fork-owned styles — 2026-05-30
+   Upstream PR #2609 split global CSS by ownership (index.css is now
+   an @import manifest). Fork-specific CSS lives here so future upstream
+   CSS refactors no longer collide with fork additions. Imported last
+   from index.css. Three blocks, all fork-only selectors:
+     1. per-project git section (Settings)            — 2026-05-04
+     2. new-project slug input                         — 2026-05-04
+     3. untagged-doc warning banner over the preview   — 2026-05-08
+   ============================================================ */
+
+/* RACCOONUI-PATCH: per-project git section — 2026-05-04 */
+.project-git-section .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.project-git-feedback {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+.project-git-feedback.ok { background: var(--bg-subtle); color: var(--text-default); }
+.project-git-feedback.err { background: rgba(220, 50, 50, 0.08); color: var(--danger, #d33); border-color: var(--danger, #d33); }
+.project-git-uninit { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.project-git-status {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.project-git-status > div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); }
+.project-git-status dt { margin: 0; font-size: 10.5px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.project-git-status dd { margin: 0; font-size: 12.5px; color: var(--text-default); }
+.project-git-commit { display: flex; flex-direction: column; gap: 6px; }
+.project-git-commit label { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.project-git-commit textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.project-git-row-actions { display: flex; gap: 8px; }
+.project-git-history { display: flex; flex-direction: column; gap: 8px; }
+.project-git-history h4 { margin: 0; font-size: 12.5px; font-weight: 600; }
+.project-git-history ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.project-git-history li {
+  display: grid;
+  grid-template-columns: 70px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.project-git-history li .hash code { font-size: 11px; color: var(--text-muted); }
+.project-git-history li .msg { color: var(--text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-git-history li .meta { color: var(--text-muted); font-size: 10.5px; white-space: nowrap; }
+.project-git-history li button.small { padding: 4px 8px; font-size: 11px; }
+
+/* RACCOONUI-PATCH: new-project slug input — 2026-05-04 */
+.newproj-slug-field { display: flex; flex-direction: column; gap: 4px; }
+.newproj-slug { width: 100%; height: 30px; padding: 0 10px; font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.newproj-slug.invalid { border-color: var(--danger, #d33); }
+.newproj-slug-hint { margin: 0; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, monospace); }
+.newproj-slug-error { margin: 0; font-size: 11px; color: var(--danger, #d33); }
+
+/* RACCOONUI-PATCH: untagged-doc warning shown over the preview when
+   Tweaks is on but no [data-od-id] anchors were found — 2026-05-08 */
+.board-untagged-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  max-width: 480px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: 0 6px 18px hsl(0 0% 0% / 0.12);
+  pointer-events: none;
+  text-align: center;
+}
+.board-untagged-banner strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.board-untagged-banner span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.board-untagged-banner-btn {
+  justify-self: center;
+  margin-top: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.board-untagged-banner-btn:hover:not(:disabled) {
+  background: var(--bg-emphasis);
+}
+.board-untagged-banner-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.board-untagged-banner-result {
+  font-size: 11px;
+}
+.board-untagged-banner-result-ok {
+  color: var(--text);
+}
+.board-untagged-banner-result-noop,
+.board-untagged-banner-result-err {
+  color: var(--text-muted);
+}
