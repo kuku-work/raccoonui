@@ -242,6 +242,10 @@ export function defaultDesignSystemSelection(
     : [];
 }
 
+function isSelectableProjectDesignSystem(system: DesignSystemSummary): boolean {
+  return system.status !== 'draft';
+}
+
 export function buildDesignSystemCreateSelection(
   showDesignSystemPicker: boolean,
   selectedIds: string[],
@@ -312,9 +316,13 @@ export function NewProjectPanel({
   // Design-system selection is now an *array* internally so the same
   // component can drive both single-select and multi-select modes without
   // duplicating state. Single-select coerces to length 0/1.
+  const selectableDesignSystems = useMemo(
+    () => designSystems.filter(isSelectableProjectDesignSystem),
+    [designSystems],
+  );
   const initialDefaultDsSelection = useMemo(
-    () => defaultDesignSystemSelection(defaultDesignSystemId, designSystems),
-    [defaultDesignSystemId, designSystems],
+    () => defaultDesignSystemSelection(defaultDesignSystemId, selectableDesignSystems),
+    [defaultDesignSystemId, selectableDesignSystems],
   );
   const [selectedDsIds, setSelectedDsIds] = useState<string[]>(
     () => initialDefaultDsSelection,
@@ -412,7 +420,7 @@ export function NewProjectPanel({
     if (!primary) return;
     if (autoSelectFiredForRef.current === primary) return;
     autoSelectFiredForRef.current = primary;
-    const picked = designSystems.find((d) => d.id === primary);
+    const picked = selectableDesignSystems.find((d) => d.id === primary);
     trackDesignSystemApplyResult(analytics.track, {
       page_name: 'home',
       area: 'design_system_picker',
@@ -431,9 +439,9 @@ export function NewProjectPanel({
     });
   }, [
     analytics.track,
-    designSystems,
     dsSelectionTouched,
     initialDefaultDsSelection,
+    selectableDesignSystems,
     showDesignSystemPicker,
     tab,
   ]);
@@ -854,10 +862,11 @@ export function NewProjectPanel({
         <div className="newproj-working-dir-row">
           <button
             type="button"
-            className={`ghost newproj-working-dir${workingDir ? ' picked' : ''}`}
+            className={`ghost newproj-working-dir od-tooltip${workingDir ? ' picked' : ''}`}
             onClick={() => void handlePickWorkingDir()}
             disabled={workingDirPicking}
             title={workingDir ?? t('workingDirPicker.homeTitle')}
+            data-tooltip={workingDir ?? t('workingDirPicker.homeTitle')}
           >
             <Icon name="folder" size={13} />
             <span>
@@ -906,7 +915,7 @@ export function NewProjectPanel({
 
         {showDesignSystemPicker ? (
           <DesignSystemPicker
-            designSystems={designSystems}
+            designSystems={selectableDesignSystems}
             defaultDesignSystemId={defaultDesignSystemId}
             selectedIds={selectedDsIds}
             multi={dsMulti}
@@ -1194,7 +1203,7 @@ function PlatformPicker({
 
   return (
     <div
-      className="newproj-section ds-picker platform-picker"
+      className={`newproj-section ds-picker platform-picker${open ? ' open' : ''}`}
       ref={wrapRef}
     >
       <label className="newproj-label">Target platforms</label>
@@ -2133,7 +2142,11 @@ function DesignSystemPicker({
   }
 
   return (
-    <div className="newproj-section ds-picker" data-testid="design-system-picker" ref={wrapRef}>
+    <div
+      className={`newproj-section ds-picker${open ? ' open' : ''}`}
+      data-testid="design-system-picker"
+      ref={wrapRef}
+    >
       <label className="newproj-label">{t('newproj.designSystem')}</label>
       <button
         type="button"

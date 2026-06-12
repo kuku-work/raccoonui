@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { checkCrossAppImports } from "./check-cross-app-imports.ts";
 import { checkDesignSystemManifests } from "./check-design-system-manifests.ts";
 import { checkDesignSystemPackageQuality } from "./check-design-system-package-quality.ts";
 import { checkDesignSystemComponentFixtureReport } from "./check-components-fixtures.ts";
@@ -24,6 +25,7 @@ const allowedE2eScripts = new Set([
   // RACCOONUI-PATCH: raccoonui contract suite invoked from the daily
   // upstream-audit cron — 2026-05-06
   "e2e/scripts/raccoonui-protocol.e2e.live.test.ts",
+  "e2e/scripts/ui-p0-shards.ts",
   "e2e/scripts/visual-report.ts",
 ]);
 
@@ -68,6 +70,7 @@ const residualAllowedExactPaths = new Set([
   "packages/diagnostics/esbuild.config.mjs",
   "packages/download/esbuild.config.mjs",
   "packages/host/esbuild.config.mjs",
+  "packages/launcher-proto/esbuild.config.mjs",
   "packages/metatool/esbuild.config.mjs",
   "packages/platform/esbuild.config.mjs",
   "packages/plugin-runtime/esbuild.config.mjs",
@@ -86,6 +89,10 @@ const residualAllowedExactPaths = new Set([
   // PostCSS loads Tailwind through a web-local .mjs compatibility config entry.
   "apps/web/postcss.config.mjs",
   "scripts/bake-html-ppt-examples.mjs",
+  // CI-only plugin-preview renderer. Kept .mjs and run directly by Node so its
+  // runtime deps (puppeteer-core + a headless Chrome + ffmpeg) are provided by
+  // the CI environment and never pulled into the daemon/web TS build or bundle.
+  "scripts/bake-plugin-previews.mjs",
   "scripts/scaffold-html-ppt-skills.mjs",
   "scripts/sync-hyperframes-skill.mjs",
   "scripts/verify-media-models.mjs",
@@ -1064,6 +1071,7 @@ const checks: GuardCheck[] = [
   { name: "residual JavaScript", run: checkResidualJavaScript },
   { name: "package dependency specs", run: checkPackageDependencySpecs },
   { name: "product neutrality", run: checkProductNeutrality },
+  { name: "cross-app imports", run: checkCrossAppImports },
   { name: "test layout", run: checkTestLayout },
   { name: "e2e layout", run: checkE2eLayout },
   { name: "web test layout", run: checkWebTestLayout },
