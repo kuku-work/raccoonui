@@ -1,0 +1,437 @@
+#!/usr/bin/env node
+/**
+ * RaccoonUI — Daily upstream AUTO-SYNC orchestrator
+ *
+ * Schedule: cron `0 6 * * *` (Asia/Taipei) via slack-bot/jobs.json shellPipeline.
+ * Run with: `node --experimental-strip-types tools/raccoonui/upstream-sync.ts`
+ *   (Node 24 native TS stripping — no tsx needed; TS-first per AGENTS.md.)
+ *
+ * What it does, in order:
+ *   1. Preflight — refuse to run unless on `dev`, working tree clean, daemon not running.
+ *   2. git fetch upstream; compute commits ahead.
+ *   3. Analyze the delta: auto-flag surfaces, suspicious diff content, MAJOR dep bumps,
+ *      and a merge-tree dry-run for textual conflict scope.
+ *   4. GATE — auto-merge is eligible ONLY when ALL hold:
+ *        - zero textual conflicts
+ *        - no suspicious diff content (child_process / unknown network / secrets)
+ *        - no major web-framework / native dep bump (express, path-to-regexp, next,
+ *          react, electron, better-sqlite3) — the express-4→5 class of landmine that
+ *          passes typecheck but breaks at runtime.
+ *      Otherwise: write a sync log, post a 🚨 "needs human decision" line, do NOT merge.
+ *   5. Merge (--no-commit) → caller-graph health check on fork patches (the silent-breakage
+ *      guard: upstream rewrites a region, git takes upstream's copy, a fork callsite vanishes
+ *      with no conflict). If a fork invariant is gone → abort + escalate.
+ *   6. Commit merge → normalize line endings to LF (defensive) → pnpm install.
+ *   7. TDD: pnpm typecheck + pnpm guard.   BDD: raccoonui protocol e2e (live daemon).
+ *   8. All green → ff `main` to the merge commit, push `dev` + `main`.
+ *      Any failure → hard-reset `dev` to the pre-merge SHA (rollback) + escalate.
+ *
+ * Escalation channel: stdout. The cron `delivery.to` is #design-engineering (C0AN3U2G49J),
+ * so every status line — success or 🚨 — lands there. ALWAYS exits 0; status is the icon,
+ * never a crashed cron job. The single exception (preflight dirty/wrong-branch) also exits 0.
+ *
+ * Zero external deps: node built-ins + git + pnpm only (matches upstream-audit.mjs).
+ */
+
+import { spawnSync } from 'node:child_process';
+import { connect } from 'node:net';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const FORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const AUDIT_DIR = resolve(FORK_ROOT, 'audit-logs');
+
+// Local-date label (toISOString is UTC and can drift the day at 06:00 TPE).
+const TODAY = (() => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+})();
+
+const WORK_BRANCH = 'dev';
+const RELEASE_BRANCH = 'main';
+const DAEMON_PORT = 17456; // raccoonui daemon; if listening, the tool is in use → skip.
+
+// --dry-run: preflight + fetch + analyze + gate decision, then stop before ANY mutation.
+// Lets a human (or this validation) see what the daily run would do without merging/pushing.
+const DRY_RUN = process.argv.includes('--dry-run');
+
+// Major deps whose version bump = manual-review red flag (runtime-breaking class that
+// typecheck cannot see: routers, web framework, native bindings).
+const MAJOR_DEPS = [
+  'express',
+  'path-to-regexp',
+  'next',
+  'react',
+  'react-dom',
+  'electron',
+  'better-sqlite3',
+];
+
+// Per-file fork invariants. Each MUST still match after the merge, else a fork patch was
+// silently dropped by an upstream rewrite. Anchored on the live caller-graph, not markers.
+const FORK_INVARIANTS: Array<{ file: string; rx: RegExp; desc: string }> = [
+  { file: 'apps/web/src/App.tsx', rx: /pickDefaultDesignSystemId/, desc: 'picker default = raccoonai' },
+  { file: 'apps/daemon/src/server.ts', rx: /\/api\/raccoonui\//, desc: 'raccoonui daemon namespace' },
+  { file: 'apps/daemon/src/server.ts', rx: /\*splat\/retag-anchors/, desc: 'retag-anchors express5-safe splat route' },
+  { file: 'apps/daemon/src/project-routes.ts', rx: /writeProjectMetadata/, desc: 'project metadata sidecar hook' },
+  { file: 'apps/web/src/components/FileViewer.tsx', rx: /handleRetagAnchors/, desc: 'FileViewer retag handler' },
+  { file: 'apps/web/src/runtime/srcdoc.ts', rx: /annotateDeckSlideDivs/, desc: 'deck deep-div annotate' },
+  { file: 'scripts/guard.ts', rx: /raccoonui/, desc: 'guard raccoonui allowlist' },
+  { file: 'apps/web/src/index.css', rx: /raccoonui\.css/, desc: 'fork CSS import' },
+];
+
+// Suspicious diff content — scanned on flagged + review files only.
+const CONTENT_RX: RegExp[] = [
+  /^\+.*\b(child_process|execSync|spawnSync|spawn|exec)\b/m,
+  /^\+.*\b(fetch|axios|got|undici)\s*\(\s*['"`]https?:\/\/(?!localhost|127\.0\.0\.1|api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com)/im,
+  /^\+.*[A-Za-z_]*[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]\s*[:=]\s*['"`][A-Za-z0-9_\-]{16,}/m,
+  /^\+.*BEGIN (RSA |OPENSSH )?PRIVATE KEY/m,
+];
+
+const AUTO_FLAG_PATH = [
+  /^package\.json$/,
+  /\/package\.json$/,
+  /^pnpm-lock\.yaml$/,
+  /^\.github\/workflows\//,
+  /\.(pre|post)install\.(js|mjs|cjs|sh|ps1)$/i,
+  /^\.npmrc$/,
+  /^\.yarnrc/,
+  /\.env(\..+)?$/,
+];
+
+// ── git / shell helpers ──────────────────────────────────────────
+
+// Pin autocrlf=input on every git call: this is an LF repo, and on Windows a default
+// autocrlf=true smudges checked-out files to CRLF, which then fails LF-only guard checks
+// and CRLF-sensitive tests. input = commit normalizes to LF, checkout writes blob bytes.
+function git(args: string[], opts: { timeout?: number; allowFail?: boolean } = {}): string {
+  const r = spawnSync('git', ['-c', 'core.autocrlf=input', ...args], {
+    cwd: FORK_ROOT,
+    encoding: 'utf8',
+    timeout: opts.timeout ?? 60_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (r.error) {
+    if (opts.allowFail) return '';
+    throw new Error(`git ${args.join(' ')} error: ${r.error.message}`);
+  }
+  if (r.status !== 0) {
+    if (opts.allowFail) return '';
+    throw new Error(`git ${args.join(' ')} exit ${r.status}: ${(r.stderr || '').trim()}`);
+  }
+  return (r.stdout || '').trim();
+}
+
+// Run a pnpm/long command through a shell (Windows corepack shim + cron PATH parity).
+function sh(cmd: string, timeoutMs: number): { ok: boolean; tail: string } {
+  const r = spawnSync(cmd, {
+    cwd: FORK_ROOT,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    shell: true,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, PYTHONUTF8: '1' },
+  });
+  const out = (r.stdout || '') + (r.stderr || '');
+  const ok = !r.error && r.status === 0;
+  return { ok, tail: out.split('\n').slice(-40).join('\n') };
+}
+
+function portOpen(port: number): Promise<boolean> {
+  return new Promise((res) => {
+    const s = connect({ host: '127.0.0.1', port });
+    const done = (v: boolean) => { s.destroy(); res(v); };
+    s.setTimeout(800);
+    s.once('connect', () => done(true));
+    s.once('timeout', () => done(false));
+    s.once('error', () => done(false));
+  });
+}
+
+// ── analysis ─────────────────────────────────────────────────────
+
+function detectMajorDepBump(range: string): string[] {
+  const lockDiff = git(['diff', range, '--', 'pnpm-lock.yaml'], { allowFail: true });
+  if (!lockDiff) return [];
+  const hits = new Set<string>();
+  for (const dep of MAJOR_DEPS) {
+    // pnpm lock entries look like `  express@5.0.0:` or `/express@4.18.2`. A removed (-) AND
+    // added (+) major-different version for the same dep = a bump worth a human eye.
+    const added = [...lockDiff.matchAll(new RegExp(`^\\+.*[\\/@]${dep}@(\\d+)\\.`, 'gm'))].map((m) => m[1]);
+    const removed = [...lockDiff.matchAll(new RegExp(`^-.*[\\/@]${dep}@(\\d+)\\.`, 'gm'))].map((m) => m[1]);
+    if (added.length && removed.length && added.some((a) => !removed.includes(a))) {
+      hits.add(`${dep} (major ${[...new Set(removed)].join('/')} → ${[...new Set(added)].join('/')})`);
+    }
+  }
+  return [...hits];
+}
+
+function scanSuspiciousContent(files: string[], range: string): string[] {
+  const flagged: string[] = [];
+  for (const f of files) {
+    const diff = git(['diff', range, '--', f], { allowFail: true });
+    if (!diff) continue;
+    if (CONTENT_RX.some((rx) => rx.test(diff))) flagged.push(f);
+  }
+  return flagged;
+}
+
+// merge-tree --write-tree: exit 0 = clean auto-merge; non-zero = conflicts (lists files).
+function mergeTreeConflicts(mergeBase: string): { clean: boolean; files: string[] } {
+  const r = spawnSync(
+    'git',
+    ['-c', 'core.autocrlf=input', 'merge-tree', '--write-tree', `--merge-base=${mergeBase}`, WORK_BRANCH, `upstream/${RELEASE_BRANCH}`],
+    { cwd: FORK_ROOT, encoding: 'utf8', timeout: 120_000, maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (r.status === 0) return { clean: true, files: [] };
+  const out = (r.stdout || '') + (r.stderr || '');
+  const files = [...out.matchAll(/^(?:CONFLICT.*?: |.*both .*: )?(\S+\.\S+)$/gm)]
+    .map((m) => m[1])
+    .filter((v, i, a) => a.indexOf(v) === i);
+  return { clean: false, files };
+}
+
+function callerGraphHealth(): string[] {
+  const problems: string[] = [];
+  for (const inv of FORK_INVARIANTS) {
+    const body = git(['show', `HEAD:${inv.file}`], { allowFail: true });
+    if (!body) { problems.push(`${inv.file}: file missing`); continue; }
+    if (!inv.rx.test(body)) problems.push(`${inv.file}: lost "${inv.desc}"`);
+  }
+  // Express 5 safety: no bare `*` wildcard route may exist (path-to-regexp v8 rejects it).
+  const server = git(['show', `HEAD:apps/daemon/src/server.ts`], { allowFail: true });
+  if (server && /app\.(get|post|put|delete|patch)\(\s*['"`][^'"`]*\/\*['"`/]/.test(server) &&
+      !/\*splat/.test(server.match(/app\.\w+\(\s*['"`][^'"`]*\/\*['"`/][^\n]*/)?.[0] ?? '')) {
+    problems.push('server.ts: bare "*" route reintroduced (express5 path-to-regexp v8 will throw)');
+  }
+  return problems;
+}
+
+// Defensive LF normalization: if any tracked file landed CRLF in the working tree (Windows
+// autocrlf), guard/e2e on LF-only assertions will fail spuriously. Rewrite them to LF.
+function normalizeLineEndings(): number {
+  const eol = git(['ls-files', '--eol'], { allowFail: true });
+  const crlf = eol.split('\n').filter((l) => l.includes('w/crlf')).map((l) => l.split('\t').pop()!).filter(Boolean);
+  if (!crlf.length) return 0;
+  // Delete then checkout forces git to re-materialize from index as LF (autocrlf=input smudge
+  // is identity, so a plain checkout of "already-matching" files is a no-op without the rm).
+  for (const f of crlf) git(['rm', '-f', '--', f], { allowFail: true });
+  git(['checkout', '--', '.'], { allowFail: true });
+  return crlf.length;
+}
+
+// ── reporting ────────────────────────────────────────────────────
+
+function writeLog(name: string, body: string): void {
+  mkdirSync(AUDIT_DIR, { recursive: true });
+  writeFileSync(resolve(AUDIT_DIR, name), body);
+}
+
+function emit(line: string): void {
+  // Each console.log line is streamed to Slack #design-engineering by the cron runner.
+  console.log(line);
+}
+
+// ── main ─────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  // 1) Preflight — never clobber a human mid-work.
+  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
+  if (branch !== WORK_BRANCH) {
+    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: on \`${branch || '?'}\`, not \`${WORK_BRANCH}\`. No action.`);
+    return;
+  }
+  // Only TRACKED modifications block: a merge/checkout can clobber WIP edits, but stray
+  // untracked files (logs, scratch, an uncommitted tool) are not the cron's concern.
+  const dirty = git(['status', '--porcelain', '--untracked-files=no'], { allowFail: true });
+  if (dirty) {
+    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: ${dirty.split('\n').length} tracked file(s) modified. Manual state, leaving untouched.`);
+    return;
+  }
+  if (await portOpen(DAEMON_PORT)) {
+    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: raccoonui daemon is running (:${DAEMON_PORT}). Won't disrupt an active session.`);
+    return;
+  }
+
+  // 2) Fetch + delta.
+  if (!git(['remote'], { allowFail: true }).split('\n').includes('upstream')) {
+    emit(`🚨 *Upstream Sync ${TODAY}* — 'upstream' remote not configured. Manual fix required.`);
+    return;
+  }
+  git(['fetch', 'upstream', '--quiet'], { timeout: 180_000 });
+  const mergeBase = git(['merge-base', WORK_BRANCH, `upstream/${RELEASE_BRANCH}`]);
+  const tip = git(['rev-parse', `upstream/${RELEASE_BRANCH}`]);
+  const range = `${mergeBase}..upstream/${RELEASE_BRANCH}`;
+  const ahead = Number(git(['rev-list', '--count', range]) || '0');
+  if (ahead === 0) {
+    emit(`🟢 *Upstream Sync ${TODAY}* — 0 commits ahead. Already current.`);
+    return;
+  }
+
+  // 3) Analyze.
+  const files = git(['diff', '--name-only', range], { allowFail: true }).split('\n').filter(Boolean);
+  const flagged = files.filter((f) => AUTO_FLAG_PATH.some((rx) => rx.test(f)));
+  const suspicious = scanSuspiciousContent([...flagged, ...files.filter((f) => !flagged.includes(f))].slice(0, 400), range);
+  const depBumps = detectMajorDepBump(range);
+  const conflicts = mergeTreeConflicts(mergeBase);
+  const forkTouched = [...new Set(FORK_INVARIANTS.map((i) => i.file))].filter((f) => files.includes(f));
+
+  const blockers: string[] = [];
+  if (!conflicts.clean) blockers.push(`textual conflicts (${conflicts.files.length}): ${conflicts.files.slice(0, 6).join(', ')}`);
+  if (depBumps.length) blockers.push(`major dep bump: ${depBumps.join('; ')}`);
+  if (suspicious.length) blockers.push(`suspicious diff content: ${suspicious.slice(0, 6).join(', ')}`);
+
+  const shortBase = mergeBase.slice(0, 9);
+  const shortTip = tip.slice(0, 9);
+
+  if (DRY_RUN) {
+    const verdict = blockers.length
+      ? `🚨 would ESCALATE (no merge):\n${blockers.map((b) => `  • ${b}`).join('\n')}`
+      : `✅ would AUTO-MERGE → caller-graph health → TDD (typecheck+guard) → BDD (protocol e2e) → ff main + push`;
+    emit([
+      `🔎 *Upstream Sync ${TODAY}* — DRY RUN — ${ahead} commits ahead (\`${shortBase}..${shortTip}\`)`,
+      `auto-flagged: ${flagged.length} | suspicious: ${suspicious.length} | dep-bumps: ${depBumps.length} | conflicts: ${conflicts.clean ? 0 : conflicts.files.length}`,
+      forkTouched.length ? `fork-patch files in delta: ${forkTouched.join(', ')}` : 'fork-patch files in delta: (none)',
+      verdict,
+    ].join('\n'));
+    return;
+  }
+
+  // 4) GATE.
+  if (blockers.length) {
+    const log = [
+      `# Upstream Sync — ${TODAY} (BLOCKED, needs human decision)`,
+      ``,
+      `Range: \`${shortBase}..${shortTip}\` (${ahead} commits)`,
+      ``,
+      `## Why auto-merge was withheld`,
+      ...blockers.map((b) => `- ${b}`),
+      ``,
+      `## Surfaces`,
+      `- auto-flagged paths: ${flagged.length ? flagged.join(', ') : '(none)'}`,
+      `- fork-patch files touched: ${forkTouched.length ? forkTouched.join(', ') : '(none)'}`,
+      ``,
+      `## Next step (manual)`,
+      '```bash',
+      `cd ${FORK_ROOT}`,
+      `git fetch upstream && git merge upstream/${RELEASE_BRANCH}   # resolve, then TDD/BDD before ff main`,
+      '```',
+      ``,
+    ].join('\n');
+    writeLog(`sync-${TODAY}.md`, log);
+    const lines = [
+      `🚨 *Upstream Sync ${TODAY}* — ${ahead} commits ahead, **needs human decision** (not merged)`,
+      ...blockers.map((b) => `  • ${b}`),
+    ];
+    if (forkTouched.length) lines.push(`  • fork-patch files in delta: ${forkTouched.join(', ')}`);
+    lines.push(`📄 \`audit-logs/sync-${TODAY}.md\` — resolve, then merge + TDD/BDD manually.`);
+    emit(lines.join('\n'));
+    return;
+  }
+
+  // 5) Merge (no-commit) + caller-graph health.
+  const preMerge = git(['rev-parse', 'HEAD']);
+  const mergeRun = spawnSync('git', ['-c', 'core.autocrlf=input', 'merge', '--no-commit', '--no-ff', `upstream/${RELEASE_BRANCH}`], {
+    cwd: FORK_ROOT, encoding: 'utf8', timeout: 120_000, maxBuffer: 64 * 1024 * 1024,
+  });
+  const unmerged = git(['diff', '--name-only', '--diff-filter=U'], { allowFail: true });
+  if (mergeRun.status !== 0 || unmerged) {
+    git(['merge', '--abort'], { allowFail: true });
+    emit(`🚨 *Upstream Sync ${TODAY}* — merge-tree said clean but \`git merge\` conflicted (${unmerged.split('\n').filter(Boolean).length} files). Aborted. Manual review.`);
+    return;
+  }
+  const health = callerGraphHealth();
+  if (health.length) {
+    git(['merge', '--abort'], { allowFail: true });
+    const lines = [
+      `🚨 *Upstream Sync ${TODAY}* — fork-patch caller-graph regression, merge aborted (not committed):`,
+      ...health.map((p) => `  • ${p}`),
+      `These survived a *clean* merge but lost their callsite — needs manual re-injection.`,
+    ];
+    writeLog(`sync-${TODAY}.md`, `# Upstream Sync — ${TODAY} (ABORTED: fork patch regression)\n\n${health.map((p) => `- ${p}`).join('\n')}\n`);
+    emit(lines.join('\n'));
+    return;
+  }
+
+  // 6) Commit + normalize + install.
+  git(['commit', '-m', `[raccoonui] chore(merge): sync upstream/${RELEASE_BRANCH} ${shortBase}..${shortTip} (${ahead} commits)`]);
+  const mergeCommit = git(['rev-parse', 'HEAD']);
+  const normalized = normalizeLineEndings();
+
+  const rollback = (why: string, detail: string) => {
+    git(['checkout', WORK_BRANCH], { allowFail: true });
+    git(['reset', '--hard', preMerge], { allowFail: true });
+    writeLog(`sync-${TODAY}.md`, `# Upstream Sync — ${TODAY} (ROLLED BACK)\n\nRange: \`${shortBase}..${shortTip}\` (${ahead} commits)\nFailed at: ${why}\n\n\`\`\`\n${detail}\n\`\`\`\n`);
+    emit([
+      `🚨 *Upstream Sync ${TODAY}* — merged ${ahead} commits but **${why} failed**, rolled \`dev\` back to \`${preMerge.slice(0, 9)}\` (not pushed).`,
+      `Last output:`,
+      '```',
+      detail,
+      '```',
+      `📄 \`audit-logs/sync-${TODAY}.md\` — fix locally, then re-run.`,
+    ].join('\n'));
+  };
+
+  const install = sh('pnpm install', 8 * 60_000);
+  if (!install.ok) return void rollback('pnpm install', install.tail);
+
+  // 7) TDD + BDD.
+  const typecheck = sh('pnpm typecheck', 8 * 60_000);
+  if (!typecheck.ok) return void rollback('typecheck', typecheck.tail);
+  const guard = sh('pnpm guard', 5 * 60_000);
+  if (!guard.ok) return void rollback('guard', guard.tail);
+  const e2e = sh('pnpm -C e2e run test:e2e:raccoonui-protocol', 8 * 60_000);
+  if (!e2e.ok) return void rollback('protocol e2e (BDD)', e2e.tail);
+
+  // 8) ff main + push.
+  git(['checkout', RELEASE_BRANCH]);
+  const ff = spawnSync('git', ['-c', 'core.autocrlf=input', 'merge', '--ff-only', WORK_BRANCH], {
+    cwd: FORK_ROOT, encoding: 'utf8', timeout: 60_000,
+  });
+  if (ff.status !== 0) {
+    git(['checkout', WORK_BRANCH], { allowFail: true });
+    return void rollback('ff main (main diverged?)', (ff.stderr || ff.stdout || '').trim());
+  }
+  const pushDev = git(['push', 'origin', WORK_BRANCH], { allowFail: true, timeout: 120_000 });
+  const pushMain = git(['push', 'origin', RELEASE_BRANCH], { allowFail: true, timeout: 120_000 });
+  git(['checkout', WORK_BRANCH], { allowFail: true });
+
+  // Push uses the ambient credential helper / GITHUB_TOKEN. If it failed, the local merge is
+  // sound and on main — surface it loudly but don't roll back a validated build.
+  const pushOkDev = git(['rev-parse', `origin/${WORK_BRANCH}`], { allowFail: true }) === mergeCommit;
+  const pushOkMain = git(['rev-parse', `origin/${RELEASE_BRANCH}`], { allowFail: true }) === mergeCommit;
+
+  writeLog(`sync-${TODAY}.md`, [
+    `# Upstream Sync — ${TODAY} (SUCCESS)`,
+    ``,
+    `Range: \`${shortBase}..${shortTip}\` (${ahead} commits) → merge \`${mergeCommit.slice(0, 9)}\``,
+    `TDD: typecheck ✅ guard ✅   BDD: protocol e2e ✅`,
+    `LF-normalized files: ${normalized}`,
+    `Pushed: dev=${pushOkDev ? '✅' : '❌'} main=${pushOkMain ? '✅' : '❌'}`,
+    forkTouched.length ? `\nFork-patch files in delta (spot-check welcome): ${forkTouched.join(', ')}` : '',
+    ``,
+  ].join('\n'));
+
+  if (pushOkDev && pushOkMain) {
+    const lines = [
+      `✅ *Upstream Sync ${TODAY}* — auto-synced **${ahead} commits** (\`${shortBase}..${shortTip}\`), TDD+BDD green, ff \`main\` + pushed.`,
+    ];
+    if (forkTouched.length) lines.push(`  • fork-patch files touched (spot-check welcome): ${forkTouched.join(', ')}`);
+    emit(lines.join('\n'));
+  } else {
+    emit([
+      `🚨 *Upstream Sync ${TODAY}* — merged + validated ${ahead} commits and ff \`main\` locally, but **push failed** (dev=${pushOkDev ? 'ok' : 'FAIL'}, main=${pushOkMain ? 'ok' : 'FAIL'}).`,
+      `dev push: ${pushDev || '(no output / rejected)'}`,
+      `main push: ${pushMain || '(no output / rejected)'}`,
+      `Commit \`${mergeCommit.slice(0, 9)}\` is validated locally — just run \`git push origin dev main\`.`,
+    ].join('\n'));
+  }
+}
+
+main().catch((err) => {
+  // Never crash the cron loop; convey failure via stdout icon.
+  emit(`❌ *Upstream Sync ${TODAY}* — orchestrator error: ${err?.message ?? String(err)}`);
+  process.exit(0);
+});
