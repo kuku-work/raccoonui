@@ -211,7 +211,10 @@ function mergeTreeConflicts(mergeBase: string): { clean: boolean; files: string[
   );
   if (r.status === 0) return { clean: true, files: [] };
   const out = (r.stdout || '') + (r.stderr || '');
-  const files = [...out.matchAll(/^(?:CONFLICT.*?: |.*both .*: )?(\S+\.\S+)$/gm)]
+  // `--write-tree` conflict output: line 1 is the toplevel tree OID, then one
+  // "<mode> <oid> <stage>\t<path>" row per conflicted index entry (stages 1/2/3).
+  // (The old message-style regex never matched this format → "conflicts (0)" with no names.)
+  const files = [...out.matchAll(/^[0-7]{6} [0-9a-f]{40} [123]\t(.+)$/gm)]
     .map((m) => m[1])
     .filter((v, i, a) => a.indexOf(v) === i);
   return { clean: false, files };
