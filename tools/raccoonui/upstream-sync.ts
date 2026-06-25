@@ -78,7 +78,7 @@ const FORK_INVARIANTS: Array<{ file: string; rx: RegExp; desc: string }> = [
   { file: 'apps/web/src/App.tsx', rx: /pickDefaultDesignSystemId/, desc: 'picker default = raccoonai' },
   { file: 'apps/daemon/src/server.ts', rx: /\/api\/raccoonui\//, desc: 'raccoonui daemon namespace' },
   { file: 'apps/daemon/src/server.ts', rx: /\*splat\/retag-anchors/, desc: 'retag-anchors express5-safe splat route' },
-  { file: 'apps/daemon/src/project-routes.ts', rx: /writeProjectMetadata/, desc: 'project metadata sidecar hook' },
+  { file: 'apps/daemon/src/routes/project/index.ts', rx: /writeProjectMetadata/, desc: 'project metadata sidecar hook' },
   { file: 'apps/web/src/components/FileViewer.tsx', rx: /handleRetagAnchors/, desc: 'FileViewer retag handler' },
   { file: 'apps/web/src/runtime/srcdoc.ts', rx: /annotateDeckSlideDivs/, desc: 'deck deep-div annotate' },
   { file: 'scripts/guard.ts', rx: /raccoonui/, desc: 'guard raccoonui allowlist' },
