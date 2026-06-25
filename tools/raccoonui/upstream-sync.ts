@@ -13,7 +13,10 @@
  *      and a merge-tree dry-run for textual conflict scope.
  *   4. GATE — auto-merge is eligible ONLY when ALL hold:
  *        - zero textual conflicts
- *        - no suspicious diff content (child_process / unknown network / secrets)
+ *        - no BLOCKING diff content in fork-executed source (embedded secret / private key /
+ *          fetch to an un-allowlisted host). child_process/spawn is only SURFACED for a human
+ *          spot-check, never blocked — it is normal monorepo code; docs/CI yaml/.github are
+ *          not scanned at all (they were a 100% false-positive farm).
  *        - no major web-framework / native dep bump (express, path-to-regexp, next,
  *          react, electron, better-sqlite3) — the express-4→5 class of landmine that
  *          passes typecheck but breaks at runtime.
@@ -82,13 +85,31 @@ const FORK_INVARIANTS: Array<{ file: string; rx: RegExp; desc: string }> = [
   { file: 'apps/web/src/index.css', rx: /raccoonui\.css/, desc: 'fork CSS import' },
 ];
 
-// Suspicious diff content — scanned on flagged + review files only.
-const CONTENT_RX: RegExp[] = [
-  /^\+.*\b(child_process|execSync|spawnSync|spawn|exec)\b/m,
+// Suspicious diff content, two tiers, scanned ONLY on fork-executed source files
+// (SCAN_SOURCE_RX minus SCAN_EXCLUDE_RX). Never on docs, CI yaml, or `.github/**` — this
+// fork executes none of those, and the word "spawn"/"exec" in prose or shell config was a
+// 100%-false-positive farm that wedged the daily auto-merge for 9 days (2026-06-25).
+//
+// BLOCK_RX = hard blockers (withhold auto-merge, escalate): an upstream commit that embeds a
+// secret or phones home to an un-allowlisted host is a real supply-chain signal.
+const BLOCK_RX: RegExp[] = [
   /^\+.*\b(fetch|axios|got|undici)\s*\(\s*['"`]https?:\/\/(?!localhost|127\.0\.0\.1|api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com)/im,
   /^\+.*[A-Za-z_]*[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]\s*[:=]\s*['"`][A-Za-z0-9_\-]{16,}/m,
   /^\+.*BEGIN (RSA |OPENSSH )?PRIVATE KEY/m,
 ];
+
+// FLAG_RX = non-blocking surface (logged for a human spot-check, never blocks alone):
+// child_process is normal in a Node monorepo — postinstall builds local workspace targets,
+// the daemon launches Chrome. A bare spawn/exec is not a reliable malice signal; the real
+// exfil signals (BLOCK_RX) + caller-graph health + TDD + BDD are the safety net.
+const FLAG_RX: RegExp[] = [
+  /^\+.*\b(child_process|execSync|spawnSync|spawn|exec)\b/m,
+];
+
+// Only files this fork actually runs (at install or runtime) are worth scanning…
+const SCAN_SOURCE_RX = /\.(ts|tsx|js|jsx|mjs|cjs|py|sh|ps1)$/;
+// …and never CI/release machinery the fork does not execute, nor test fixtures (fake keys).
+const SCAN_EXCLUDE_RX = /(^\.github\/|\.test\.|\.spec\.|(^|\/)tests?\/)/;
 
 const AUTO_FLAG_PATH = [
   /^package\.json$/,
@@ -168,14 +189,17 @@ function detectMajorDepBump(range: string): string[] {
   return [...hits];
 }
 
-function scanSuspiciousContent(files: string[], range: string): string[] {
-  const flagged: string[] = [];
+function scanSuspiciousContent(files: string[], range: string): { blocking: string[]; surfaced: string[] } {
+  const blocking: string[] = [];
+  const surfaced: string[] = [];
   for (const f of files) {
+    if (!SCAN_SOURCE_RX.test(f) || SCAN_EXCLUDE_RX.test(f)) continue;
     const diff = git(['diff', range, '--', f], { allowFail: true });
     if (!diff) continue;
-    if (CONTENT_RX.some((rx) => rx.test(diff))) flagged.push(f);
+    if (BLOCK_RX.some((rx) => rx.test(diff))) blocking.push(f);
+    else if (FLAG_RX.some((rx) => rx.test(diff))) surfaced.push(f);
   }
-  return flagged;
+  return { blocking, surfaced };
 }
 
 // merge-tree --write-tree: exit 0 = clean auto-merge; non-zero = conflicts (lists files).
@@ -273,7 +297,9 @@ async function main(): Promise<void> {
   // 3) Analyze.
   const files = git(['diff', '--name-only', range], { allowFail: true }).split('\n').filter(Boolean);
   const flagged = files.filter((f) => AUTO_FLAG_PATH.some((rx) => rx.test(f)));
-  const suspicious = scanSuspiciousContent([...flagged, ...files.filter((f) => !flagged.includes(f))].slice(0, 400), range);
+  // Scan only fork-executed source (the function re-filters defensively); cap git-diff calls.
+  const sourceForScan = files.filter((f) => SCAN_SOURCE_RX.test(f) && !SCAN_EXCLUDE_RX.test(f));
+  const { blocking: suspiciousBlocking, surfaced: childProcSurfaced } = scanSuspiciousContent(sourceForScan.slice(0, 1200), range);
   const depBumps = detectMajorDepBump(range);
   const conflicts = mergeTreeConflicts(mergeBase);
   const forkTouched = [...new Set(FORK_INVARIANTS.map((i) => i.file))].filter((f) => files.includes(f));
@@ -281,7 +307,7 @@ async function main(): Promise<void> {
   const blockers: string[] = [];
   if (!conflicts.clean) blockers.push(`textual conflicts (${conflicts.files.length}): ${conflicts.files.slice(0, 6).join(', ')}`);
   if (depBumps.length) blockers.push(`major dep bump: ${depBumps.join('; ')}`);
-  if (suspicious.length) blockers.push(`suspicious diff content: ${suspicious.slice(0, 6).join(', ')}`);
+  if (suspiciousBlocking.length) blockers.push(`suspicious diff content: ${suspiciousBlocking.slice(0, 6).join(', ')}`);
 
   const shortBase = mergeBase.slice(0, 9);
   const shortTip = tip.slice(0, 9);
@@ -292,7 +318,8 @@ async function main(): Promise<void> {
       : `✅ would AUTO-MERGE → caller-graph health → TDD (typecheck+guard) → BDD (protocol e2e) → ff main + push`;
     emit([
       `🔎 *Upstream Sync ${TODAY}* — DRY RUN — ${ahead} commits ahead (\`${shortBase}..${shortTip}\`)`,
-      `auto-flagged: ${flagged.length} | suspicious: ${suspicious.length} | dep-bumps: ${depBumps.length} | conflicts: ${conflicts.clean ? 0 : conflicts.files.length}`,
+      `auto-flagged: ${flagged.length} | suspicious(block): ${suspiciousBlocking.length} | child_proc(flag): ${childProcSurfaced.length} | dep-bumps: ${depBumps.length} | conflicts: ${conflicts.clean ? 0 : conflicts.files.length}`,
+      childProcSurfaced.length ? `child_process surfaces (non-blocking spot-check): ${childProcSurfaced.slice(0, 8).join(', ')}` : 'child_process surfaces: (none)',
       forkTouched.length ? `fork-patch files in delta: ${forkTouched.join(', ')}` : 'fork-patch files in delta: (none)',
       verdict,
     ].join('\n'));
@@ -411,6 +438,7 @@ async function main(): Promise<void> {
     `LF-normalized files: ${normalized}`,
     `Pushed: dev=${pushOkDev ? '✅' : '❌'} main=${pushOkMain ? '✅' : '❌'}`,
     forkTouched.length ? `\nFork-patch files in delta (spot-check welcome): ${forkTouched.join(', ')}` : '',
+    childProcSurfaced.length ? `child_process surfaces (non-blocking spot-check): ${childProcSurfaced.join(', ')}` : '',
     ``,
   ].join('\n'));
 
@@ -419,6 +447,7 @@ async function main(): Promise<void> {
       `✅ *Upstream Sync ${TODAY}* — auto-synced **${ahead} commits** (\`${shortBase}..${shortTip}\`), TDD+BDD green, ff \`main\` + pushed.`,
     ];
     if (forkTouched.length) lines.push(`  • fork-patch files touched (spot-check welcome): ${forkTouched.join(', ')}`);
+    if (childProcSurfaced.length) lines.push(`  • child_process surfaces (non-blocking spot-check): ${childProcSurfaced.slice(0, 8).join(', ')}`);
     emit(lines.join('\n'));
   } else {
     emit([
