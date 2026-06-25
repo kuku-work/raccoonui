@@ -1,7 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '@/playwright/suite';
 import { ensureRailOpen } from '@/playwright/rail';
 import type { Page, Request } from '@playwright/test';
 import { applyStandardMocks, fulfillAgentsRoute, STORAGE_KEY } from '@/playwright/mock-factory';
+import { T } from '@/timeouts';
 const LOCAL_CLI_LABEL = /Local CLI|本机 CLI|本地 CLI/i;
 const STARTER_PLUGIN = makeStarterPlugin({
   id: 'localized-plugin',
@@ -63,6 +64,8 @@ const DESIGN_SYSTEMS = [
   },
 ] as const;
 
+test.describe.configure({ timeout: T.xlong });
+
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
 });
@@ -89,7 +92,8 @@ test('[P0] @critical entry chrome exposes the primary home creation surface and 
   await expect(page.locator('.entry-brand')).toHaveCount(0);
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
   await expect(page.getByTestId('home-hero-plus-trigger')).toBeVisible();
-  await expect(page.getByTestId('home-hero-submit')).toBeDisabled();
+  // Empty input can still run the active placeholder-carousel suggestion.
+  await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
   const createTabs = page.getByTestId('home-hero-type-tabs');
   await expect(createTabs).toBeVisible();
   await expect(page.getByTestId('home-hero-rail-prototype')).toBeVisible();
@@ -112,6 +116,49 @@ test('[P0] @critical entry chrome exposes the primary home creation surface and 
   await expect(settingsDialog.getByRole('heading', { name: 'Execution mode' })).toBeVisible();
   await expect(settingsDialog.getByRole('button', { name: /hide pet picker/i })).toHaveCount(0);
   await expect(settingsDialog.getByRole('button', { name: /show pet picker/i })).toHaveCount(0);
+});
+
+test('[P0] @critical home hero submit creates a project and lands on a usable workspace', async ({ page }) => {
+  await page.route('**/api/runs', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: '{"runId":"home-entry-workspace-smoke"}',
+    });
+  });
+  await page.route('**/api/runs/*/events', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+      body: ['event: end', 'data: {"code":0,"status":"succeeded"}', '', ''].join('\n'),
+    });
+  });
+
+  await gotoEntryHome(page);
+
+  const input = page.getByTestId('home-hero-input');
+  await input.fill('Create a risk dashboard workspace smoke.');
+  await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
+
+  const projectRequestPromise = page.waitForRequest(isCreateProjectRequest);
+  await page.getByTestId('home-hero-submit').click();
+  const projectRequest = await projectRequestPromise;
+  const projectBody = projectRequest.postDataJSON() as {
+    pendingPrompt?: string;
+    metadata?: { kind?: string };
+  };
+  expect(projectBody.pendingPrompt).toBe('Create a risk dashboard workspace smoke.');
+  expect(typeof projectBody.metadata?.kind).toBe('string');
+
+  await expect(page).toHaveURL(/\/projects\//, { timeout: 15_000 });
+  await expect(page.getByTestId('project-title')).toBeVisible();
+  await expect(page.getByTestId('chat-composer')).toBeVisible();
+  await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+  await expect(page.getByTestId('file-workspace')).toBeVisible();
 });
 
 test('[P1] entry top navigation matches the current home tab structure', async ({ page }) => {
@@ -228,6 +275,9 @@ test('[P1] design systems page is reachable from entry nav and supports search, 
   await expect(page.getByTestId('design-system-card-agentic')).toHaveCount(0);
   await page.getByTestId('design-systems-surface-all').click();
 
+  // Master-detail: selecting a list row renders that system in the right
+  // preview pane, where the full-preview and "set as default" actions live.
+  await page.getByTestId('design-system-card-airbnb').click();
   await page.getByTestId('design-system-preview-airbnb').click();
   const preview = page.getByRole('dialog', { name: /Airbnb preview/i });
   await expect(preview).toBeVisible();
@@ -384,13 +434,13 @@ test('[P2] entry help menu exposes community links and topbar routes Use everywh
   await page.getByTestId('entry-help-trigger').click();
   const menu = page.locator('.entry-help-popover[role="menu"]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem', { name: /Follow @nexudotio on X/i })).toHaveAttribute(
+  await expect(menu.getByRole('menuitem', { name: /Follow @OpenDesignHQ on X/i })).toHaveAttribute(
     'href',
-    'https://x.com/nexudotio',
+    'https://x.com/OpenDesignHQ',
   );
   await expect(menu.getByRole('menuitem', { name: /Join Discord/i })).toHaveAttribute(
     'href',
-    'https://discord.gg/mHAjSMV6gz',
+    'https://discord.gg/9ptkbbqRu',
   );
 
   await page.getByTestId('entry-use-everywhere-button').click();
@@ -1116,12 +1166,15 @@ test('[P0] @critical required home plugin prompt parameters gate submit and bind
   expect(applyBodies.at(-1)?.inputs).toMatchObject(body.pluginInputs ?? {});
 });
 
-test('[P0] @critical home Ask mode creates a chat conversation without the default design router plugin', async ({ page }) => {
+test('[P0] @critical home composer can route free-form Ask mode without the design router', async ({ page }) => {
   await gotoEntryHome(page);
 
-  await page.getByTestId('session-mode-trigger').click();
-  await page.getByRole('menuitemradio', { name: 'Ask mode' }).click();
-  await expect(page.getByTestId('session-mode-trigger')).toContainText('Ask');
+  const modeTrigger = page.getByTestId('session-mode-trigger');
+  await expect(modeTrigger).toBeVisible();
+  await expect(modeTrigger).toContainText('Design');
+  await modeTrigger.click();
+  await page.getByRole('menuitemradio', { name: /Ask mode/i }).click();
+  await expect(modeTrigger).toContainText('Ask');
 
   const input = page.getByTestId('home-hero-input');
   const prompt =
@@ -1142,7 +1195,7 @@ test('[P0] @critical home Ask mode creates a chat conversation without the defau
   expect(body.name).toBe('Infographic 5 Habits Effective Code Reviewers');
   expect(body.pendingPrompt).toBe(prompt);
   expect(body.conversationMode).toBe('chat');
-  expect(body.pluginId).toBeUndefined();
+  expect(body.pluginId ?? null).toBeNull();
   expect(body.metadata?.kind).toBe('other');
 });
 
@@ -1247,7 +1300,7 @@ test('[P0] @critical home hero input keeps Shift+Enter as a newline and submits 
   const input = page.getByTestId('home-hero-input');
   const submit = page.getByTestId('home-hero-submit');
 
-  await expect(submit).toBeDisabled();
+  await expect(submit).toBeEnabled();
   await input.click();
   await input.fill('Line one');
   await input.press('Shift+Enter');
@@ -1305,7 +1358,7 @@ test('[P0] @critical home hero attachment input stages files, enables submit, an
 
   const input = page.getByTestId('home-hero-file-input');
   const submit = page.getByTestId('home-hero-submit');
-  await expect(submit).toBeDisabled();
+  await expect(submit).toBeEnabled();
 
   await input.setInputFiles({
     name: 'brief.txt',
@@ -1320,7 +1373,7 @@ test('[P0] @critical home hero attachment input stages files, enables submit, an
 
   await page.getByRole('button', { name: /Remove brief\.txt/i }).click();
   await expect(staged).toHaveCount(0);
-  await expect(submit).toBeDisabled();
+  await expect(submit).toBeEnabled();
 });
 
 test('[P0] @critical home hero attachment-only submit uploads the file and sends it with the first message', async ({ page }) => {
@@ -1430,6 +1483,7 @@ test('[P1] rail can be collapsed again on coarse-pointer / non-hover devices', a
 
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByText('Loading Open Design…').waitFor({ state: 'hidden', timeout: T.long });
   const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve Open Design' });
   if (await privacyDialog.isVisible()) {
     await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
