@@ -20,7 +20,7 @@ import type {
   AudioVoiceOption,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
-import { projectKindToTracking } from '@open-design/contracts/analytics';
+import { projectKindFromMetadataToTracking } from '@open-design/contracts/analytics';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackCommunityGalleryClick,
@@ -74,6 +74,7 @@ import { homeHeroChipLabel } from './home-hero/chip-labels';
 import type { PlaceholderScenario } from './home-hero/placeholderScenarios';
 import { consumePendingHomeChip, HOME_CHIP_INTENT_EVENT } from '../runtime/home-intent';
 import { navigate } from '../router';
+import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry';
 import {
   buildHomeMediaComposer,
   homeMediaSurfaceForChipId,
@@ -1490,6 +1491,7 @@ export function HomeView({
         // Brands merged into Design systems: brand extraction now starts from
         // the unified design-system create wizard (which carries the
         // "start from a brand" picker), rather than a separate Brand Kit tab.
+        setPendingDesignSystemCreateEntry('home_card');
         navigate({ kind: 'design-system-create' });
         return;
       }
@@ -1860,7 +1862,7 @@ export function HomeView({
           // before navigation so the event isn't lost when the host
           // re-renders into the project view.
           const project = projects.find((p) => p.id === id);
-          const projectKind = projectKindToTracking(project?.metadata?.kind, project?.metadata?.videoModel);
+          const projectKind = projectKindFromMetadataToTracking(project?.metadata);
           trackRecentProjectsClick(analytics.track, {
             page_name: 'home',
             area: 'recent_projects',
