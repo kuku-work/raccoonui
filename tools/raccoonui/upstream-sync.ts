@@ -38,7 +38,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -249,6 +249,29 @@ function normalizeLineEndings(): number {
   return crlf.length;
 }
 
+// Upstream occasionally extracts an app OUT of the monorepo (e.g. #5565 removed
+// apps/telemetry-worker). git drops the tracked files, but a stale node_modules/
+// left in the working tree keeps the directory alive — and guard's
+// check-cross-app-imports does readdirSync(apps/) then demands every dir carry a
+// package.json, so the orphan residue throws ENOENT and reds an otherwise-clean
+// merge. Any apps/<name> with zero tracked files is residue (a real app always
+// has a tracked package.json); clean it before install/guard run.
+function orphanAppDirs(): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(resolve(FORK_ROOT, 'apps'), { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => !git(['ls-files', '--', `apps/${n}/`], { allowFail: true }));
+}
+
+function pruneOrphanAppDirs(orphans: string[]): void {
+  for (const n of orphans) git(['clean', '-ffdx', '--', `apps/${n}/`], { allowFail: true });
+}
+
 // ── reporting ────────────────────────────────────────────────────
 
 function writeLog(name: string, body: string): void {
@@ -319,11 +342,13 @@ async function main(): Promise<void> {
     const verdict = blockers.length
       ? `🚨 would ESCALATE (no merge):\n${blockers.map((b) => `  • ${b}`).join('\n')}`
       : `✅ would AUTO-MERGE → caller-graph health → TDD (typecheck+guard) → BDD (protocol e2e) → ff main + push`;
+    const dryOrphans = orphanAppDirs();
     emit([
       `🔎 *Upstream Sync ${TODAY}* — DRY RUN — ${ahead} commits ahead (\`${shortBase}..${shortTip}\`)`,
       `auto-flagged: ${flagged.length} | suspicious(block): ${suspiciousBlocking.length} | child_proc(flag): ${childProcSurfaced.length} | dep-bumps: ${depBumps.length} | conflicts: ${conflicts.clean ? 0 : conflicts.files.length}`,
       childProcSurfaced.length ? `child_process surfaces (non-blocking spot-check): ${childProcSurfaced.slice(0, 8).join(', ')}` : 'child_process surfaces: (none)',
       forkTouched.length ? `fork-patch files in delta: ${forkTouched.join(', ')}` : 'fork-patch files in delta: (none)',
+      dryOrphans.length ? `orphan app dirs to prune: ${dryOrphans.join(', ')}` : 'orphan app dirs: (none)',
       verdict,
     ].join('\n'));
     return;
@@ -389,6 +414,11 @@ async function main(): Promise<void> {
   git(['commit', '-m', `[raccoonui] chore(merge): sync upstream/${RELEASE_BRANCH} ${shortBase}..${shortTip} (${ahead} commits)`]);
   const mergeCommit = git(['rev-parse', 'HEAD']);
   const normalized = normalizeLineEndings();
+  const orphans = orphanAppDirs();
+  if (orphans.length) {
+    pruneOrphanAppDirs(orphans);
+    emit(`🧹 *Upstream Sync ${TODAY}* — pruned ${orphans.length} orphan app dir(s) (stale residue after upstream extraction, no longer tracked): ${orphans.join(', ')}`);
+  }
 
   const rollback = (why: string, detail: string) => {
     git(['checkout', WORK_BRANCH], { allowFail: true });
