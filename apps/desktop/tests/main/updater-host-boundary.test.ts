@@ -24,6 +24,17 @@ describe("desktop updater host boundary", () => {
     expect(runtime).toContain("event.sender !== window.webContents");
   });
 
+  it("lists every registered od:update:* handler in the teardown channel table", () => {
+    const runtime = source("src/main/runtime.ts");
+    const registered = [...runtime.matchAll(/ipcMain\.handle\("(od:update:[^"]+)"/g)].map((match) => match[1]);
+    const tableStart = runtime.indexOf("const UPDATER_IPC_CHANNELS = [");
+    const tableEnd = runtime.indexOf("]", tableStart);
+    expect(tableStart).toBeGreaterThanOrEqual(0);
+    const listed = [...runtime.slice(tableStart, tableEnd).matchAll(/"(od:update:[^"]+)"/g)].map((match) => match[1]);
+    expect(registered.length).toBeGreaterThan(0);
+    expect([...new Set(listed)].sort()).toEqual([...new Set(registered)].sort());
+  });
+
   it("does not turn automatic startup checks into native desktop dialogs", () => {
     const main = source("src/main/index.ts");
     const scheduleStart = main.indexOf("updateScheduler = createDesktopUpdaterScheduler");
@@ -55,6 +66,7 @@ describe("desktop updater host boundary", () => {
     expect(clickStart).toBeGreaterThan(showStart);
     const showHandler = main.slice(showStart, clickStart);
     expect(showHandler).toContain("activeDesktop.show()");
+    expect(showHandler).toContain("dispatchInviteDeeplink(request.input?.deeplinkUrl ?? null)");
     expect(showHandler).toContain("notifyDesktopExternalShow(options.onExternalShow)");
     expect(showHandler.indexOf("activeDesktop.show()"))
       .toBeLessThan(showHandler.indexOf("notifyDesktopExternalShow(options.onExternalShow)"));

@@ -6,6 +6,7 @@ import type {
 } from '@open-design/contracts/analytics';
 
 import { classifyAmrAccountFailure } from './integrations/vela-errors.js';
+import { summarizeRunToolProgress } from './run-diagnostics.js';
 import { classifyAgentServiceFailure } from './runtimes/auth.js';
 import type { RunResult, RunStatusForAnalytics } from './run-result.js';
 
@@ -103,10 +104,8 @@ function inferFailureStageFromEvents(
   fallback: TrackingRunFailureStage,
 ): TrackingRunFailureStage {
   let sawFirstToken = false;
-  let sawToolUse = false;
-  let sawOpenTool = false;
   let sawArtifact = false;
-  const openTools = new Set<string>();
+  const toolProgress = summarizeRunToolProgress(events);
 
   for (const rec of events ?? []) {
     if (rec.event === 'live_artifact') sawArtifact = true;
@@ -120,18 +119,11 @@ function inferFailureStageFromEvents(
     if (data.type === 'artifact' || data.type === 'live_artifact') {
       sawArtifact = true;
     }
-    if (data.type === 'tool_use' && typeof data.id === 'string') {
-      sawToolUse = true;
-      openTools.add(data.id);
-    }
-    if (data.type === 'tool_result' && typeof data.toolUseId === 'string') {
-      openTools.delete(data.toolUseId);
-    }
   }
 
-  sawOpenTool = openTools.size > 0;
   if (sawArtifact) return 'artifact_write';
-  if (sawOpenTool || sawToolUse) return 'tool_execution';
+  if (toolProgress.hasOutstandingTool) return 'tool_outstanding';
+  if (toolProgress.toolCallSeen) return 'post_tool_resume';
   if (sawFirstToken) return 'child_close';
   return fallback;
 }
@@ -267,7 +259,7 @@ function promptTooLargeDetail(text: string): TrackingRunFailureDetail | null {
   // `prefill context too large` is the local-runtime (MLX) shape of the same
   // "the prompt does not fit" failure that currently leaks into execution_failed.
   if (
-    /\b(context window|context size (?:has been )?exceeded|prompt too large|maximum context|too many tokens|input.*too large|request (?:body )?exceeds configured limit|output token maximum|maximum output tokens|CLAUDE_CODE_MAX_OUTPUT_TOKENS|exceeds the safe size|composed prompt exceeds|prompt token count .* exceeds|maximum context length|context too large|prefill context too large|reduce the length of (?:the )?(?:messages|input prompt)|request \(\d+ tokens\) exceeds the available context size|n_keep:\s*\d+\s*>=\s*n_ctx)\b/i.test(text)
+    /\b(context window|context size (?:has been )?exceeded|prompt too large|request_too_large|maximum context|too many tokens|input.*too large|request (?:body )?exceeds configured limit|output token maximum|maximum output tokens|CLAUDE_CODE_MAX_OUTPUT_TOKENS|exceeds the safe size|composed prompt exceeds|prompt token count .* exceeds|maximum context length|context too large|prefill context too large|reduce the length of (?:the )?(?:messages|input prompt)|request \(\d+ tokens\) exceeds the available context size|n_keep:\s*\d+\s*>=\s*n_ctx)\b/i.test(text)
   ) {
     return 'prompt_too_large';
   }
@@ -300,7 +292,7 @@ function clientRequestFailureDetail(text: string): TrackingRunFailureDetail | nu
 
 function isUpstreamDetailText(text: string): boolean {
   return isUpstreamClientErrorText(text) ||
-    /\b(stream disconnected before completion|(?:stream|upstream) idle timeout|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response|AMR model catalog is (?:temporarily )?unavailable)\b/i
+    /\b(stream disconnected before completion|(?:stream|upstream) idle timeout|no data received within configured window|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response|AMR model catalog is (?:temporarily )?unavailable)\b/i
       .test(text);
 }
 
@@ -344,7 +336,7 @@ function modelUnavailableDetail(text: string): TrackingRunFailureDetail | null {
   if (/\b(no endpoints found that support tool use|provider routing)\b/i.test(text)) {
     return 'provider_routing_error';
   }
-  if (/\b(model .*not supported|not supported model\b|requested model is not supported|supported api model names|not supported when using codex)\b/i.test(text)) {
+  if (/\b(unsupported model\b|model .*not supported|not supported model\b|requested model is not supported|supported api model names|not supported when using codex)\b/i.test(text)) {
     return 'model_not_supported';
   }
   if (/\b(model (?:is )?(?:unavailable|not available|unsupported|not found)|selected model is not available|not have access|no access|model .*not found|no healthy deployments|model .*not in (?:the )?allowed list)\b/i.test(text)) {
@@ -395,7 +387,7 @@ function upstreamDetail(text: string): TrackingRunFailureDetail {
     return 'provider_routing_error';
   }
   if (/\bhigh demand|temporary errors|model is at capacity|selected model is at capacity\b/i.test(text)) return 'provider_high_demand';
-  if (/\b(stream disconnected before completion|(?:stream|upstream) idle timeout|response\.completed|websocket closed|socket connection was closed unexpectedly|connection reset|ConnectionRefused|tls handshake eof|tls close_notify|broken pipe|peer closed connection|remote host|远程主机强迫关闭|http2: response body closed|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Streaming response failed)\b/i
+  if (/\b(stream disconnected before completion|(?:stream|upstream) idle timeout|no data received within configured window|response\.completed|websocket closed|socket connection was closed unexpectedly|connection reset|ConnectionRefused|tls handshake eof|tls close_notify|broken pipe|peer closed connection|remote host|远程主机强迫关闭|http2: response body closed|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Streaming response failed)\b/i
     .test(text)) {
     return 'stream_disconnected';
   }

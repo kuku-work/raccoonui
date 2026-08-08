@@ -12,6 +12,7 @@ Before changing GitHub automation, read the current versions of:
 - `.github/workflows/report.atom.yml`
 - `.github/scripts/handoff.py`
 - `scripts/scopes.ts`
+- `specs/current/ci.md` when changing scope rules, confidence tiers, or guards
 - `e2e/tests/packaged-smoke-workflow.test.ts`
 - `scripts/approve-fork-pr-workflows.ts` and `e2e/tests/scripts/approve-fork-pr-workflows.test.ts` when touching fork PR approval behavior
 
@@ -35,6 +36,7 @@ Atomic capability layer:
 - `comment.atom.yml` consumes `handoff-comment-*` artifacts and upserts pure text PR comments.
 - `autofix.atom.yml` consumes `handoff-autofix-*` artifacts and applies same-repository patches.
 - `report.atom.yml` consumes `handoff-report-*` artifacts and handles advanced comments that need trusted materialization, such as dependency install, R2 access, artifact processing, or report generation before upsert.
+- `rerun.atom.yml` watches completed `ci` runs and requests one `gh run rerun --failed` when leaf jobs died to runner/spot cancel. Decision logic lives in `.github/scripts/rerun_infra_cancel.py`; it must not rerun ordinary assertion failures or stale heads.
 - `.github/scripts/handoff.py` owns artifact names, directory layout, discovery, and contract validation for `comment`, `autofix`, and `report` handoffs.
 
 Default rule: do not add a new domain-specific follow-on workflow such as `foo.comment.atom.yml`, `foo.autofix.atom.yml`, or `foo.report.atom.yml` until the flow has been tested against these existing atomic capabilities.
