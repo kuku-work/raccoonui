@@ -4099,6 +4099,7 @@ export interface Dict {
   'fileViewer.shareMenuPresentation': string;
   'fileViewer.shareMenuSourceFiles': string;
   'fileViewer.shareMenuSave': string;
+  'fileViewer.shareMenuPublishViaOd': string;
   'fileViewer.unifiedShareAria': string;
   'fileViewer.unifiedShareTab': string;
   'fileViewer.unifiedExportTab': string;
