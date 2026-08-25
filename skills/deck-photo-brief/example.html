@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>MUCAPSO M1 拍攝計畫 · Part 3 攝影表與前置規劃</title>
+<style>
+:root {
+    /* ─── design-systems/photo-brief/tokens.css：56 個變數整組沿用 ─── */
+    --bg: #f5f5f3;
+    --surface: #ffffff;
+    --surface-warm: #fbfaf8;
+    --fg: #262626;
+    --fg-2: #6b6b6b;
+    --muted: #888888;
+    --meta: var(--muted);
+    --border: #e3e1dc;
+    --border-soft: var(--border);
+    --accent: #d97d35;
+    --accent-on: #262626;
+    --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+    --accent-active: color-mix(in oklab, var(--accent), black 14%);
+    --success: #16a34a;
+    --warn: #eab308;
+    --danger: #dc2626;
+    --font-display: Cambria, "STSongti TC", "Songti TC", "Noto Serif TC", serif;
+    --font-body: Calibri, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --text-xs: 9pt;
+    --text-sm: 11pt;
+    --text-base: 12pt;
+    --text-lg: 14pt;
+    --text-xl: 18pt;
+    --text-2xl: 24pt;
+    --text-3xl: 30pt;
+    --text-4xl: 66pt;
+    --leading-body: 1.5;
+    --leading-tight: 1.15;
+    --tracking-display: 0em;
+    --space-1: 3.6pt;
+    --space-2: 7.2pt;
+    --space-3: 10.8pt;
+    --space-4: 14.4pt;
+    --space-5: 18pt;
+    --space-6: 21.6pt;
+    --space-8: 28.8pt;
+    --space-12: 43.2pt;
+    --section-y-desktop: 40.3pt;
+    --section-y-tablet: 40.3pt;
+    --section-y-phone: 40.3pt;
+    --radius-sm: 6pt;
+    --radius-md: 9pt;
+    --radius-lg: 12pt;
+    --radius-pill: 9999pt;
+    --elev-flat: none;
+    --elev-ring: 0 0 0 1px var(--border);
+    --elev-raised: var(--elev-ring);
+    --focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 70%);
+    --motion-fast: 150ms;
+    --motion-base: 200ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --container-max: 873.6pt;
+    --container-gutter-desktop: 43.2pt;
+    --container-gutter-tablet: 43.2pt;
+    --container-gutter-phone: 43.2pt;
+
+    /* ─── 頁面區塊骨架（DESIGN.md §5-0）四個切點 ─── */
+    --band-header-h: 108pt;     /*  0     – 108     ＝ 30 × 3.6  */
+    --band-meta-top: 432pt;     /*  432   – 493.2   ＝ 120 × 3.6 */
+    --band-meta-h: 61.2pt;      /*  61.2            ＝ 17 × 3.6  */
+    --band-footer-top: 493.2pt; /*  493.2 – 540     ＝ 137 × 3.6 */
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: #cfccc4;
+  font-family: var(--font-body);
+  color: var(--fg);
+  padding: 36pt 0 72pt;
+}
+.deck { width: 960pt; margin-inline: auto; }
+.deck-head { margin-bottom: 24pt; }
+.deck-head h1 { margin: 0; font-family: var(--font-display); font-size: var(--text-3xl); }
+.deck-head p { margin: 6pt 0 0; font-size: var(--text-sm); color: #4a4842; }
+
+/* ── 審閱用鷹架（不屬於 deck 本身，落在 960×540 頁框之外）────────── */
+.sheet { margin-bottom: 54pt; }
+.sheet-label {
+  display: flex; align-items: baseline; gap: 10.8pt;
+  margin-bottom: 7.2pt; font-size: var(--text-sm); color: #3d3b36;
+}
+.sheet-label .no { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sheet-label .lay {
+  padding: 1pt 7.2pt; background: var(--fg); color: var(--surface);
+  font-weight: 700; font-size: var(--text-xs); letter-spacing: .08em;
+}
+.sheet-label .det { color: #5f5c55; font-size: var(--text-xs); }
+
+/* ── 頁框 ─────────────────────────────────────────────────────── */
+.pg {
+  position: relative; width: 960pt; height: 540pt;
+  background: var(--bg); overflow: hidden;
+  outline: 1px solid #b6b2a8;
+}
+.pg.dark { background: var(--fg); color: var(--surface); }
+.pg.white { background: var(--surface); }
+
+/* ── 四段骨架 ─────────────────────────────────────────────────── */
+.band-head {
+  position: absolute; left: 0; top: 0; width: 960pt; height: var(--band-header-h);
+}
+.band-meta {
+  position: absolute; left: 43.2pt; top: var(--band-meta-top);
+  width: 873.6pt; height: var(--band-meta-h);
+  display: flex; align-items: flex-start;
+}
+.band-meta .mcol { flex: 1 1 0; min-width: 0; }
+.band-meta .mlab {
+  font-size: 10pt; font-weight: 700; color: var(--accent);
+  letter-spacing: .1em; line-height: 1.2;
+}
+.band-meta .mval {
+  margin-top: 5.4pt; font-size: var(--text-sm); color: var(--fg); line-height: 1.35;
+}
+.band-meta .mval.plain {
+  /* 沒有標籤的單行 Meta（封面品牌行）：在 61.2 的帶內垂直置中 */
+  margin-top: 25.2pt; font-size: 10pt; color: var(--fg-2); letter-spacing: .06em;
+}
+.band-meta .mslot {
+  margin-top: 5.4pt; height: 29.7pt; border: 1px dashed var(--border);
+  display: flex; align-items: center; padding-left: 7.2pt;
+  font-size: var(--text-xs); color: var(--muted);
+}
+.pg.dark .band-meta .mval.plain { color: #9b978e; }
+
+.rule { position: absolute; left: 43.2pt; top: var(--band-footer-top); width: 873.6pt; height: 1px; background: var(--border); }
+.pg.dark .rule { background: #9b978e; }
+.pno { position: absolute; left: 933.1pt; top: 508pt; font-size: 10pt; color: var(--fg-2); line-height: 1; }
+.pno.on-dark { color: #9b978e; }
+
+/* ── Header 區的標題群（共用）───────────────────────────────────── */
+.hd-eyebrow {
+  position: absolute; left: 50.4pt; top: 30.7pt;
+  font-size: var(--text-base); font-weight: 700; color: var(--accent); line-height: 1;
+}
+.hd-title {
+  position: absolute; left: 50.4pt; top: 55.8pt;
+  font-family: var(--font-display); font-weight: 700; font-size: var(--text-3xl);
+  line-height: 1.15;
+}
+.hd-sub { position: absolute; left: 50.4pt; top: 90pt; font-size: var(--text-lg); color: var(--fg-2); line-height: 1; }
+.hd-right { position: absolute; right: 43.2pt; top: 29pt; font-size: var(--text-lg); font-weight: 700; color: var(--accent); line-height: 1; text-align: right; }
+.hd-right2 { position: absolute; right: 43.2pt; top: 50pt; font-size: 10pt; color: var(--fg-2); line-height: 1; text-align: right; }
+
+/* ── A 封面 ───────────────────────────────────────────────────── */
+.cover-dots { position: absolute; left: 0; height: 22.1pt; width: 100%; }
+.cover-dots .dot { position: absolute; top: 0; width: 22.1pt; height: 22.1pt; border-radius: 50%; }
+.cover-name {
+  position: absolute; left: 50.4pt;
+  font-family: var(--font-display); font-weight: 700; font-size: var(--text-4xl);
+  line-height: 1; color: var(--surface);
+}
+.cover-sub { position: absolute; left: 50.4pt; font-size: var(--text-xl); color: #c9c6be; line-height: 1; }
+.cover-bar { position: absolute; left: 43.2pt; width: 2pt; background: var(--accent); }
+.cover-meta { position: absolute; left: 61.2pt; }
+.cover-meta .cm1 { font-size: 16pt; font-weight: 700; color: var(--surface); line-height: 1.35; }
+.cover-meta .cm2 { margin-top: 5pt; font-size: 13pt; color: #c9c6be; line-height: 1.35; }
+
+/* ── B 總覽資訊卡 ─────────────────────────────────────────────── */
+.banner { position: absolute; left: 0; top: 0; width: 960pt; overflow: hidden; }
+.banner .ph.banner-ph { width: 960pt; height: 100%; aspect-ratio: auto; }
+.b-eyebrow { position: absolute; left: 50.4pt; font-size: var(--text-base); font-weight: 700; color: var(--accent); line-height: 1; }
+.inf-row { position: absolute; left: 50.4pt; width: 554.4pt; }
+.inf-row .inf-k { position: absolute; left: 0; top: 6pt; font-size: var(--text-sm); color: var(--fg-2); }
+.inf-row .inf-v { position: absolute; left: 215.6pt; top: 4.5pt; font-size: 13pt; color: var(--fg); }
+.inf-row .inf-line { position: absolute; left: 0; bottom: 0; width: 554.4pt; height: 1px; background: var(--border-soft); }
+.infocard {
+  position: absolute; left: 632.4pt; width: 284.4pt; height: 284.4pt;
+  background: var(--fg); color: var(--surface);
+  padding: 28.8pt 21.6pt 28.8pt 32.4pt; display: flex; flex-direction: column;
+}
+.infocard .ic-eyebrow { font-size: var(--text-base); font-weight: 700; color: var(--accent); }
+.infocard .ic-name {
+  margin-top: 10.8pt; font-family: var(--font-display); font-weight: 700;
+  font-size: var(--text-2xl); line-height: 1.15;
+}
+.infocard .ic-sub { margin-top: 3.6pt; font-size: var(--text-sm); color: #c9c6be; }
+.infocard .ic-fields { margin-top: auto; display: grid; gap: 7.2pt; }
+.cf-row { display: flex; justify-content: space-between; gap: 14.4pt; }
+.cf-row .cf-k { font-size: var(--text-sm); color: #9b978e; }
+.cf-row .cf-v { font-size: var(--text-sm); }
+
+/* ── C 時間軸表格 ─────────────────────────────────────────────── */
+.tbl-wrap { position: absolute; left: 43.2pt; }
+table.timeline { border-collapse: collapse; width: 856.8pt; table-layout: fixed; }
+table.timeline col.c1 { width: 122.4pt; }
+table.timeline col.c2 { width: 194.4pt; }
+table.timeline col.c3 { width: 136.8pt; }
+table.timeline col.c4 { width: 64.8pt; }
+table.timeline col.c5 { width: 338.4pt; }
+table.timeline thead tr { height: 30.2pt; background: var(--fg); color: var(--surface); }
+table.timeline thead th { padding: 0 10.8pt; text-align: left; font-weight: 700; font-size: var(--text-sm); }
+table.timeline tbody tr { height: 38.2pt; }
+table.timeline tbody tr.z1 { background: var(--surface); }
+table.timeline tbody tr.z2 { background: var(--surface-warm); }
+table.timeline tbody tr.z3 { background: #efede8; }
+table.timeline tbody td { padding: 0 10.8pt; font-size: var(--text-sm); color: var(--fg); vertical-align: middle; }
+.rdot { display: inline-block; width: 14.2pt; height: 14.2pt; border-radius: 50%; vertical-align: -3pt; margin-right: 7.2pt; }
+
+/* ── D 棚區卡片 ───────────────────────────────────────────────── */
+.zcard {
+  position: absolute; border-radius: 9pt; box-shadow: 0 0 0 1px #ffffff inset;
+  display: flex; flex-direction: column; align-items: center; overflow: hidden;
+}
+.zcard .zcode {
+  align-self: flex-start; font-family: var(--font-display); font-weight: 700;
+  font-size: var(--text-2xl); color: var(--surface); line-height: 1.1;
+}
+.zcard .zph { flex: 0 0 auto; }
+.zcard .zph .ph { height: 100%; width: auto; }
+
+/* ── E 雙欄清單 ───────────────────────────────────────────────── */
+.li { position: absolute; width: 410pt; display: flex; align-items: center; }
+.li .bul { flex: 0 0 auto; width: 7.1pt; height: 7.1pt; border-radius: 50%; background: var(--accent); }
+.li .lt { display: block; padding-left: 9pt; font-size: var(--text-base); line-height: 1.2; }
+
+/* ── F KV 標題帶 ──────────────────────────────────────────────── */
+.kvband {
+  position: absolute; left: 43.2pt; top: 0; width: 873.6pt;
+  background: var(--fg); color: var(--surface); padding: 15.4pt 28.8pt;
+}
+.kvband .kv-slot { display: block; width: var(--kv-text-w); font-size: var(--text-base); font-weight: 700; color: var(--accent); line-height: 1; }
+.kvband .kv-title {
+  display: block; width: var(--kv-text-w); margin-top: 8pt; font-family: var(--font-display);
+  font-weight: 700; font-size: 26pt; line-height: 1.1;
+}
+.kvband .kv-desc { display: block; width: var(--kv-text-w); margin-top: 6pt; font-size: 13pt; color: #c9c6be; }
+.kvband .ring { position: absolute; width: 43.5pt; height: 43.5pt; border-radius: 50%; border: 1.5pt solid var(--surface); }
+.kv-row { position: absolute; }
+
+/* ── G 氣氛參考 ───────────────────────────────────────────────── */
+.g-title { position: absolute; left: 50.4pt; top: 22.7pt; font-size: 22pt; font-weight: 600; line-height: 1; }
+.g-scene { position: absolute; left: 50.4pt; top: 57pt; font-size: var(--text-base); font-weight: 700; color: var(--accent); line-height: 1; }
+.g-model { position: absolute; left: 50.4pt; top: 78pt; font-size: var(--text-sm); color: var(--fg-2); line-height: 1; }
+.cutout {
+  position: absolute; background: var(--border); display: flex;
+  align-items: center; justify-content: center; text-align: center;
+  font-size: var(--text-xs); color: var(--fg-2); line-height: 1.4;
+}
+
+/* ── H 鏡位網格 ───────────────────────────────────────────────── */
+.h-scene { position: absolute; left: 50.4pt; top: 30.7pt; font-size: var(--text-base); font-weight: 700; color: var(--accent); line-height: 1; }
+.h-model { position: absolute; left: 50.4pt; top: 52pt; font-size: var(--text-sm); color: var(--fg-2); line-height: 1; }
+.h-range { position: absolute; right: 43.2pt; top: 29pt; font-size: var(--text-lg); font-weight: 700; color: var(--accent); line-height: 1; }
+.h-count { position: absolute; right: 43.2pt; top: 52pt; font-size: 10pt; color: var(--fg-2); line-height: 1; }
+
+/* ── I 獨立主題企劃 ───────────────────────────────────────────── */
+.i-sub { position: absolute; left: 50.4pt; font-size: var(--text-lg); color: var(--fg); line-height: 1.2; }
+.i-desc { position: absolute; left: 50.4pt; width: 400pt; font-size: var(--text-base); color: var(--fg-2); line-height: 1.45; }
+.i-lab { position: absolute; left: 50.4pt; font-size: 10pt; font-weight: 700; color: var(--accent); letter-spacing: .1em; line-height: 1; }
+.i-val { position: absolute; left: 50.4pt; font-size: 13pt; color: var(--fg); line-height: 1.3; }
+.sw-row { position: absolute; left: 0; height: 46.8pt; width: 100%; }
+.sw-row .sw { position: absolute; top: 0; width: 61.2pt; height: 46.8pt; border: 1px solid var(--border); }
+.ck { position: absolute; font-size: var(--text-sm); color: var(--fg); line-height: 1.2; width: 200pt; }
+.ck .ckm { color: var(--accent); font-weight: 700; margin-right: 5pt; }
+.i-board { position: absolute; }
+.i-board .ph { width: 100%; height: auto; }
+.i-cap { margin-top: 7.2pt; font-size: 10pt; font-style: italic; color: var(--fg-2); line-height: 1.2; }
+
+/* ── 便當盒 grid（DESIGN.md §5-1 三條規則）────────────────────── */
+.grid { position: absolute; left: 43.2pt; width: 873.6pt; display: flex; flex-direction: column; }
+.prow { display: flex; justify-content: flex-start; gap: 7.2pt; }
+.cell { position: relative; height: 100%; flex: 0 0 auto; }
+.ph {
+  height: 100%; width: auto; background: var(--border);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  color: var(--fg-2); font-size: var(--text-xs); line-height: 1.35; padding: 3pt;
+}
+.idx { position: absolute; left: 3.5pt; top: calc(100% + 8pt); font-size: var(--text-xs); color: var(--muted); line-height: 1; }
+.hero-block { display: flex; align-items: flex-start; }
+.hero-side { display: flex; flex-direction: column; flex: 0 0 auto; }
+.hero-cell { flex: 0 0 auto; }
+/* G 的排法：疊欄（G-2）／絕對定位列（G-4）／出血圖（G-4） */
+.gstack { display: flex; flex-direction: column; }
+.gstack > .ph { width: 100%; height: auto; }
+.prow.g-abs { position: absolute; }
+.ph.g-bleed { position: absolute; width: auto; height: auto; flex-direction: column; }
+.r45 { aspect-ratio: 4 / 5; }
+.r32 { aspect-ratio: 3 / 2; }
+.r23 { aspect-ratio: 2 / 3; }
+.r169 { aspect-ratio: 16 / 9; }
+.r11 { aspect-ratio: 1 / 1; }
+
+</style>
+</head>
+<body>
+<div class="deck">
+  <div class="deck-head">
+    <h1>MUCAPSO M1 拍攝計畫 ｜ Part 3 攝影表與前置規劃</h1>
+    <p>
+      共 25 頁 · 960 × 540 pt（16:9）· 六色 92 顆鏡位 ·
+      版式池 A/B/C/D/E/F/G/H/I（本輪不含 Part 2.5 的 J）。
+      全部版式走同一套四段垂直骨架：Header 0–108 ／ Content 108–432（沒有 Meta 就到 493.2）／
+      Meta 432–493.2 ／ Footer 493.2–540。
+      圖片全部是佔位塊：<code>background: var(--border)</code> ＋ <code>aspect-ratio</code>，
+      零外連圖片／字型網址。頁框上方那行標籤是審閱鷹架，不屬於 deck 內容。
+    </p>
+  </div>
+
+<section class="sheet" id="p01">
+  <div class="sheet-label">
+    <span class="no">P01</span>
+    <span class="lay">版式 A</span>
+    <span>封面 Cover</span>
+    <span class="det">A 封面 ｜ Header 色點 6 顆 ｜ Content 產品名 66pt ｜ Meta 品牌行</span>
+  </div>
+  <div class="pg dark">
+<div class="cover-dots" style="top:42.95pt"><span class="dot" style="left:50.4pt;background:#9b9b93"></span><span class="dot" style="left:79.2pt;background:#5b7f4f"></span><span class="dot" style="left:108pt;background:#c9a579"></span><span class="dot" style="left:136.8pt;background:#b33a3a"></span><span class="dot" style="left:165.6pt;background:#d97d35"></span><span class="dot" style="left:194.4pt;background:#6e2a3b"></span></div>
+<div class="cover-name" style="top:129.6pt">MUCAPSO M1</div>
+<div class="cover-sub" style="top:210pt">拍攝計劃 Rundown ｜ Shooting Reference for Photographer</div>
+<div class="cover-bar" style="top:381.6pt;height:50.4pt"></div>
+<div class="cover-meta" style="top:381.6pt">
+  <div class="cm1">2026.08.10（一）　09:00 – 18:00（含午休 12:30–13:30）</div>
+  <div class="cm2">攝職島 Shoot Island：台北市士林區延平北路六段480號4樓</div>
+</div>
+<div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mval plain">ADAM Elements　｜　MUCAPSO 產品系列</div></div></div>
+<div class="rule"></div><div class="pno on-dark">01</div></div>
+</section>
+<section class="sheet" id="p02">
+  <div class="sheet-label">
+    <span class="no">P02</span>
+    <span class="lay">版式 B</span>
+    <span>拍攝資訊 OVERVIEW</span>
+    <span class="det">B 總覽資訊卡 ｜ Header 滿版橫幅 960×108 ｜ Content 欄位列 4 組（列距 82.8）＋ 資訊卡 284.4 見方 ｜ Meta 無</span>
+  </div>
+  <div class="pg">
+<div class="banner" style="height:108pt"><div class="ph r169 banner-ph"><span>產品橫幅 PRODUCT BANNER · 960 × 108 pt</span></div></div>
+<div class="b-eyebrow" style="top:118.8pt">拍攝資訊 OVERVIEW</div>
+<div class="inf-row" style="top:140.4pt;height:82.8pt"><span class="inf-k">拍攝日期 DATE</span><span class="inf-v">2026.08.10（一）</span><span class="inf-line"></span></div><div class="inf-row" style="top:223.2pt;height:82.8pt"><span class="inf-k">拍攝時間 TIME</span><span class="inf-v">09:00 – 18:00（含午休 12:30–13:30）</span><span class="inf-line"></span></div><div class="inf-row" style="top:306pt;height:82.8pt"><span class="inf-k">拍攝地點 VENUE</span><span class="inf-v">攝職島 Shoot Island：台北市士林區延平北路六段480號4樓</span><span class="inf-line"></span></div><div class="inf-row" style="top:388.8pt;height:82.8pt"><span class="inf-k">負責人員 OWNER</span><span class="inf-v">Ken Wu</span><span class="inf-line"></span></div>
+<div class="infocard" style="top:158.4pt">
+  <span class="ic-eyebrow">產品開發 ｜ MUCAPSO 產品系列</span>
+  <span class="ic-name">MUCAPSO M1</span>
+  <span class="ic-sub">ADAM Elements</span>
+  <div class="ic-fields"><div class="cf-row"><span class="cf-k">出貨日期 SHIP</span><span class="cf-v">2026/08/17</span></div><div class="cf-row"><span class="cf-k">上市日期 LAUNCH</span><span class="cf-v">2026/09/02</span></div><div class="cf-row"><span class="cf-k">拍攝色彩 COLORS</span><span class="cf-v">6 色 + 主視覺 KV</span></div></div>
+</div>
+<div class="rule"></div><div class="pno">02</div></div>
+</section>
+<section class="sheet" id="p03">
+  <div class="sheet-label">
+    <span class="no">P03</span>
+    <span class="lay">版式 C</span>
+    <span>拍攝時間軸 TIMELINE</span>
+    <span class="det">C 時間軸表格 ｜ Content 表格 9 列 ｜ 表頭 30.2 ＋ 列高 38.2 = 374 ｜ Meta 無</span>
+  </div>
+  <div class="pg">
+<div class="band-head"><div class="hd-eyebrow">拍攝時間軸 SHOOTING TIMELINE</div><div class="hd-title">Timeline ｜ 一日拍攝排程</div></div>
+<div class="tbl-wrap" style="top:108pt">
+<table class="timeline">
+  <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
+  <thead><tr><th>時間</th><th>顏色·場次</th><th>場景</th><th>棚區</th><th>拍攝重點</th></tr></thead>
+  <tbody><tr class="z1"><td>09:00–09:30</td><td><span class="sess">—</span></td><td>棚務 Setting</td><td>C</td><td>Set、燈光、產品、白平衡</td></tr><tr class="z2"><td>09:30–10:30</td><td><span class="rdot" style="background:#9b9b93"></span><span class="sess">Gray 灰</span></td><td>書桌</td><td>C</td><td>情境 + 產品細節 17 項</td></tr><tr class="z1"><td>10:30–11:30</td><td><span class="rdot" style="background:#5b7f4f"></span><span class="sess">Green 綠色</span></td><td>咖啡廳</td><td>C</td><td>情境 + 產品細節 16 項</td></tr><tr class="z2"><td>11:30–12:30</td><td><span class="rdot" style="background:#c9a579"></span><span class="sess">Milk Tea 奶茶</span></td><td>床</td><td>B</td><td>情境 + 產品細節 15 項</td></tr><tr class="z3"><td>12:30–13:30</td><td><span class="sess">午休</span></td><td></td><td>—</td><td></td></tr><tr class="z2"><td>13:30–14:30</td><td><span class="rdot" style="background:#b33a3a"></span><span class="sess">Red 紅色</span></td><td>廚房</td><td>A</td><td>情境 + 產品細節 16 項</td></tr><tr class="z1"><td>14:30–15:30</td><td><span class="rdot" style="background:#d97d35"></span><span class="sess">Orange 橘色</span></td><td>機場咖啡館 Airport Café</td><td>A</td><td>獨立主題拍攝，共 12 項（見獨立主題頁）</td></tr><tr class="z2"><td>15:30 – 16:30</td><td><span class="sess">主視覺 KV</span></td><td>電視櫃</td><td>B</td><td>6 色產品合拍主視覺</td></tr><tr class="z1"><td>16:30–17:30</td><td><span class="rdot" style="background:#6e2a3b"></span><span class="sess">Burgundy 勃根地紅</span></td><td>客廳沙發</td><td>B</td><td>情境 + 產品細節 16 項</td></tr></tbody>
+</table>
+</div>
+<div class="rule"></div><div class="pno">03</div></div>
+</section>
+<section class="sheet" id="p04">
+  <div class="sheet-label">
+    <span class="no">P04</span>
+    <span class="lay">版式 D</span>
+    <span>拍攝區域 SHOOTING AREA</span>
+    <span class="det">D 棚區卡片 ｜ Content 卡 3 張 278.8×324（實景照 121.2 高）｜ Meta 棚區場次 3 欄</span>
+  </div>
+  <div class="pg white"><div class="band-head"><div class="hd-eyebrow">拍攝區域 SHOOTING AREA</div><div class="hd-title">Shooting Area ｜ 拍攝租借區域總覽</div></div><div class="zcard" style="left:43.2pt;top:108pt;width:278.8pt;height:324pt;background:#a5a5a5;padding:14.4pt;gap:7.2pt"><span class="zcode" style="height:38.4pt">C 區</span><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>C 區實景 1 · 3:2</span></div></div><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>C 區實景 2 · 3:2</span></div></div></div><div class="zcard" style="left:340.6pt;top:108pt;width:278.8pt;height:324pt;background:#a5a5a5;padding:14.4pt;gap:7.2pt"><span class="zcode" style="height:38.4pt">B 區</span><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>B 區實景 1 · 3:2</span></div></div><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>B 區實景 2 · 3:2</span></div></div></div><div class="zcard" style="left:638pt;top:108pt;width:278.8pt;height:324pt;background:#a5a5a5;padding:14.4pt;gap:7.2pt"><span class="zcode" style="height:38.4pt">A 區</span><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>A 區實景 1 · 3:2</span></div></div><div class="zph" style="height:121.2pt"><div class="ph r32 "><span>A 區實景 2 · 3:2</span></div></div></div><div class="band-meta" style="gap:18.6pt"><div class="mcol"><div class="mlab">C 區 場次 SESSIONS</div><div class="mval">棚務 Setting（09:00–09:30）、Gray 灰 ｜ 書桌、Green 綠 ｜ 咖啡廳</div></div><div class="mcol"><div class="mlab">B 區 場次 SESSIONS</div><div class="mval">Milk Tea 奶茶 ｜ 床、主視覺 KV ｜ 電視櫃、Burgundy 勃根地紅 ｜ 客廳沙發</div></div><div class="mcol"><div class="mlab">A 區 場次 SESSIONS</div><div class="mval">Red 紅 ｜ 廚房、Orange 橘色 ｜ 機場咖啡館 Airport Café</div></div></div><div class="rule"></div><div class="pno">04</div></div>
+</section>
+<section class="sheet" id="p05">
+  <div class="sheet-label">
+    <span class="no">P05</span>
+    <span class="lay">版式 E</span>
+    <span>標準鏡位清單 STANDARD SHOT LIST</span>
+    <span class="det">E 雙欄清單 ｜ Content 16 條 × 2 欄（列距 40.5）｜ Meta 適用場景 ＋ 清單組成</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="hd-eyebrow">拍攝清單 STANDARD SHOT LIST</div><div class="hd-title">每個場景的標準鏡位清單</div></div><div class="li" style="left:50.4pt;top:108pt;height:40.5pt"><span class="bul"></span><span class="lt">人物情境－人物 & 產品皆清楚</span></div><div class="li" style="left:50.4pt;top:148.5pt;height:40.5pt"><span class="bul"></span><span class="lt">人物情境－人物後景模糊，產品清楚</span></div><div class="li" style="left:50.4pt;top:189pt;height:40.5pt"><span class="bul"></span><span class="lt">無人情境－產品為主，帶模糊背景</span></div><div class="li" style="left:50.4pt;top:229.5pt;height:40.5pt"><span class="bul"></span><span class="lt">Speaker Grill 特寫</span></div><div class="li" style="left:50.4pt;top:270pt;height:40.5pt"><span class="bul"></span><span class="lt">無線充電情境－吸手機 M1 放桌上（有手）</span></div><div class="li" style="left:50.4pt;top:310.5pt;height:40.5pt"><span class="bul"></span><span class="lt">無線充電情境－吸手機 M1 放桌上（無手）</span></div><div class="li" style="left:50.4pt;top:351pt;height:40.5pt"><span class="bul"></span><span class="lt">Logo 特寫</span></div><div class="li" style="left:50.4pt;top:391.5pt;height:40.5pt"><span class="bul"></span><span class="lt">接 USB-C 線 特寫</span></div><div class="li" style="left:487.2pt;top:108pt;height:40.5pt"><span class="bul"></span><span class="lt">無線充電情境－有手，有手機，雙手持</span></div><div class="li" style="left:487.2pt;top:148.5pt;height:40.5pt"><span class="bul"></span><span class="lt">音箱情境－無手</span></div><div class="li" style="left:487.2pt;top:189pt;height:40.5pt"><span class="bul"></span><span class="lt">音箱情境－有手</span></div><div class="li" style="left:487.2pt;top:229.5pt;height:40.5pt"><span class="bul"></span><span class="lt">手按按鍵</span></div><div class="li" style="left:487.2pt;top:270pt;height:40.5pt"><span class="bul"></span><span class="lt">背包外出模式－掛鉤勾在包包上</span></div><div class="li" style="left:487.2pt;top:310.5pt;height:40.5pt"><span class="bul"></span><span class="lt">背包外出模式－掛鉤勾在包包上（特寫）</span></div><div class="li" style="left:487.2pt;top:351pt;height:40.5pt"><span class="bul"></span><span class="lt">掛勾開合動作特寫</span></div><div class="li" style="left:487.2pt;top:391.5pt;height:40.5pt"><span class="bul"></span><span class="lt">搭配人物背包 形象</span></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">適用場景 SCENES</div><div class="mval">書桌 · 咖啡廳 · 床 · 廚房 · 機場咖啡館 Airport Café · 客廳沙發（共 6 個色彩場景）</div></div><div class="mcol"><div class="mlab">清單組成 COMPOSITION</div><div class="mval">通用 3 顆 ＋ 產品特徵 13 顆 ＝ 16 顆</div></div></div><div class="rule"></div><div class="pno">05</div></div>
+</section>
+<section class="sheet" id="p06">
+  <div class="sheet-label">
+    <span class="no">P06</span>
+    <span class="lay">版式 F</span>
+    <span>主視覺 KV KEY VISUAL</span>
+    <span class="det">F KV 標題帶 ｜ Header 深色帶 873.6×108 ＋ 色環 6 顆 ｜ Content 雙圖共用高 336.38 ｜ Meta 無</span>
+  </div>
+  <div class="pg white">
+<div class="kvband" style="height:108pt;--kv-text-w:513.35pt">
+  <span class="kv-slot">15:30 – 16:30 ｜ B 區 ｜ 場景：電視櫃</span>
+  <span class="kv-title">主視覺 KV KEY VISUAL</span>
+  <span class="kv-desc">六色產品擺在一起拍攝，作為 MUCAPSO M1 主視覺（Key Visual）。</span>
+  <span class="ring" style="left:556.55pt;top:32.25pt;background:#9b9b93"></span><span class="ring" style="left:605.5pt;top:32.25pt;background:#5b7f4f"></span><span class="ring" style="left:654.45pt;top:32.25pt;background:#c9a579"></span><span class="ring" style="left:703.4pt;top:32.25pt;background:#b33a3a"></span><span class="ring" style="left:752.35pt;top:32.25pt;background:#d97d35"></span><span class="ring" style="left:801.3pt;top:32.25pt;background:#6e2a3b"></span>
+</div>
+<div class="prow kv-row" style="left:43.2pt;top:132.41pt;height:336.38pt;gap:6.5pt"><div class="ph r45 "><span>KV 副圖 · 4:5</span></div><div class="ph r169 "><span>KV 主圖 · 16:9</span></div></div>
+<div class="rule"></div><div class="pno">06</div></div>
+</section>
+<section class="sheet" id="p07">
+  <div class="sheet-label">
+    <span class="no">P07</span>
+    <span class="lay">版式 G</span>
+    <span>Gray 氣氛參考</span>
+    <span class="det">G-2 兩小疊 ｜ 5 張參考圖 ｜ 4 欄單列 ｜ 列高 270.19 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Gray 灰 ｜ 書桌</div><div class="g-model">09:30–10:30 ｜ C 區 ｜ MODEL 男生 · 專注時刻 · 工作</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Gray 灰</span></div></div><div class="grid" style="top:134.91pt"><div class="prow" style="height:270.19pt"><div class="cell"><div class="ph r11 "><span>氣氛參考 · 1:1</span></div></div><div class="cell"><div class="ph r11 "><span>氣氛參考 · 1:1</span></div></div><div class="cell gstack" style="width:131.49pt;gap:7.2pt"><div class="ph r11 "><span>氣氛參考 · 1:1</span></div><div class="ph r11 "><span>氣氛參考 · 1:1</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">FOCUS 專注 · FLOW 心流 · CALM 平靜</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">LO-FI · AMBIENT 氛圍音樂 · INSTRUMENTAL 純音樂</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Working 工作 · Late Night 深夜 · Desk 書桌</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">07</div></div>
+</section>
+<section class="sheet" id="p08">
+  <div class="sheet-label">
+    <span class="no">P08</span>
+    <span class="lay">版式 H</span>
+    <span>Gray 鏡位網格 1/2（Shot 01–09）</span>
+    <span class="det">mixed-2rows ｜ 9 張 ｜ 列高 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Gray 灰 ｜ 書桌</div><div class="h-model">09:30–10:30 ｜ C 區 ｜ MODEL 男生 · 專注時刻 · 工作</div><div class="h-range">Shot 01–09</div><div class="h-count">本頁 9 張 ｜ Gray 共 17 張</div></div><div class="grid" style="top:108pt;gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>GRAY-01 · 4:5</span></div><span class="idx">01</span></div><div class="cell"><div class="ph r45 "><span>GRAY-02 · 4:5</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r45 "><span>GRAY-03 · 4:5</span></div><span class="idx">03</span></div><div class="cell"><div class="ph r45 "><span>GRAY-04 · 4:5</span></div><span class="idx">04</span></div><div class="cell"><div class="ph r23 "><span>GRAY-05 · 2:3</span></div><span class="idx">05</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r23 "><span>GRAY-06 · 2:3</span></div><span class="idx">06</span></div><div class="cell"><div class="ph r45 "><span>GRAY-07 · 4:5</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r45 "><span>GRAY-08 · 4:5</span></div><span class="idx">08</span></div><div class="cell"><div class="ph r23 "><span>GRAY-09 · 2:3</span></div><span class="idx">09</span></div></div></div><div class="rule"></div><div class="pno">08</div></div>
+</section>
+<section class="sheet" id="p09">
+  <div class="sheet-label">
+    <span class="no">P09</span>
+    <span class="lay">版式 H</span>
+    <span>Gray 鏡位網格 2/2（Shot 10–17）</span>
+    <span class="det">mixed-2rows ｜ 8 張 ｜ 列高 165.26 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Gray 灰 ｜ 書桌</div><div class="h-model">09:30–10:30 ｜ C 區 ｜ MODEL 男生 · 專注時刻 · 工作</div><div class="h-range">Shot 10–17</div><div class="h-count">本頁 8 張 ｜ Gray 共 17 張</div></div><div class="grid" style="top:110.74pt;gap:24pt"><div class="prow" style="height:165.26pt"><div class="cell"><div class="ph r45 "><span>GRAY-10 · 4:5</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r23 "><span>GRAY-11 · 2:3</span></div><span class="idx">11</span></div><div class="cell"><div class="ph r45 "><span>GRAY-12 · 4:5</span></div><span class="idx">12</span></div><div class="cell"><div class="ph r45 "><span>GRAY-13 · 4:5</span></div><span class="idx">13</span></div></div><div class="prow" style="height:165.26pt"><div class="cell"><div class="ph r45 "><span>GRAY-14 · 4:5</span></div><span class="idx">14</span></div><div class="cell"><div class="ph r45 "><span>GRAY-15 · 4:5</span></div><span class="idx">15</span></div><div class="cell"><div class="ph r169 "><span>GRAY-16 · 16:9 · 吸在辦公桌隔板上</span></div><span class="idx">16</span></div><div class="cell"><div class="ph r169 "><span>GRAY-17 · 16:9 · 吸在辦公桌隔板上</span></div><span class="idx">17</span></div></div></div><div class="rule"></div><div class="pno">09</div></div>
+</section>
+<section class="sheet" id="p10">
+  <div class="sheet-label">
+    <span class="no">P10</span>
+    <span class="lay">版式 G</span>
+    <span>Green 氣氛參考</span>
+    <span class="det">G-1 單列 ｜ 5 張參考圖 ｜ 5 欄單列 ｜ 列高 234.67 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Green 綠色 ｜ 咖啡廳</div><div class="g-model">10:30–11:30 ｜ C 區 ｜ MODEL 女生 · 植栽 · 咖啡點心</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Green 綠色</span></div></div><div class="grid" style="top:152.67pt"><div class="prow" style="height:234.67pt"><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">CALM 平靜 · BALANCE 平衡 · REFRESH 煥新</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">NATURE 自然聲 · ACOUSTIC 木吉他 · MORNING LIGHT 晨光旋律</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Plants 植物 · Tea 茶 · Morning Sunlight 晨光</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">10</div></div>
+</section>
+<section class="sheet" id="p11">
+  <div class="sheet-label">
+    <span class="no">P11</span>
+    <span class="lay">版式 H</span>
+    <span>Green 鏡位網格 1/2（Shot 01–08）</span>
+    <span class="det">hero-left-two-rows ｜ 8 張 ｜ 側欄 4+3 ｜ hero 高 338.4 / 上列 186.03 / 下列 128.37 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Green 綠色 ｜ 咖啡廳</div><div class="h-model">10:30–11:30 ｜ C 區 ｜ MODEL 女生 · 植栽 · 咖啡點心</div><div class="h-range">Shot 01–08</div><div class="h-count">本頁 8 張 ｜ Green 共 16 張</div></div><div class="grid" style="top:118.8pt"><div class="hero-block" style="gap:10.8pt;height:338.4pt"><div class="cell hero-cell" style="height:338.4pt"><div class="ph r45 "><span>GREEN-01 · 4:5</span></div><span class="idx">01</span></div><div class="hero-side" style="gap:24pt"><div class="prow" style="height:186.03pt"><div class="cell"><div class="ph r23 "><span>GREEN-02 · 2:3</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r45 "><span>GREEN-03 · 4:5</span></div><span class="idx">03</span></div><div class="cell"><div class="ph r45 "><span>GREEN-04 · 4:5</span></div><span class="idx">04</span></div><div class="cell"><div class="ph r45 "><span>GREEN-05 · 4:5</span></div><span class="idx">05</span></div></div><div class="prow" style="height:128.37pt"><div class="cell"><div class="ph r32 "><span>GREEN-06 · 3:2</span></div><span class="idx">06</span></div><div class="cell"><div class="ph r32 "><span>GREEN-07 · 3:2</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r32 "><span>GREEN-08 · 3:2</span></div><span class="idx">08</span></div></div></div></div></div><div class="rule"></div><div class="pno">11</div></div>
+</section>
+<section class="sheet" id="p12">
+  <div class="sheet-label">
+    <span class="no">P12</span>
+    <span class="lay">版式 H</span>
+    <span>Green 鏡位網格 2/2（Shot 09–16）</span>
+    <span class="det">uniform-4x2 ｜ 8 張 ｜ 列高 142 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Green 綠色 ｜ 咖啡廳</div><div class="h-model">10:30–11:30 ｜ C 區 ｜ MODEL 女生 · 植栽 · 咖啡點心</div><div class="h-range">Shot 09–16</div><div class="h-count">本頁 8 張 ｜ Green 共 16 張</div></div><div class="grid" style="top:134pt;gap:24pt"><div class="prow" style="height:142pt"><div class="cell"><div class="ph r32 "><span>GREEN-09 · 3:2</span></div><span class="idx">09</span></div><div class="cell"><div class="ph r32 "><span>GREEN-10 · 3:2</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r32 "><span>GREEN-11 · 3:2</span></div><span class="idx">11</span></div><div class="cell"><div class="ph r32 "><span>GREEN-12 · 3:2</span></div><span class="idx">12</span></div></div><div class="prow" style="height:142pt"><div class="cell"><div class="ph r32 "><span>GREEN-13 · 3:2</span></div><span class="idx">13</span></div><div class="cell"><div class="ph r32 "><span>GREEN-14 · 3:2</span></div><span class="idx">14</span></div><div class="cell"><div class="ph r32 "><span>GREEN-15 · 3:2</span></div><span class="idx">15</span></div><div class="cell"><div class="ph r32 "><span>GREEN-16 · 3:2</span></div><span class="idx">16</span></div></div></div><div class="rule"></div><div class="pno">12</div></div>
+</section>
+<section class="sheet" id="p13">
+  <div class="sheet-label">
+    <span class="no">P13</span>
+    <span class="lay">版式 G</span>
+    <span>Milk Tea 氣氛參考</span>
+    <span class="det">G-2 兩小疊 ｜ 5 張參考圖 ｜ 4 欄單列 ｜ 列高 297.14 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Milk Tea 奶茶 ｜ 床</div><div class="g-model">11:30–12:30 ｜ B 區 ｜ MODEL 女生 · 早晨 · 杯水</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Milk Tea 奶茶</span></div></div><div class="grid" style="top:121.43pt"><div class="prow" style="height:297.14pt"><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell gstack" style="width:257.72pt;gap:7.2pt"><div class="ph r169 "><span>氣氛參考 · 16:9</span></div><div class="ph r169 "><span>氣氛參考 · 16:9</span></div></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">COMFORT 舒適 · WARMTH 溫暖 · SLOW 慢活</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">COFFEE JAZZ 咖啡爵士 · ACOUSTIC 木吉他 · LO-FI</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Coffee 咖啡 · Reading 閱讀 · Morning Sunlight 晨光</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">13</div></div>
+</section>
+<section class="sheet" id="p14">
+  <div class="sheet-label">
+    <span class="no">P14</span>
+    <span class="lay">版式 H</span>
+    <span>Milk Tea 鏡位網格 1/2（Shot 01–08）</span>
+    <span class="det">mixed-2rows ｜ 8 張 ｜ 列高 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Milk Tea 奶茶 ｜ 床</div><div class="h-model">11:30–12:30 ｜ B 區 ｜ MODEL 女生 · 早晨 · 杯水</div><div class="h-range">Shot 01–08</div><div class="h-count">本頁 8 張 ｜ Milk Tea 共 15 張</div></div><div class="grid" style="top:108pt;gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r32 "><span>MILKTEA-01 · 3:2</span></div><span class="idx">01</span></div><div class="cell"><div class="ph r32 "><span>MILKTEA-02 · 3:2</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-03 · 4:5</span></div><span class="idx">03</span></div><div class="cell"><div class="ph r23 "><span>MILKTEA-04 · 2:3</span></div><span class="idx">04</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>MILKTEA-05 · 4:5</span></div><span class="idx">05</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-06 · 4:5</span></div><span class="idx">06</span></div><div class="cell"><div class="ph r23 "><span>MILKTEA-07 · 2:3</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-08 · 4:5</span></div><span class="idx">08</span></div></div></div><div class="rule"></div><div class="pno">14</div></div>
+</section>
+<section class="sheet" id="p15">
+  <div class="sheet-label">
+    <span class="no">P15</span>
+    <span class="lay">版式 H</span>
+    <span>Milk Tea 鏡位網格 2/2（Shot 09–15）</span>
+    <span class="det">hero-right-two-rows ｜ 7 張 ｜ 側欄 3+3 ｜ hero 高 360 / 上列 168 / 下列 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Milk Tea 奶茶 ｜ 床</div><div class="h-model">11:30–12:30 ｜ B 區 ｜ MODEL 女生 · 早晨 · 杯水</div><div class="h-range">Shot 09–15</div><div class="h-count">本頁 7 張 ｜ Milk Tea 共 15 張</div></div><div class="grid" style="top:108pt"><div class="hero-block" style="gap:10.8pt;height:360pt"><div class="hero-side" style="gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r23 "><span>MILKTEA-09 · 2:3</span></div><span class="idx">09</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-10 · 4:5</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-11 · 4:5</span></div><span class="idx">11</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>MILKTEA-12 · 4:5</span></div><span class="idx">12</span></div><div class="cell"><div class="ph r45 "><span>MILKTEA-14 · 4:5</span></div><span class="idx">14</span></div><div class="cell"><div class="ph r23 "><span>MILKTEA-15 · 2:3</span></div><span class="idx">15</span></div></div></div><div class="cell hero-cell" style="height:360pt"><div class="ph r23 "><span>MILKTEA-13 · 2:3</span></div><span class="idx">13</span></div></div></div><div class="rule"></div><div class="pno">15</div></div>
+</section>
+<section class="sheet" id="p16">
+  <div class="sheet-label">
+    <span class="no">P16</span>
+    <span class="lay">版式 G</span>
+    <span>Red 氣氛參考</span>
+    <span class="det">G-1 單列 ｜ 5 張參考圖 ｜ 5 欄單列 ｜ 列高 234.67 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Red 紅色 ｜ 廚房</div><div class="g-model">13:30–14:30 ｜ A 區 ｜ MODEL 女生 · 居家 · 料理</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Red 紅色</span></div></div><div class="grid" style="top:152.67pt"><div class="prow" style="height:234.67pt"><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">PASSION 熱情 · INSPIRATION 靈感 · EXPRESSION 表達</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">JAZZ 爵士 · ALTERNATIVE 另類 · CREATIVE BEATS 創作節奏</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Painting 繪畫 · Art Studio 藝術工作室 · Creating 創作</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">16</div></div>
+</section>
+<section class="sheet" id="p17">
+  <div class="sheet-label">
+    <span class="no">P17</span>
+    <span class="lay">版式 H</span>
+    <span>Red 鏡位網格 1/2（Shot 01–08）</span>
+    <span class="det">mixed-2rows ｜ 8 張 ｜ 列高 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Red 紅色 ｜ 廚房</div><div class="h-model">13:30–14:30 ｜ A 區 ｜ MODEL 女生 · 居家 · 料理</div><div class="h-range">Shot 01–08</div><div class="h-count">本頁 8 張 ｜ Red 共 16 張</div></div><div class="grid" style="top:108pt;gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r23 "><span>RED-01 · 2:3</span></div><span class="idx">01</span></div><div class="cell"><div class="ph r45 "><span>RED-02 · 4:5</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r23 "><span>RED-03 · 2:3</span></div><span class="idx">03</span></div><div class="cell"><div class="ph r23 "><span>RED-04 · 2:3</span></div><span class="idx">04</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r23 "><span>RED-05 · 2:3</span></div><span class="idx">05</span></div><div class="cell"><div class="ph r45 "><span>RED-06 · 4:5</span></div><span class="idx">06</span></div><div class="cell"><div class="ph r23 "><span>RED-07 · 2:3</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r45 "><span>RED-08 · 4:5</span></div><span class="idx">08</span></div></div></div><div class="rule"></div><div class="pno">17</div></div>
+</section>
+<section class="sheet" id="p18">
+  <div class="sheet-label">
+    <span class="no">P18</span>
+    <span class="lay">版式 H</span>
+    <span>Red 鏡位網格 2/2（Shot 09–16）</span>
+    <span class="det">mixed-2rows ｜ 8 張 ｜ 列高 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Red 紅色 ｜ 廚房</div><div class="h-model">13:30–14:30 ｜ A 區 ｜ MODEL 女生 · 居家 · 料理</div><div class="h-range">Shot 09–16</div><div class="h-count">本頁 8 張 ｜ Red 共 16 張</div></div><div class="grid" style="top:108pt;gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>RED-09 · 4:5</span></div><span class="idx">09</span></div><div class="cell"><div class="ph r45 "><span>RED-10 · 4:5</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r45 "><span>RED-11 · 4:5</span></div><span class="idx">11</span></div><div class="cell"><div class="ph r45 "><span>RED-12 · 4:5</span></div><span class="idx">12</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>RED-13 · 4:5</span></div><span class="idx">13</span></div><div class="cell"><div class="ph r45 "><span>RED-14 · 4:5</span></div><span class="idx">14</span></div><div class="cell"><div class="ph r45 "><span>RED-15 · 4:5</span></div><span class="idx">15</span></div><div class="cell"><div class="ph r23 "><span>RED-16 · 2:3</span></div><span class="idx">16</span></div></div></div><div class="rule"></div><div class="pno">18</div></div>
+</section>
+<section class="sheet" id="p19">
+  <div class="sheet-label">
+    <span class="no">P19</span>
+    <span class="lay">版式 G</span>
+    <span>Orange 氣氛參考</span>
+    <span class="det">G-3 跨列 ｜ 7 張參考圖 ｜ 跨列圖 324×324 ｜ 上列 162.2 / 下列 143.8 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Orange 橘色 ｜ 機場咖啡館 Airport Café</div><div class="g-model">14:30–15:30 ｜ A 區 ｜ MODEL 男生 · 休閒旅行風 · 清爽自然、喜歡旅行與咖啡</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Orange 橘色</span></div></div><div class="grid" style="top:108pt"><div class="hero-block" style="gap:10.8pt;height:324pt"><div class="hero-side" style="gap:18pt"><div class="prow" style="height:162.2pt"><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div></div><div class="prow" style="height:143.8pt"><div class="cell"><div class="ph r169 "><span>氣氛參考 · 16:9</span></div></div><div class="cell"><div class="ph r169 "><span>氣氛參考 · 16:9</span></div></div></div></div><div class="cell hero-cell" style="height:324pt"><div class="ph r11 "><span>氣氛參考 · 1:1</span></div></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">ADVENTURE 冒險 · FREEDOM 自由 · EXCITEMENT 興奮</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">CITY POP 城市流行 · TRAVEL BEATS 旅行節奏 · INDIE POP 獨立流行</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Airport 機場 · Weekend Trip 週末旅行 · Travel 旅途</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">19</div></div>
+</section>
+<section class="sheet" id="p20">
+  <div class="sheet-label">
+    <span class="no">P20</span>
+    <span class="lay">版式 I</span>
+    <span>Orange 獨立主題企劃</span>
+    <span class="det">I（可選版式） ｜ Content 左欄六段（段距 10.84）＋ Reference Board 436.8×291.2 ｜ Meta MODEL ＋ 場次</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="hd-eyebrow">橘色 ORANGE ｜ 獨立主題 SPECIAL THEME</div><div class="hd-title">機場咖啡館</div></div><div class="i-sub" style="top:108pt">Airport Café　｜　週末小旅行 Weekend Escape</div><div class="i-desc" style="top:137.84pt">在出發前的片刻，享受屬於自己的節奏。音樂、咖啡、陽光，準備好迎接下一段旅程。</div><div class="i-lab" style="top:184.68pt">MOOD</div><div class="i-val" style="top:197.68pt">Weekend Escape</div><div class="i-lab" style="top:225.52pt">KEYWORDS</div><div class="i-val" style="top:238.52pt">Travel ｜ Freedom ｜ Warm Light ｜ Relax</div><div class="i-lab" style="top:266.36pt">PALETTE</div><div class="sw-row" style="top:278.36pt"><span class="sw" style="left:50.4pt;background:#d97d35"></span><span class="sw" style="left:120.95pt;background:#3b2e26"></span><span class="sw" style="left:191.5pt;background:#a8a6a0"></span><span class="sw" style="left:262.05pt;background:#e6dfd3"></span></div><div class="i-lab" style="top:336pt">SHOT LIST（8 項）</div><div class="ck" style="left:50.4pt;top:348pt"><span class="ckm">✓</span>男主角吃甜點 & 喝咖啡</div><div class="ck" style="left:50.4pt;top:369pt"><span class="ckm">✓</span>M1 再充手機（Wireless Charging）</div><div class="ck" style="left:50.4pt;top:390pt"><span class="ckm">✓</span>Passport</div><div class="ck" style="left:50.4pt;top:411pt"><span class="ckm">✓</span>行李箱與背包</div><div class="ck" style="left:258.4pt;top:348pt"><span class="ckm">✓</span>Power Bank 接 M1</div><div class="ck" style="left:258.4pt;top:369pt"><span class="ckm">✓</span>窗外飛機起飛</div><div class="ck" style="left:258.4pt;top:390pt"><span class="ckm">✓</span>Boarding Pass</div><div class="ck" style="left:258.4pt;top:411pt"><span class="ckm">✓</span>Afternoon Light</div><div class="i-board" style="left:480pt;top:114.05pt;width:436.8pt"><div class="ph r32 "><span>Reference Board · 3:2</span></div><div class="i-cap">Reference Board ｜ 機場咖啡館 Weekend Escape</div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MODEL 模特</div><div class="mval">男生／163cm／65kg · 休閒旅行風 · 清爽自然、喜歡旅行與咖啡</div></div><div class="mcol"><div class="mlab">場次 SESSION</div><div class="mval">14:30–15:30 ｜ A 區 ｜ 機場咖啡館 Airport Café</div></div></div><div class="rule"></div><div class="pno">20</div></div>
+</section>
+<section class="sheet" id="p21">
+  <div class="sheet-label">
+    <span class="no">P21</span>
+    <span class="lay">版式 H</span>
+    <span>Orange 鏡位網格 1/2（Shot 01–06）</span>
+    <span class="det">mixed-2rows ｜ 6 張 ｜ 列高 161.1 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Orange 橘色 ｜ 機場咖啡館 Airport Café</div><div class="h-model">14:30–15:30 ｜ A 區 ｜ MODEL 男生 · 休閒旅行風 · 清爽自然、喜歡旅行與咖啡</div><div class="h-range">Shot 01–06</div><div class="h-count">本頁 6 張 ｜ Orange 共 12 張</div></div><div class="grid" style="top:114.9pt;gap:24pt"><div class="prow" style="height:161.1pt"><div class="cell"><div class="ph r169 "><span>ORANGE-01 · 16:9</span></div><span class="idx">01</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-02 · 16:9</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-03 · 16:9</span></div><span class="idx">03</span></div></div><div class="prow" style="height:161.1pt"><div class="cell"><div class="ph r169 "><span>ORANGE-04 · 16:9</span></div><span class="idx">04</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-05 · 16:9</span></div><span class="idx">05</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-06 · 16:9</span></div><span class="idx">06</span></div></div></div><div class="rule"></div><div class="pno">21</div></div>
+</section>
+<section class="sheet" id="p22">
+  <div class="sheet-label">
+    <span class="no">P22</span>
+    <span class="lay">版式 H</span>
+    <span>Orange 鏡位網格 2/2（Shot 07–12）</span>
+    <span class="det">mixed-2rows ｜ 6 張 ｜ 列高 161.1 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Orange 橘色 ｜ 機場咖啡館 Airport Café</div><div class="h-model">14:30–15:30 ｜ A 區 ｜ MODEL 男生 · 休閒旅行風 · 清爽自然、喜歡旅行與咖啡</div><div class="h-range">Shot 07–12</div><div class="h-count">本頁 6 張 ｜ Orange 共 12 張</div></div><div class="grid" style="top:114.9pt;gap:24pt"><div class="prow" style="height:161.1pt"><div class="cell"><div class="ph r169 "><span>ORANGE-07 · 16:9</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-08 · 16:9</span></div><span class="idx">08</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-09 · 16:9</span></div><span class="idx">09</span></div></div><div class="prow" style="height:161.1pt"><div class="cell"><div class="ph r169 "><span>ORANGE-10 · 16:9</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-11 · 16:9</span></div><span class="idx">11</span></div><div class="cell"><div class="ph r169 "><span>ORANGE-12 · 16:9</span></div><span class="idx">12</span></div></div></div><div class="rule"></div><div class="pno">22</div></div>
+</section>
+<section class="sheet" id="p23">
+  <div class="sheet-label">
+    <span class="no">P23</span>
+    <span class="lay">版式 G</span>
+    <span>Burgundy 氣氛參考</span>
+    <span class="det">G-4 出血 ｜ 6 張參考圖 ｜ 出血圖 360×324 ｜ 上列 163.92 / 下列 142.08 ｜ Meta 情緒/歌單/時刻 3 欄 ＋ 道具空槽</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="g-title">拍攝氣氛參考</div><div class="g-scene">Burgundy 勃根地紅 ｜ 客廳沙發</div><div class="g-model">16:30–17:30 ｜ B 區 ｜ MODEL 女生 · 居家 · 下班時光</div><div class="cutout" style="left:799.45pt;top:10.8pt;width:117.35pt;height:86.4pt"><span>產品去背窗<br>Burgundy 勃根地紅</span></div></div><div class="ph g-bleed" style="left:600pt;top:108pt;width:360pt;height:324pt"><span>氣氛參考 · 2:3<br>出血（水平貼右頁緣）</span></div><div class="prow g-abs" style="left:43.2pt;top:108pt;height:163.92pt"><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div><div class="cell"><div class="ph r32 "><span>氣氛參考 · 3:2</span></div></div></div><div class="prow g-abs" style="left:43.2pt;top:289.92pt;height:142.08pt"><div class="cell"><div class="ph r45 "><span>氣氛參考 · 4:5</span></div></div><div class="cell"><div class="ph r11 "><span>氣氛參考 · 1:1</span></div></div><div class="cell"><div class="ph r23 "><span>氣氛參考 · 2:3</span></div></div></div><div class="band-meta" style="gap:14.4pt"><div class="mcol"><div class="mlab">MOOD 情緒</div><div class="mval">INTIMATE 親密 · REFLECTIVE 沉思 · RELAX 放鬆</div></div><div class="mcol"><div class="mlab">PLAYLIST 歌單</div><div class="mval">JAZZ 爵士 · SOUL 靈魂樂 · SLOW POP 慢流行</div></div><div class="mcol"><div class="mlab">MOMENT 時刻</div><div class="mval">Wine 小酌 · Night 夜晚 · Warm Light 暖光</div></div><div class="mcol"><div class="mlab">PROPS 道具</div><div class="mslot">待補 — 本案輸入未提供</div></div></div><div class="rule"></div><div class="pno">23</div></div>
+</section>
+<section class="sheet" id="p24">
+  <div class="sheet-label">
+    <span class="no">P24</span>
+    <span class="lay">版式 H</span>
+    <span>Burgundy 鏡位網格 1/2（Shot 01–08）</span>
+    <span class="det">uniform-4x2 ｜ 8 張 ｜ 列高 142 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Burgundy 勃根地紅 ｜ 客廳沙發</div><div class="h-model">16:30–17:30 ｜ B 區 ｜ MODEL 女生 · 居家 · 下班時光</div><div class="h-range">Shot 01–08</div><div class="h-count">本頁 8 張 ｜ Burgundy 共 16 張</div></div><div class="grid" style="top:134pt;gap:24pt"><div class="prow" style="height:142pt"><div class="cell"><div class="ph r32 "><span>BURGUNDY-01 · 3:2</span></div><span class="idx">01</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-02 · 3:2</span></div><span class="idx">02</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-03 · 3:2</span></div><span class="idx">03</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-04 · 3:2</span></div><span class="idx">04</span></div></div><div class="prow" style="height:142pt"><div class="cell"><div class="ph r32 "><span>BURGUNDY-05 · 3:2</span></div><span class="idx">05</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-06 · 3:2</span></div><span class="idx">06</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-07 · 3:2</span></div><span class="idx">07</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-08 · 3:2</span></div><span class="idx">08</span></div></div></div><div class="rule"></div><div class="pno">24</div></div>
+</section>
+<section class="sheet" id="p25">
+  <div class="sheet-label">
+    <span class="no">P25</span>
+    <span class="lay">版式 H</span>
+    <span>Burgundy 鏡位網格 2/2（Shot 09–16）</span>
+    <span class="det">mixed-2rows ｜ 8 張 ｜ 列高 168 ｜ Meta 無</span>
+  </div>
+  <div class="pg"><div class="band-head"><div class="h-scene">Burgundy 勃根地紅 ｜ 客廳沙發</div><div class="h-model">16:30–17:30 ｜ B 區 ｜ MODEL 女生 · 居家 · 下班時光</div><div class="h-range">Shot 09–16</div><div class="h-count">本頁 8 張 ｜ Burgundy 共 16 張</div></div><div class="grid" style="top:108pt;gap:24pt"><div class="prow" style="height:168pt"><div class="cell"><div class="ph r45 "><span>BURGUNDY-09 · 4:5</span></div><span class="idx">09</span></div><div class="cell"><div class="ph r32 "><span>BURGUNDY-10 · 3:2</span></div><span class="idx">10</span></div><div class="cell"><div class="ph r45 "><span>BURGUNDY-11 · 4:5</span></div><span class="idx">11</span></div><div class="cell"><div class="ph r11 "><span>BURGUNDY-12 · 1:1</span></div><span class="idx">12</span></div></div><div class="prow" style="height:168pt"><div class="cell"><div class="ph r23 "><span>BURGUNDY-13 · 2:3</span></div><span class="idx">13</span></div><div class="cell"><div class="ph r23 "><span>BURGUNDY-14 · 2:3</span></div><span class="idx">14</span></div><div class="cell"><div class="ph r23 "><span>BURGUNDY-15 · 2:3</span></div><span class="idx">15</span></div><div class="cell"><div class="ph r169 "><span>BURGUNDY-16 · 16:9</span></div><span class="idx">16</span></div></div></div><div class="rule"></div><div class="pno">25</div></div>
+</section>
+</div>
+</body>
+</html>
