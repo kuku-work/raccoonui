@@ -1,0 +1,153 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * design-systems/photo-brief/tokens.css
+ *
+ * Structured token bindings for "Photo Brief Deck"（攝影提案簡報）——
+ * 印刷平面的簡報視覺語言：深底封面、淺灰內頁、單一橘色強調、
+ * 照片以固定列高靠左排列。零陰影、零漸層。
+ *
+ * 值的出處（每一組下方另有逐條註解）：
+ *   crew-skills/cases/ADAM-photo-deck/00-evidence-analysis/deck-structure.md
+ *   ——25 頁 960 × 540 pt 的 PDF，用 PyMuPDF 讀向量填色與文字塊座標，
+ *   非目測。標「非實測」的條目是原檔沒有的東西，沿用 schema fallback
+ *   （design-systems/_schema/defaults.css），並在 DESIGN.md 標「待補」。
+ *
+ * 單位一律 pt（point，印刷點）。版面 960 × 540 pt 等於 1280 × 720 px
+ * （1 pt = 4/3 px），HTML 端直接寫 pt 即可，不需要換算。
+ *
+ * Schema 覆蓋不到的東西（見 DESIGN.md，不另開自訂 token）：
+ *   1. 13 級字階只有 8 個 --text-* 槽位，26 / 22 / 16 / 13 / 10 pt
+ *      五級沒有 token，直接寫值。
+ *   2. 深底上的反白文字階（#c9c6be、#9b978e）沒有對應槽位。
+ *   3. 表格午休列的第三層底色 #efede8 沒有對應槽位。
+ *   4. 產品色（色數與 hex 由每個案子的輸入決定）本來就不該進 token，
+ *      它是變數不是常數。
+ * ─────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ─── Surface（三層）───────────────────────────────────────────
+   * 實測：頁面底色 #f5f5f3 佔 22 頁；#ffffff 出現在兩頁白底版式，
+   * 同時是表格斑馬紋的奇數列；#fbfaf8 是斑馬紋偶數列。
+   * 封面是「反相」不是第四種底色——底 = var(--fg)、字 = var(--surface)。*/
+  --bg: #f5f5f3;            /* 頁面底色（25 頁裡 22 頁） */
+  --surface: #ffffff;       /* 白底頁、卡片、表格奇數列 */
+  --surface-warm: #fbfaf8;  /* 表格偶數列（斑馬紋第二層） */
+
+  /* ─── Foreground（三層 ＋ 一個別名）─────────────────────────────
+   * 實測：內文 #262626、次要文字 #6b6b6b、圖片編號 #888888。
+   * 原檔在淺底上只有這三階，所以 --meta 走 schema 允許的別名寫法，
+   * 不硬造第四階。#262626 同時是「深底」的填色——深色是同一個墨色，
+   * 不是另一個顏色。 */
+  --fg: #262626;            /* 內文；同時是深底填色（封面、表頭、資訊卡、KV 標題帶） */
+  --fg-2: #6b6b6b;          /* 次要文字：頁碼、MODEL 行、表格內文、頁尾品牌行 */
+  --muted: #888888;         /* 最弱一階：圖片編號 9 pt */
+  --meta: var(--muted);     /* 原檔淺底只有三階，別名到 --muted，不造第四階 */
+
+  /* ─── Border（兩層）───────────────────────────────────────────
+   * 實測：分隔線 stroke #e3e1dc（y = 493.2、寬 873.6），色票方塊同色描邊。
+   * --border-soft 待補：資訊卡頁的 554.4 pt 細線原檔沒量到色值。 */
+  --border: #e3e1dc;        /* 分隔線、色票方塊描邊 */
+  --border-soft: var(--border);  /* 待補：資訊卡 554.4 pt 細線色值未量測，暫時同值 */
+
+  /* ─── Accent（單一橘色）───────────────────────────────────────
+   * 實測：#d97d35 用在前導標籤、Shot 標題、項目符號、勾號、封面直線。
+   * 整份簡報只有這一個強調色，不做第二強調色。
+   * --accent-on 非實測（原檔沒有「橘底放字」的情形）：依對比度選深墨色，
+   * #262626 對 #d97d35 是 5.0:1，白字只有 3.0:1。
+   * hover / active 非實測（PDF 沒有互動態），沿用 schema 的混色公式。 */
+  --accent: #d97d35;
+  --accent-on: #262626;     /* 非實測：對比度 5.0:1，優於白字的 3.0:1 */
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);   /* 非實測：schema fallback */
+  --accent-active: color-mix(in oklab, var(--accent), black 14%); /* 非實測：schema fallback */
+
+  /* ─── 語意狀態色 ─────────────────────────────────────────────
+   * 全部非實測：原檔是靜態簡報，沒有成功／警告／危險的語意色。
+   * 沿用 _schema/defaults.css，DESIGN.md 標「待補」。
+   * ⚠ 表格午休列的 #efede8 不是警告色，別拿 --warn 去套。 */
+  --success: #16a34a;       /* 非實測：schema fallback */
+  --warn: #eab308;          /* 非實測：schema fallback */
+  --danger: #dc2626;        /* 非實測：schema fallback */
+
+  /* ─── 字體家族 ───────────────────────────────────────────────
+   * 實測：中文一律 PingFang TC（Regular / Semibold），西文一律 Calibri
+   * （Regular / Bold / Italic）；大標另用 Cambria-Bold（西文）＋
+   * STSongti-TC-Bold（中文）。四個家族封頂，不加第五種。
+   * --font-mono 非實測：原檔沒有等寬字。 */
+  --font-display: Cambria, "STSongti TC", "Songti TC", "Noto Serif TC", serif;
+  --font-body: Calibri, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;  /* 非實測：schema fallback */
+
+  /* ─── 字階（13 級取 8 個槽位）─────────────────────────────────
+   * 實測 13 級：66 / 30 / 26 / 24 / 22 / 18 / 16 / 14 / 13 / 12 / 11 / 10 / 9 pt。
+   * schema 只有 8 個 --text-* 槽位，以下綁最結構性的 8 級；
+   * 26 / 22 / 16 / 13 / 10 pt 五級直接寫值（對照表在 DESIGN.md §3）。 */
+  --text-xs: 9pt;      /* 圖片編號 */
+  --text-sm: 11pt;     /* 表格內文、MODEL 行、勾號清單 */
+  --text-base: 12pt;   /* 版面主力：前導標籤、色名頁首、清單項目 */
+  --text-lg: 14pt;     /* Shot 範圍標籤、企劃頁副標 */
+  --text-xl: 18pt;     /* 封面副標 */
+  --text-2xl: 24pt;    /* 資訊卡產品名、棚區代號 */
+  --text-3xl: 30pt;    /* 章節大標 */
+  --text-4xl: 66pt;    /* 封面產品名 */
+
+  /* ─── 行高與字距 ─────────────────────────────────────────────
+   * 三個全部待補：來源是 PDF，只量得到文字塊座標與字級，量不到行高與
+   * 字距。以下是中性佔位值，不是實測值，排版前要回頭補量。 */
+  --leading-body: 1.5;        /* 待補：原檔未量測 */
+  --leading-tight: 1.15;      /* 待補：原檔未量測 */
+  --tracking-display: 0em;    /* 待補：原檔未量測 */
+
+  /* ─── 間距（底格 3.6 pt = 0.05 英寸）──────────────────────────
+   * 推導出處：水平座標與欄寬幾乎整批落在 3.6 pt 的整數倍——
+   * 安全邊界 43.2 = 12×、文字左緣 50.4 = 14×、封面色點間距 28.8 = 8×、
+   * 表格五個欄寬 122.4 / 194.4 / 136.8 / 64.8 / 338.4 = 34 / 54 / 38 / 18 / 94×、
+   * 資訊卡邊長 284.4 = 79×、KV 標題帶 871.2 × 154.8 = 242 × 43×。
+   * ⚠ 垂直基線多半不在這個格上（頁首 40.3、表格列高 38.2、封面標題 202.8），
+   * 所以間距 token 只規範水平節奏，垂直基線在 DESIGN.md §4 逐條列固定值。 */
+  --space-1: 3.6pt;    /* 底格；圖片編號的水平偏移量級 */
+  --space-2: 7.2pt;    /* 文字左緣相對安全邊界的內縮（50.4 − 43.2） */
+  --space-3: 10.8pt;
+  --space-4: 14.4pt;
+  --space-5: 18pt;
+  --space-6: 21.6pt;
+  --space-8: 28.8pt;   /* 實測：封面色點間距 */
+  --space-12: 43.2pt;  /* 實測：左右安全邊界 */
+
+  /* ─── 版心垂直邊距 ───────────────────────────────────────────
+   * 實測：頁首標題基線 y = 40.3（10 頁一致）；底部分隔線 y = 493.2，
+   * 距下緣 46.8。固定 16:9 版面不做響應式縮放，三個斷點同值。 */
+  --section-y-desktop: 40.3pt;
+  --section-y-tablet: 40.3pt;
+  --section-y-phone: 40.3pt;
+
+  /* ─── 圓角 ───────────────────────────────────────────────────
+   * 全部待補：原檔只記錄棚區卡是「圓角卡」，沒量到半徑值。
+   * 以下是 schema fallback（8 / 12 / 16px）換算成 pt 的等值佔位。 */
+  --radius-sm: 6pt;      /* 待補 */
+  --radius-md: 9pt;      /* 待補 */
+  --radius-lg: 12pt;     /* 待補 */
+  --radius-pill: 9999pt; /* 待補 */
+
+  /* ─── 高度層次 ───────────────────────────────────────────────
+   * 實測：全份簡報零陰影、零漸層。層次只有兩種——平貼，或 1px 描邊
+   * （棚區卡白色 stroke、色票方塊 #e3e1dc stroke）。
+   * 「升起」在這套語言裡不存在，直接綁到描邊，不要引入模糊陰影。 */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: var(--elev-ring);
+
+  /* ─── 焦點與動態 ─────────────────────────────────────────────
+   * 全部非實測：來源是 PDF，沒有互動也沒有動態。
+   * 沿用 _schema/defaults.css；翻頁動態的規範見 DESIGN.md §7。 */
+  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 70%); /* 非實測 */
+  --motion-fast: 150ms;    /* 非實測：schema fallback */
+  --motion-base: 200ms;    /* 非實測：schema fallback */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);  /* 非實測：schema fallback */
+
+  /* ─── 版心 ───────────────────────────────────────────────────
+   * 實測：滿版線寬 873.6（43.2 + 873.6 = 916.8 右緣）；
+   * 左右留白 43.2。固定版面，三個斷點同值。 */
+  --container-max: 873.6pt;
+  --container-gutter-desktop: 43.2pt;
+  --container-gutter-tablet: 43.2pt;
+  --container-gutter-phone: 43.2pt;
+}

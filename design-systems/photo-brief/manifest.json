@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "od-design-system-project/v1",
+  "id": "photo-brief",
+  "name": "Photo Brief Deck",
+  "category": "Editorial & Print",
+  "description": "Print-flat photography proposal deck: dark cover, light-gray interior pages, one orange accent, and photo rows that keep a fixed row height and stay left-aligned. Every value measured from a 25-page 960x540 pt shooting-plan PDF.",
+  "source": {
+    "type": "bundled",
+    "origin": "Measured from MUCAPSO M1 Shooting Plan PDF (25 pages, 960x540 pt) via PyMuPDF vector-fill and text-span extraction; evidence in crew-skills/cases/ADAM-photo-deck/00-evidence-analysis/deck-structure.md"
+  },
+  "files": {
+    "design": "DESIGN.md",
+    "tokens": "tokens.css"
+  },
+  "importMode": "normalized",
+  "craft": {
+    "applies": [],
+    "suggested": [
+      "color",
+      "typography-hierarchy-editorial"
+    ],
+    "exemptions": []
+  }
+}

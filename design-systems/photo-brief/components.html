@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Photo Brief - reference components</title>
+    <meta name="description" content="Reference fixture for design-systems/photo-brief: print-flat photography proposal deck with a dark cover, light-gray interior pages, one orange accent, and fixed-row-height photo layouts." />
+    <style>
+      :root {
+        /* ─── Surface（三層）───────────────────────────────────────────
+         * 實測：頁面底色 #f5f5f3 佔 22 頁；#ffffff 出現在兩頁白底版式，
+         * 同時是表格斑馬紋的奇數列；#fbfaf8 是斑馬紋偶數列。
+         * 封面是「反相」不是第四種底色——底 = var(--fg)、字 = var(--surface)。*/
+        --bg: #f5f5f3;            /* 頁面底色（25 頁裡 22 頁） */
+        --surface: #ffffff;       /* 白底頁、卡片、表格奇數列 */
+        --surface-warm: #fbfaf8;  /* 表格偶數列（斑馬紋第二層） */
+
+        /* ─── Foreground（三層 ＋ 一個別名）─────────────────────────────
+         * 實測：內文 #262626、次要文字 #6b6b6b、圖片編號 #888888。
+         * 原檔在淺底上只有這三階，所以 --meta 走 schema 允許的別名寫法，
+         * 不硬造第四階。#262626 同時是「深底」的填色——深色是同一個墨色，
+         * 不是另一個顏色。 */
+        --fg: #262626;            /* 內文；同時是深底填色（封面、表頭、資訊卡、KV 標題帶） */
+        --fg-2: #6b6b6b;          /* 次要文字：頁碼、MODEL 行、表格內文、頁尾品牌行 */
+        --muted: #888888;         /* 最弱一階：圖片編號 9 pt */
+        --meta: var(--muted);     /* 原檔淺底只有三階，別名到 --muted，不造第四階 */
+
+        /* ─── Border（兩層）───────────────────────────────────────────
+         * 實測：分隔線 stroke #e3e1dc（y = 493.2、寬 873.6），色票方塊同色描邊。
+         * --border-soft 待補：資訊卡頁的 554.4 pt 細線原檔沒量到色值。 */
+        --border: #e3e1dc;        /* 分隔線、色票方塊描邊 */
+        --border-soft: var(--border);  /* 待補：資訊卡 554.4 pt 細線色值未量測，暫時同值 */
+
+        /* ─── Accent（單一橘色）───────────────────────────────────────
+         * 實測：#d97d35 用在前導標籤、Shot 標題、項目符號、勾號、封面直線。
+         * 整份簡報只有這一個強調色，不做第二強調色。
+         * --accent-on 非實測（原檔沒有「橘底放字」的情形）：依對比度選深墨色，
+         * #262626 對 #d97d35 是 5.0:1，白字只有 3.0:1。
+         * hover / active 非實測（PDF 沒有互動態），沿用 schema 的混色公式。 */
+        --accent: #d97d35;
+        --accent-on: #262626;     /* 非實測：對比度 5.0:1，優於白字的 3.0:1 */
+        --accent-hover: color-mix(in oklab, var(--accent), black 8%);   /* 非實測：schema fallback */
+        --accent-active: color-mix(in oklab, var(--accent), black 14%); /* 非實測：schema fallback */
+
+        /* ─── 語意狀態色 ─────────────────────────────────────────────
+         * 全部非實測：原檔是靜態簡報，沒有成功／警告／危險的語意色。
+         * 沿用 _schema/defaults.css，DESIGN.md 標「待補」。
+         * ⚠ 表格午休列的 #efede8 不是警告色，別拿 --warn 去套。 */
+        --success: #16a34a;       /* 非實測：schema fallback */
+        --warn: #eab308;          /* 非實測：schema fallback */
+        --danger: #dc2626;        /* 非實測：schema fallback */
+
+        /* ─── 字體家族 ───────────────────────────────────────────────
+         * 實測：中文一律 PingFang TC（Regular / Semibold），西文一律 Calibri
+         * （Regular / Bold / Italic）；大標另用 Cambria-Bold（西文）＋
+         * STSongti-TC-Bold（中文）。四個家族封頂，不加第五種。
+         * --font-mono 非實測：原檔沒有等寬字。 */
+        --font-display: Cambria, "STSongti TC", "Songti TC", "Noto Serif TC", serif;
+        --font-body: Calibri, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+        --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;  /* 非實測：schema fallback */
+
+        /* ─── 字階（13 級取 8 個槽位）─────────────────────────────────
+         * 實測 13 級：66 / 30 / 26 / 24 / 22 / 18 / 16 / 14 / 13 / 12 / 11 / 10 / 9 pt。
+         * schema 只有 8 個 --text-* 槽位，以下綁最結構性的 8 級；
+         * 26 / 22 / 16 / 13 / 10 pt 五級直接寫值（對照表在 DESIGN.md §3）。 */
+        --text-xs: 9pt;      /* 圖片編號 */
+        --text-sm: 11pt;     /* 表格內文、MODEL 行、勾號清單 */
+        --text-base: 12pt;   /* 版面主力：前導標籤、色名頁首、清單項目 */
+        --text-lg: 14pt;     /* Shot 範圍標籤、企劃頁副標 */
+        --text-xl: 18pt;     /* 封面副標 */
+        --text-2xl: 24pt;    /* 資訊卡產品名、棚區代號 */
+        --text-3xl: 30pt;    /* 章節大標 */
+        --text-4xl: 66pt;    /* 封面產品名 */
+
+        /* ─── 行高與字距 ─────────────────────────────────────────────
+         * 三個全部待補：來源是 PDF，只量得到文字塊座標與字級，量不到行高與
+         * 字距。以下是中性佔位值，不是實測值，排版前要回頭補量。 */
+        --leading-body: 1.5;        /* 待補：原檔未量測 */
+        --leading-tight: 1.15;      /* 待補：原檔未量測 */
+        --tracking-display: 0em;    /* 待補：原檔未量測 */
+
+        /* ─── 間距（底格 3.6 pt = 0.05 英寸）──────────────────────────
+         * 推導出處：水平座標與欄寬幾乎整批落在 3.6 pt 的整數倍——
+         * 安全邊界 43.2 = 12×、文字左緣 50.4 = 14×、封面色點間距 28.8 = 8×、
+         * 表格五個欄寬 122.4 / 194.4 / 136.8 / 64.8 / 338.4 = 34 / 54 / 38 / 18 / 94×、
+         * 資訊卡邊長 284.4 = 79×、KV 標題帶 871.2 × 154.8 = 242 × 43×。
+         * ⚠ 垂直基線多半不在這個格上（頁首 40.3、表格列高 38.2、封面標題 202.8），
+         * 所以間距 token 只規範水平節奏，垂直基線在 DESIGN.md §4 逐條列固定值。 */
+        --space-1: 3.6pt;    /* 底格；圖片編號的水平偏移量級 */
+        --space-2: 7.2pt;    /* 文字左緣相對安全邊界的內縮（50.4 − 43.2） */
+        --space-3: 10.8pt;
+        --space-4: 14.4pt;
+        --space-5: 18pt;
+        --space-6: 21.6pt;
+        --space-8: 28.8pt;   /* 實測：封面色點間距 */
+        --space-12: 43.2pt;  /* 實測：左右安全邊界 */
+
+        /* ─── 版心垂直邊距 ───────────────────────────────────────────
+         * 實測：頁首標題基線 y = 40.3（10 頁一致）；底部分隔線 y = 493.2，
+         * 距下緣 46.8。固定 16:9 版面不做響應式縮放，三個斷點同值。 */
+        --section-y-desktop: 40.3pt;
+        --section-y-tablet: 40.3pt;
+        --section-y-phone: 40.3pt;
+
+        /* ─── 圓角 ───────────────────────────────────────────────────
+         * 全部待補：原檔只記錄棚區卡是「圓角卡」，沒量到半徑值。
+         * 以下是 schema fallback（8 / 12 / 16px）換算成 pt 的等值佔位。 */
+        --radius-sm: 6pt;      /* 待補 */
+        --radius-md: 9pt;      /* 待補 */
+        --radius-lg: 12pt;     /* 待補 */
+        --radius-pill: 9999pt; /* 待補 */
+
+        /* ─── 高度層次 ───────────────────────────────────────────────
+         * 實測：全份簡報零陰影、零漸層。層次只有兩種——平貼，或 1px 描邊
+         * （棚區卡白色 stroke、色票方塊 #e3e1dc stroke）。
+         * 「升起」在這套語言裡不存在，直接綁到描邊，不要引入模糊陰影。 */
+        --elev-flat: none;
+        --elev-ring: 0 0 0 1px var(--border);
+        --elev-raised: var(--elev-ring);
+
+        /* ─── 焦點與動態 ─────────────────────────────────────────────
+         * 全部非實測：來源是 PDF，沒有互動也沒有動態。
+         * 沿用 _schema/defaults.css；翻頁動態的規範見 DESIGN.md §7。 */
+        --focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 70%); /* 非實測 */
+        --motion-fast: 150ms;    /* 非實測：schema fallback */
+        --motion-base: 200ms;    /* 非實測：schema fallback */
+        --ease-standard: cubic-bezier(0.2, 0, 0, 1);  /* 非實測：schema fallback */
+
+        /* ─── 版心 ───────────────────────────────────────────────────
+         * 實測：滿版線寬 873.6（43.2 + 873.6 = 916.8 右緣）；
+         * 左右留白 43.2。固定版面，三個斷點同值。 */
+        --container-max: 873.6pt;
+        --container-gutter-desktop: 43.2pt;
+        --container-gutter-tablet: 43.2pt;
+        --container-gutter-phone: 43.2pt;
+      }
+
+      /* ─── 以下不是 token，是這份樣板自己的排版 CSS，guard 不比對 ─── */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-body);
+        font-size: var(--text-sm);
+        line-height: var(--leading-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      .canvas {
+        max-width: 960pt;
+        margin-inline: auto;
+        padding: var(--space-12) var(--space-12) calc(var(--space-12) * 2);
+        overflow-x: auto;
+      }
+      h1 {
+        margin: 0 0 var(--space-2);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--text-3xl);
+        line-height: var(--leading-tight);
+        color: var(--fg);
+      }
+      .intro {
+        margin: 0 0 var(--space-8);
+        max-width: var(--container-max);
+        color: var(--fg-2);
+        font-size: var(--text-sm);
+      }
+      .block { margin-block-end: calc(var(--space-12) * 1.2); }
+      .block-title {
+        margin: 0 0 var(--space-2);
+        font-family: var(--font-body);
+        font-weight: 700;
+        font-size: var(--text-lg);
+        color: var(--fg);
+      }
+      .block-title .num { color: var(--accent); }
+      .block-desc {
+        margin: 0 0 var(--space-5);
+        max-width: var(--container-max);
+        color: var(--fg-2);
+        font-size: var(--text-sm);
+      }
+      .stage {
+        padding: var(--space-6);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        overflow-x: auto;
+      }
+      .stage.dark { background: var(--fg); }
+      code { font-family: var(--font-mono); font-size: 0.9em; }
+
+      /* 1. 時間軸表格 */
+      table.timeline { border-collapse: collapse; width: 856.8pt; }
+      table.timeline col.c1 { width: 122.4pt; }
+      table.timeline col.c2 { width: 194.4pt; }
+      table.timeline col.c3 { width: 136.8pt; }
+      table.timeline col.c4 { width: 64.8pt; }
+      table.timeline col.c5 { width: 338.4pt; }
+      table.timeline thead tr { height: 30.2pt; background: var(--fg); color: var(--surface); }
+      table.timeline thead th {
+        padding: 0 var(--space-3);
+        text-align: left;
+        font-weight: 700;
+        font-size: var(--text-sm);
+      }
+      table.timeline tbody tr { height: 38.2pt; }
+      table.timeline tbody tr.zebra-1 { background: var(--surface); }
+      table.timeline tbody tr.zebra-2 { background: var(--surface-warm); }
+      table.timeline tbody tr.zebra-3 { background: #efede8; } /* 非警告色，DESIGN.md §2-1 明列的三個直寫值之一 */
+      table.timeline tbody td {
+        padding: 0 var(--space-3);
+        font-size: var(--text-sm);
+        color: var(--fg);
+        vertical-align: middle;
+      }
+      .row-dot { width: 14.2pt; height: 14.2pt; border-radius: 50%; }
+      .legend { display: flex; flex-wrap: wrap; gap: var(--space-5); margin-block-start: var(--space-4); }
+      .legend-item { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+      .legend-swatch { width: 14pt; height: 14pt; border: 1px solid var(--border); flex-shrink: 0; }
+
+      /* 2. 總覽資訊卡 */
+      .info-overview { display: flex; gap: var(--space-8); align-items: flex-start; flex-wrap: wrap; }
+      .info-list { width: 554.4pt; max-width: 100%; }
+      .info-row {
+        display: flex;
+        min-height: 44.65pt;
+        align-items: center;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .info-row .label { width: 152pt; flex-shrink: 0; font-size: var(--text-sm); color: var(--fg-2); }
+      .info-row .value { font-size: var(--text-base); color: var(--fg); }
+      .info-card {
+        width: 284.4pt;
+        height: 284.4pt;
+        flex-shrink: 0;
+        background: var(--fg);
+        color: var(--surface);
+        padding: var(--space-6) var(--space-5);
+        padding-inline-start: 32.4pt;
+        display: flex;
+        flex-direction: column;
+      }
+      .info-card .eyebrow { font-size: var(--text-base); font-weight: 700; color: var(--accent); }
+      .info-card .name {
+        margin-block-start: var(--space-3);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--text-2xl);
+        color: var(--surface);
+      }
+      .info-card .subtitle { margin-block-start: var(--space-1); font-size: var(--text-sm); color: #c9c6be; } /* 深底次要文字，DESIGN.md §2-1 直寫值 */
+      .info-card .fields { margin-block-start: auto; display: grid; gap: var(--space-2); }
+      .info-card .field-row { display: flex; justify-content: space-between; gap: var(--space-4); }
+      .info-card .field-row .k { font-size: var(--text-sm); color: #9b978e; } /* 深底再弱一階，DESIGN.md §2-1 直寫值 */
+      .info-card .field-row .v { font-size: var(--text-sm); color: var(--surface); }
+
+      /* 3. 色點與色環 */
+      .dot-row { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; }
+      .dot { width: 22.1pt; height: 22.1pt; border-radius: 50%; }
+      .ring-row { display: flex; gap: 48.95pt; align-items: center; flex-wrap: wrap; }
+      .ring { width: 43.5pt; height: 43.5pt; border-radius: 50%; border: 2pt solid var(--surface); box-sizing: border-box; }
+
+      /* 4. 圖片編號 */
+      .num-row { display: flex; gap: var(--space-6); flex-wrap: wrap; padding-block-end: var(--space-5); }
+      .num-figure { position: relative; }
+      .num-figure .ph {
+        width: 120pt;
+        height: 150pt;
+        background: var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--fg-2);
+        font-size: var(--text-xs);
+      }
+      .num-figure .index {
+        position: absolute;
+        left: 3.5pt;
+        top: calc(100% + 8pt);
+        font-family: var(--font-body);
+        font-size: var(--text-xs);
+        color: var(--muted);
+      }
+
+      /* 5. 前導標籤與分隔線 */
+      .eyebrow-demo { font-size: var(--text-base); font-weight: 700; color: var(--accent); }
+      .divider-demo { margin-block-start: var(--space-3); height: 1px; width: var(--container-max); max-width: 100%; background: var(--border); }
+
+      /* 6. 便當盒圖片排法 */
+      .photo-row { display: flex; justify-content: flex-start; }
+      .photo-row + .photo-row { margin-block-start: var(--space-5); }
+      /* .ph 是獨立的佔位格 class，不綁在 .photo-row 底下——hero 型的大圖是
+         .row-hero-block 的直接子元素，綁在 .photo-row 底下它就拿不到樣式。 */
+      .ph {
+        height: 100%;
+        width: auto;
+        flex-shrink: 0;
+        background: var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--fg-2);
+        font-size: var(--text-xs);
+      }
+      .row-uniform { height: 168pt; gap: var(--space-2); }
+      .row-mixed { height: 168pt; gap: var(--space-3); }
+      /* hero 型：一張直圖跨兩列，右側上下兩列與它底部對齊。
+         實測出處 p14 — hero 264.7 x 330.8、上列列高 181.0、下列 126.5。
+         右側兩列的高度用 flex 依實測比例分配，加上中間的縫剛好等於 hero 的高。 */
+      /* 實測總寬 = hero 264.7 + 縫 + 右側 585.5 ≈ 860pt，原檔 960pt 版面放得下，
+         但這份樣板的容器比較窄，所以自己帶水平捲動，不去縮小實測值。 */
+      .row-hero-block { display: flex; gap: var(--space-3); height: 330.8pt; max-width: 100%; overflow-x: auto; }
+      .hero-side { display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
+      /* 這兩列是相鄰兄弟，會吃到上面 .photo-row + .photo-row 的 margin，
+         疊上 .hero-side 的 gap 就撐破容器高度——這裡歸零，縫全部交給 gap。 */
+      .hero-side > .photo-row + .photo-row { margin-block-start: 0; }
+      .row-h-upper { flex: 181 1 0; min-height: 0; gap: var(--space-2); }
+      .row-h-lower { flex: 126.5 1 0; min-height: 0; gap: var(--space-2); }
+      .r-4-5 { aspect-ratio: 4 / 5; }
+      .r-2-3 { aspect-ratio: 2 / 3; }
+      .r-3-2 { aspect-ratio: 3 / 2; }
+      .r-16-9 { aspect-ratio: 16 / 9; }
+      .r-1-1 { aspect-ratio: 1 / 1; }
+      .row-caption { margin-block-start: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+
+      /* 7. 排版方案比較（J 版式） */
+      /* 頁首沿用 §5 的前導標籤，右側掛「色名 ｜ 場景」 */
+      .options-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-6); flex-wrap: wrap; }
+      .options-head .scene { font-size: var(--text-base); color: var(--fg-2); }
+      .option-row { display: flex; gap: var(--space-6); margin-block-start: var(--space-5); align-items: flex-start; }
+      /* 三欄平分可用寬度，不寫死欄寬——J 是新版式，沒有實測欄寬可循，
+         而寫死的欄寬只要容器一窄就溢出，最右一欄會被切掉。
+         高度由稿件的 aspect-ratio 決定，所以平分寬度不會壓壞比例。 */
+      .option { flex: 1 1 0; min-width: 0; }
+      .option-frame { position: relative; }
+      /* .ph 預設是便當盒排法的「高度鎖死、寬度隨比例」；設計稿這裡反過來——
+         寬度鎖死一欄、高度交給 aspect-ratio，所以只在這個 scope 覆寫這兩個值。 */
+      .option-frame .ph { width: 100%; height: auto; }
+
+      /* 排版範圍框：虛線 ＋ 強調色 8% 薄底。框住的是文字區不是照片，
+         底下的畫面必須看得穿——這是標註層，不是版面元素。 */
+      .text-zone {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: var(--space-1);
+        padding: var(--space-3);
+        border: 1px dashed var(--accent);
+        background: color-mix(in oklab, var(--accent), transparent 92%);
+      }
+      .text-zone .kicker { font-size: var(--text-xs); font-weight: 700; color: var(--accent); }
+      .text-zone .headline {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--text-2xl);
+        line-height: var(--leading-tight);
+        color: var(--fg);
+        /* 文字區的寬度隨方案而變，標題斷行後很容易剩一個字落單。
+           balance 讓各行長度平均，末行不會只剩一兩個字。 */
+        text-wrap: balance;
+      }
+      .text-zone .sub { font-size: var(--text-sm); color: var(--fg-2); }
+      /* 三個方案的差別只有這三行——框的位置與大小，其餘完全同一套樣式 */
+      .zone-top    { top: 18%; left: 8%; right: 8%; }
+      .zone-left   { top: 12%; bottom: 12%; left: 10%; width: 62%; }
+      .zone-bottom { bottom: 14%; left: 8%; right: 8%; }
+
+      /* 留白比例標註：貼在框外的那段留白裡，9 pt 橘、單行不換行 */
+      .zone-label { position: absolute; font-size: var(--text-xs); color: var(--accent); white-space: nowrap; }
+      .label-top    { top: var(--space-2); left: 8%; }
+      .label-left   { top: var(--space-2); left: 10%; }
+      .label-bottom { bottom: var(--space-2); left: 8%; }
+
+      .option-caption { margin-block-start: var(--space-3); }
+      .option-caption .tag { font-size: var(--text-base); font-weight: 700; color: var(--accent); }
+      .option-caption .desc { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--fg-2); }
+      .option-note { margin-block-start: var(--space-5); font-size: var(--text-sm); color: var(--fg-2); }
+    </style>
+  </head>
+  <body>
+    <main class="canvas">
+      <h1>Photo Brief 元件樣板</h1>
+      <p class="intro">
+        版式的實體樣板，非另一份規範文件——每個區塊都是 DESIGN.md §6 描述的元件的可視化實作。
+        全份單位是 pt（印刷點），960 × 540 pt 對應 1280 × 720 px。色票、字階、間距一律讀
+        <code>:root</code> token，不在元件層另外寫死數字。
+      </p>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">1.</span> 時間軸表格</h2>
+        <p class="block-desc">
+          5 欄固定寬（122.4 / 194.4 / 136.8 / 64.8 / 338.4 pt，合計 856.8 pt），斑馬紋三色，
+          需要標記的列使用 <code>#efede8</code>（不是警告色，不套 <code>--warn</code>）。第 4 欄放列內色點，
+          直徑 14.2 pt，垂直置中；沒有色的列不畫點。
+        </p>
+        <div class="stage">
+          <table class="timeline">
+            <colgroup>
+              <col class="c1" /><col class="c2" /><col class="c3" /><col class="c4" /><col class="c5" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>時段</th>
+                <th>場景</th>
+                <th>內容</th>
+                <th>色</th>
+                <th>備註</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="zebra-1">
+                <td>09:00–10:30</td>
+                <td>棚內 A・主商品</td>
+                <td>主圖 + 情境圖</td>
+                <td><span class="row-dot" style="background:#5b7f4f"></span></td>
+                <td>需求 6 個角度，含細節特寫</td>
+              </tr>
+              <tr class="zebra-2">
+                <td>10:30–11:15</td>
+                <td>棚內 A・情境</td>
+                <td>使用情境</td>
+                <td><span class="row-dot" style="background:#c9a579"></span></td>
+                <td>搭配道具，光源維持同一組</td>
+              </tr>
+              <tr class="zebra-3">
+                <td>11:15–12:00</td>
+                <td>棚內 B・全系列</td>
+                <td>色票對照</td>
+                <td><span class="row-dot" style="background:#b33a3a"></span></td>
+                <td>需標記：色差需現場覆核</td>
+              </tr>
+              <tr class="zebra-2">
+                <td>13:00–14:00</td>
+                <td>棚內 B・細節</td>
+                <td>材質特寫</td>
+                <td></td>
+                <td>無指定產品色，不畫點</td>
+              </tr>
+              <tr class="zebra-1">
+                <td>14:00–15:00</td>
+                <td>戶外・情境</td>
+                <td>生活情境</td>
+                <td><span class="row-dot" style="background:#6e2a3b"></span></td>
+                <td>備天候不佳時的棚內替代方案</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-swatch" style="background:#ffffff"></span>奇數列 #ffffff</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:#fbfaf8"></span>偶數列 #fbfaf8</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:#efede8"></span>需要標記的列 #efede8（非警告色）</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">2.</span> 總覽資訊卡</h2>
+        <p class="block-desc">
+          左側是「標籤 / 值」列，每列下方一條 554.4 pt 細線；右側是深底 284.4 × 284.4 pt 正方卡，
+          卡內文字左緣內縮 32.4 pt，由上到下：前導標籤 → 24 pt 主名 → 副行 → 三組小欄位。
+        </p>
+        <div class="stage">
+          <div class="info-overview">
+            <div class="info-list">
+              <div class="info-row"><span class="label">案名</span><span class="value">Photo Brief 範例</span></div>
+              <div class="info-row"><span class="label">拍攝日期</span><span class="value">2026.09.02</span></div>
+              <div class="info-row"><span class="label">總圖數</span><span class="value">135 張</span></div>
+              <div class="info-row"><span class="label">版本</span><span class="value">v1.0</span></div>
+            </div>
+            <div class="info-card">
+              <span class="eyebrow">系列 SERIES</span>
+              <span class="name">PRODUCT NAME</span>
+              <span class="subtitle">副標題 SUBTITLE</span>
+              <div class="fields">
+                <div class="field-row"><span class="k">拍攝日期</span><span class="v">2026.09.02</span></div>
+                <div class="field-row"><span class="k">地點</span><span class="v">攝影棚 A</span></div>
+                <div class="field-row"><span class="k">版本</span><span class="v">v1.0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">3.</span> 色點與色環</h2>
+        <p class="block-desc">
+          封面用的圓點列：直徑 22.1 pt，間距 28.8 pt（<code>--space-8</code>），無描邊。
+          KV 標題帶用的圓環：直徑 43.5 pt，間距 48.95 pt，白色描邊，坐在深底帶上。
+          示範用的產品色只是範例，換案子不沿用（DESIGN.md §2-2）。
+        </p>
+        <div class="stage">
+          <div class="dot-row">
+            <span class="dot" style="background:#9b9b93"></span>
+            <span class="dot" style="background:#5b7f4f"></span>
+            <span class="dot" style="background:#c9a579"></span>
+            <span class="dot" style="background:#b33a3a"></span>
+            <span class="dot" style="background:#d97d35"></span>
+            <span class="dot" style="background:#6e2a3b"></span>
+          </div>
+        </div>
+        <div class="stage dark" style="margin-block-start: var(--space-4);">
+          <div class="ring-row">
+            <span class="ring" style="background:#9b9b93"></span>
+            <span class="ring" style="background:#5b7f4f"></span>
+            <span class="ring" style="background:#c9a579"></span>
+            <span class="ring" style="background:#b33a3a"></span>
+            <span class="ring" style="background:#d97d35"></span>
+            <span class="ring" style="background:#6e2a3b"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">4.</span> 圖片編號</h2>
+        <p class="block-desc">
+          9 pt Calibri <code>#888888</code>，兩位數補零，位置在圖片左下角外側：相對圖片左緣 +3.5 pt、
+          底緣 +8 pt。編號在圖外，不壓照片、不加底框、不描邊。
+        </p>
+        <div class="stage">
+          <div class="num-row">
+            <div class="num-figure">
+              <div class="ph">4:5</div>
+              <span class="index">01</span>
+            </div>
+            <div class="num-figure">
+              <div class="ph">4:5</div>
+              <span class="index">02</span>
+            </div>
+            <div class="num-figure">
+              <div class="ph">4:5</div>
+              <span class="index">03</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">5.</span> 前導標籤與分隔線</h2>
+        <p class="block-desc">
+          前導標籤：12 pt <code>#d97d35</code>，通常是「中文 ＋ 空格 ＋ 英文大寫」的雙語形式，功能是分類提示，
+          不是副標，不許放句子。分隔線：<code>#e3e1dc</code>，貼齊左右安全邊界，整份簡報只有這一種線。
+        </p>
+        <div class="stage">
+          <span class="eyebrow-demo">拍攝規劃 SHOOTING PLAN</span>
+          <div class="divider-demo"></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">6.</span> 便當盒圖片排法</h2>
+        <p class="block-desc">
+          三條 CSS 規則，一條都不許破：①每列一個 <code>display:flex</code> 容器，固定
+          <code>height</code>；②每張圖 <code>height:100%; width:auto</code>，寬度隨原圖比例；
+          ③ <code>justify-content:flex-start</code>，靠左對齊、不撐滿。右邊留白是正常結果。
+        </p>
+        <div class="stage">
+          <div class="photo-row row-uniform">
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+          </div>
+          <p class="row-caption">uniform 型：一列 4 張同比例（4:5 × 4）</p>
+
+          <div class="photo-row row-mixed">
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-4-5">4:5</div>
+            <div class="ph r-2-3">2:3</div>
+          </div>
+          <p class="row-caption">mixed 型：一列 5 張不同比例（4:5 4:5 4:5 4:5 2:3）</p>
+
+          <div class="row-hero-block">
+            <div class="ph r-4-5">4:5 hero</div>
+            <div class="hero-side">
+              <div class="photo-row row-h-upper">
+                <div class="ph r-2-3">2:3</div>
+                <div class="ph r-4-5">4:5</div>
+                <div class="ph r-4-5">4:5</div>
+                <div class="ph r-4-5">4:5</div>
+              </div>
+              <div class="photo-row row-h-lower">
+                <div class="ph r-3-2">3:2</div>
+                <div class="ph r-3-2">3:2</div>
+                <div class="ph r-3-2">3:2</div>
+              </div>
+            </div>
+          </div>
+          <p class="row-caption">
+            hero 型：左側一張直圖<strong>跨兩列</strong>，右側上下兩列與它底部對齊（實測 p14 —
+            hero 4:5 高 330.8pt，右上列 181.0pt、右下列 126.5pt）。
+            跨列是這型的關鍵特徵，不是「一大一小並排」。
+          </p>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title"><span class="num">7.</span> 排版方案比較（J 版式）</h2>
+        <p class="block-desc">
+          把 Hi-Fi 設計稿的多個排版方案並排給客戶挑。這一頁存在的理由是<strong>把排版意圖前置到拍攝之前</strong>——
+          原本的流程是攝影師先拍、設計師拿到素材才排版，結果常常「產品太大、任何字壓上去都會壓到產品」，只能回頭重排。
+          每個方案四樣東西：設計稿 → 稿上的虛線範圍框 → 框旁的留白比例 → 稿下的方案編號與一句話說明。
+          照片一律是佔位色塊（<code>--border</code>）＋ <code>aspect-ratio</code>，不外連任何圖片網址或字型。
+        </p>
+        <div class="stage">
+          <div class="options-head">
+            <span class="eyebrow-demo">設計方案 LAYOUT OPTIONS</span>
+            <span class="scene">Green 綠 ｜ 咖啡廳</span>
+          </div>
+
+          <div class="option-row">
+            <div class="option">
+              <div class="option-frame">
+                <div class="ph r-4-5"></div>
+                <div class="text-zone zone-top">
+                  <span class="kicker">系列 SERIES</span>
+                  <span class="headline">午後的第二杯</span>
+                  <span class="sub">主標壓上緣，產品置中偏下</span>
+                </div>
+                <span class="zone-label label-top">上緣留白 18%</span>
+              </div>
+              <div class="option-caption">
+                <span class="tag">方案 A</span>
+                <p class="desc">文字區壓上緣：產品完整入鏡，取景時上半部要多留一段空。</p>
+              </div>
+            </div>
+
+            <div class="option">
+              <div class="option-frame">
+                <div class="ph r-4-5"></div>
+                <div class="text-zone zone-left">
+                  <span class="kicker">系列 SERIES</span>
+                  <span class="headline">手沖的節奏</span>
+                  <span class="sub">文字靠左整欄，產品靠右三分之一</span>
+                </div>
+                <span class="zone-label label-left">左緣留白 10%</span>
+              </div>
+              <div class="option-caption">
+                <span class="tag">方案 B</span>
+                <p class="desc">文字區壓左側：好橫幅延伸，但產品必須靠右，左半不能有主體。</p>
+              </div>
+            </div>
+
+            <div class="option">
+              <div class="option-frame">
+                <div class="ph r-4-5"></div>
+                <div class="text-zone zone-bottom">
+                  <span class="kicker">系列 SERIES</span>
+                  <span class="headline">晚一點也好</span>
+                  <span class="sub">標題壓底，上半留給情境</span>
+                </div>
+                <span class="zone-label label-bottom">下緣留白 14%</span>
+              </div>
+              <div class="option-caption">
+                <span class="tag">方案 C</span>
+                <p class="desc">文字區壓下緣：情境完整，但底部若有桌面雜訊就會吃掉字。</p>
+              </div>
+            </div>
+          </div>
+
+          <p class="option-note">範圍為示意，實拍會拍廣後裁切，不需精確對位。</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
