@@ -408,5 +408,27 @@ G 與 H 兩種版式的圖片區走同一套**求解式**：**列高是算出來
 
 【輸出】
 - 單檔 HTML，版面 960 × 540 pt（16:9）；**不用任何外部圖片 URL**，圖片走本地素材或內嵌。
-- 鍵盤 ← / → 翻頁 ＋ hash 同步。
+- **頁容器一律寫成 `<section class="slide" data-screen-label="P01 封面">`**，一頁一個，document order 就是播放順序。
+  這不是風格偏好，是 OpenDesign 的硬契約：host 的頁碼、逐頁演講者備註、分頁匯出、Tweaks Picker
+  全部靠 `document.querySelectorAll('.slide')` 找頁。**自己另取一個 class（`.sheet`、`.page`、`.card`…）不會報錯、
+  不會擋住生成、成品看起來也正常——它只會讓整份 deck 被 host 當成一頁。** 這是會安靜失敗的那種錯，務必照寫。
+  版式 class 照舊，掛在同一個 section 上即可（`<section class="slide lay-a">`），兩者互不衝突。
+- **翻頁 runtime 自己帶，不依賴 host**：鍵盤 ← / → / PageUp / PageDown / Space / Home / End；
+  滾輪與觸控板累積位移過門檻走一頁；觸控橫向滑動 50 pt 以上且大於垂直位移；每頁一顆 dot 並標 `aria-current="true"`；hash 同步。
+  **目前頁必須標成 `.slide.active`**（`.is-active` 可當相容別名）——host 的頁碼讀的就是這個狀態，
+  四種導覽路徑（鍵盤／滾輪／觸控／dot）都要同步它，少同步一條就會出現「畫面翻了但頁碼不動」。
+  捲動定位用 `window.scrollTo(0, slide.offsetTop)`，**不要用 `scrollIntoView()`**（它會去捲 parent page）。
+- **🚨 這串 class 名是 host 的保留字，絕對不要拿來當狀態 class**：
+  `.deck-counter`／`.deck-hint`／`.deck-nav`／`.deck-floating-nav`／`.deck-floating-reset`／`.deck-controls`／
+  `.slide-nav`／`.slides-nav`／`.slide-controls`／`.slide-counter`／`.presentation-nav`／`.presentation-controls`，
+  以及 `[data-deck-nav]`／`[data-slide-nav]`／`[role="navigation"][aria-label*="slide|deck"]`。
+  host 會對它們下 `display:none !important; visibility:hidden !important`，因為它自備導覽 UI、要把 template 自己那套藏起來。
+  **把其中任何一個掛到 `<body>` 上，整份 deck 會整個消失**——畫面全白、零錯誤訊息、頁碼還照常顯示 25 頁，
+  是最難查的那種安靜失敗（2026-08-25 實際踩過）。狀態 class 一律自帶前綴，例如 `pb-deck-ready`。
+  反過來說，**自己的導覽列（dots／頁碼／控制鈕）應該主動掛 `data-deck-nav`**，讓 host 在 project viewer 裡把它藏掉、
+  獨立開檔或 gallery 預覽時照常顯示——這是配合契約，不是繞過它。
+- **顯示權交給 host，不要自己隱藏非 active 頁**：預設 25 頁全部可見。
+  host 的 deck bridge 會接手顯示與縮圖導覽；template 若自己加 `display:none`，會跟它打架而且列印也會壞。
+  這份東西的本質是印刷平面稿，翻頁是附加能力，不能反過來把列印弄壞。
+- 完整契約以 `design-templates/AGENTS.md` 的「Deck preview navigation contract」為正本；本段與它衝突時以那份為準。
 - **不許編造**：所有數字、色值、鏡位條目必須來自輸入。沒有的內容就不出那一頁，不許用 lorem ipsum 或佔位圖填版面。
