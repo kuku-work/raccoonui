@@ -564,6 +564,22 @@ describe('fetchProjectFiles', () => {
     vi.unstubAllGlobals();
   });
 
+  it('bypasses the HTTP cache for dynamic project file lists', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
+      JSON.stringify({ files: [] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchProjectFiles('project-dynamic-list', { fresh: true }))
+      .resolves.toEqual([]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/project-dynamic-list/files',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+  });
+
   it('does not make a foreground reopen join a cancellable background read', async () => {
     const files = [{
       name: 'index.html',
@@ -1664,7 +1680,7 @@ describe('connectConnector', () => {
       await expect(connectConnector('github')).resolves.toEqual({
         connector: { id: 'github', name: 'GitHub', status: 'available', tools: [] },
         auth: { kind: 'redirect_required', redirectUrl: 'https://example.com/oauth' },
-        error: 'Popup blocked. Allow popups for Open Design and try again.',
+        error: 'Popup blocked. Allow popups for OpenDesign and try again.',
       });
     } finally {
       restoreHost();

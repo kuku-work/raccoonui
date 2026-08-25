@@ -497,6 +497,13 @@ describe('GET /api/projects/:id resolvedDir', () => {
     });
     expect(writeResp.status).toBe(200);
 
+    const listResp = await fetch(`${baseUrl}/api/projects/${projectId}/files`);
+    expect(listResp.status).toBe(200);
+    expect(listResp.headers.get('cache-control')).toBe('no-store');
+    await expect(listResp.json()).resolves.toMatchObject({
+      files: [expect.objectContaining({ name: 'index.html' })],
+    });
+
     const rawResp = await fetch(`${baseUrl}/api/projects/${projectId}/raw/index.html`);
     expect(rawResp.status).toBe(200);
     expect(rawResp.headers.get('content-type')).toContain('text/html');
@@ -1335,7 +1342,7 @@ describe('project locations routes', () => {
     const loc0 = body.locations[0]!;
     expect(loc0.id).toBe('default');
     expect(loc0.builtIn).toBe(true);
-    expect(loc0.name).toBe('Open Design projects');
+    expect(loc0.name).toBe('OpenDesign projects');
   });
 
   it('PUT /api/project-locations creates external roots and GET returns them alongside default', async () => {

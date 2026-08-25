@@ -43,12 +43,14 @@ import type { Locale } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
+import { DeepSeekHarnessSetupDialog } from './DeepSeekHarnessSetupDialog';
 import { AmrLoginPill } from './AmrLoginPill';
 import { PlanBadge } from './PlanBadge';
 import { orderAgentsWithOpenDesignFirst } from './agentOrdering';
 import {
   AMR_LOGIN_STATUS_EVENT,
   amrLoginStatusEventReason,
+  isAmrSessionAuthenticated,
 } from './amrLoginPolling';
 import {
   fetchAmrWalletSnapshot,
@@ -56,8 +58,13 @@ import {
   formatVelaBalanceUsd,
   type VelaLoginStatus,
 } from '../providers/daemon';
+import { installDeepSeekHarnessCompanion } from '../providers/agent-companion';
 import { amrProfileBadgeLabel } from '../runtime/amr-guidance';
-import { isVisibleLocalCliAgent } from '../utils/visibleAgents';
+import {
+  availableVisibleAgentCount,
+  deepSeekHarnessNeedsSetup,
+  isVisibleLocalCliAgent,
+} from '../utils/visibleAgents';
 import { ExportDiagnosticsRow } from './ExportDiagnosticsButton';
 import { Icon } from './Icon';
 import { defaultAgentModelId, effectiveAgentModelChoice } from './agentModelSelection';
@@ -165,7 +172,6 @@ import { SettingsWorkspaceSection } from './SettingsWorkspaceSection';
 import {
   useWorkspaceBillingResponse,
   useWorkspaceContext,
-  workspaceBillingBalanceUsd,
   workspaceBillingSummaryForContext,
 } from '../collab/useWorkspaceContext';
 import { canUpgradeFromPlanTier, resolvePlanTier } from '../collab/team-plan';
@@ -887,7 +893,7 @@ function cleanAgentVersionLabel(
 }
 
 function displayAgentName(agent: Pick<AgentInfo, 'id' | 'name'>): string {
-  return agent.id === 'amr' ? 'Open Design' : agent.name;
+  return agent.id === 'amr' ? 'OpenDesign' : agent.name;
 }
 
 const AGENT_CLI_ENV_FIELDS = [
@@ -1650,15 +1656,9 @@ export function SettingsDialog({
     context: workspaceContext,
     loading: workspaceContextLoading,
   } = useWorkspaceContext();
-  // recvpZPzGJL7o7: the local-CLI card's balance came ONLY from vela's
-  // account-scoped sources (`amrCardStatus.account.balanceUsd`, then the
-  // `/api/integrations/vela/wallet` snapshot) — the same account-scoped
-  // projection `resolvePlanTier` exists to correct for the plan-tier badge
-  // right next to it, via the SAME card's `amrCardResolvedPlan` below. A team
-  // member reads their PERSONAL wallet there even while the card's own badge
-  // correctly names the team's paid plan, because nothing fed the workspace's
-  // real balance into the number. `useWorkspaceBillingResponse` carries the
-  // explicit v2 workspace-wallet source independently from account metadata.
+  // Workspace billing remains available for workspace plan/upgrade decisions.
+  // The local-CLI card itself describes the selected CLI login and profile, so
+  // its email, account plan and balance must stay on one account-scoped source.
   const workspaceBillingResponse = useWorkspaceBillingResponse();
   // Same partition for the plan half: `response.summary` is an ACCOUNT read, so
   // the AMR card's plan badge and both upgrade routes must consume it projected
@@ -1668,14 +1668,9 @@ export function SettingsDialog({
     workspaceContext,
   );
   const showWorkspaceSettings = canShowWorkspaceSettings(workspaceContext);
-  // The 「升级」 buttons on the AMR model card route through
-  // `workspaceUpgradeUrl` — the one decision point every upgrade affordance
-  // shares (see its docblock in `EntryNavRail.tsx`): personal workspace →
-  // B's personal plan modal (`billing=plan`, recvpYEiH019cD); team → the
-  // checkout vs change-plan dashboard dialog by subscription state
-  // (recvpSQKna0LwR). The profile fallback keeps the buttons alive after a
-  // signed-out/no-context read; while that read is still loading, hide them so
-  // an owner-only action cannot flash briefly for an admin/member.
+  // All generic AMR upgrade buttons route through public Pricing. While the
+  // workspace read is pending, hide the owner-only action to avoid a flash for
+  // admins or members.
   const amrUpgradeUrl = (profile: string | null | undefined): string | null =>
     workspaceContextLoading
       ? null
@@ -1700,6 +1695,7 @@ export function SettingsDialog({
   // authorize button — once the user has found it, the hint has done its job.
   const [amrCoachmarkDismissed, setAmrCoachmarkDismissed] = useState(false);
   const [agentRescanRunning, setAgentRescanRunning] = useState(false);
+  const [dshSetup, setDshSetup] = useState<{ busy: boolean; error: string | null } | null>(null);
   const [agentRescanNotice, setAgentRescanNotice] =
     useState<RescanNotice | null>(null);
   const [agentTestState, setAgentTestState] = useState<TestState>({
@@ -1707,6 +1703,7 @@ export function SettingsDialog({
   });
   const [amrCardStatus, setAmrCardStatus] = useState<VelaLoginStatus | null>(null);
   const [amrCardStatusReady, setAmrCardStatusReady] = useState(false);
+  const amrCardSignedIn = isAmrSessionAuthenticated(amrCardStatus);
   const [amrWalletSnapshot, setAmrWalletSnapshot] = useState<AmrWalletSnapshot | null>(null);
   const [amrWalletReady, setAmrWalletReady] = useState(false);
   const [hoveredAgentCardId, setHoveredAgentCardId] = useState<string | null>(null);
@@ -1754,7 +1751,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     const hasAmrAgent = agents.some((agent) => agent.id === 'amr' && agent.available);
-    if (!hasAmrAgent || amrCardStatus?.loggedIn !== true) {
+    if (!hasAmrAgent || !amrCardSignedIn) {
       setAmrWalletSnapshot(null);
       setAmrWalletReady(false);
       return;
@@ -1771,7 +1768,7 @@ export function SettingsDialog({
     };
   }, [
     agents,
-    amrCardStatus?.loggedIn,
+    amrCardSignedIn,
     amrCardStatus?.profile,
     amrCardStatus?.user?.id,
     amrCardStatus?.user?.email,
@@ -1798,7 +1795,7 @@ export function SettingsDialog({
       void fetchVelaLoginStatus({ refresh: true }).then((next) => {
         if (cancelled || !next) return;
         setAmrCardStatus(next);
-        if (next.loggedIn) void refreshAmrWalletSnapshot({ refresh: true });
+        if (isAmrSessionAuthenticated(next)) void refreshAmrWalletSnapshot({ refresh: true });
       });
     };
     window.addEventListener('focus', resyncAmrStatus);
@@ -2345,12 +2342,42 @@ export function SettingsDialog({
       const nextAgents = Array.isArray(refreshed) ? refreshed : agents;
       setAgentRescanNotice({
         kind: 'success',
-        count: nextAgents.filter((a) => a.available).length,
+        count: availableVisibleAgentCount(nextAgents),
       });
     } catch {
       setAgentRescanNotice({ kind: 'error' });
     } finally {
       setAgentRescanRunning(false);
+    }
+  };
+  const handleConfirmDshSetup = async () => {
+    if (dshSetup?.busy) return;
+    setDshSetup({ busy: true, error: null });
+    try {
+      await installDeepSeekHarnessCompanion();
+      const refreshed = await onRefreshAgents(agentRefreshOptionsForConfig(cfg));
+      const nextAgents = Array.isArray(refreshed) ? refreshed : agents;
+      const installed = nextAgents.find(
+        (agent) => agent.id === 'deepseek-harness' && agent.available,
+      );
+      if (!installed) throw new Error(t('settings.dshSetupRequired'));
+      setCfg((current) => ({ ...current, agentId: installed.id, mode: 'daemon' }));
+      setDshSetup(null);
+      setAgentTestState({ status: 'running' });
+      const choice = cfg.agentModels?.[installed.id] ?? {};
+      const result = await testAgent({
+        agentId: installed.id,
+        model: choice.model || undefined,
+        reasoning: choice.reasoning || undefined,
+        serviceTier: choice.serviceTier || undefined,
+        agentCliEnv: cfg.agentCliEnv ?? {},
+      });
+      setAgentTestState({ status: 'done', result });
+    } catch (error) {
+      setDshSetup({
+        busy: false,
+        error: error instanceof Error ? error.message : t('settings.dshSetupRequired'),
+      });
     }
   };
   const attributedAmrSettingsUrl = (
@@ -2438,7 +2465,7 @@ export function SettingsDialog({
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
   useEffect(() => {
-    if (amrCardStatus?.loggedIn !== true) return;
+    if (!amrCardSignedIn) return;
     const amr = agentsRef.current.find((agent) => agent.id === 'amr');
     if (!amr || (amr.models?.length ?? 0) > 0) return;
     if (amrRescanInFlightRef.current) return;
@@ -2476,7 +2503,7 @@ export function SettingsDialog({
       cancelled = true;
       amrRescanInFlightRef.current = false;
     };
-  }, [amrCardStatus?.loggedIn]);
+  }, [amrCardSignedIn]);
 
   const handleTestAgent = async () => {
     if (agentTestState.status === 'running') {
@@ -3865,9 +3892,11 @@ export function SettingsDialog({
   const activeHeader = sectionHeader[activeSection];
   const visibleAgents = agents.filter(isVisibleLocalCliAgent);
   const installedAgents = orderAgentsWithOpenDesignFirst(
-    visibleAgents.filter((a) => a.available),
+    visibleAgents.filter((agent) => agent.available || deepSeekHarnessNeedsSetup(agent)),
   );
-  const unavailableAgents = visibleAgents.filter((a) => !a.available);
+  const unavailableAgents = visibleAgents.filter(
+    (agent) => !agent.available && !deepSeekHarnessNeedsSetup(agent),
+  );
   const initialAgentScanRunning = agentsLoading && agents.length === 0;
   const agentModelOptionLabel = (
     model: ProviderModelOption | undefined,
@@ -3897,14 +3926,20 @@ export function SettingsDialog({
   const renderAgentModelConfig = (selected: AgentInfo) => {
     const hasModels =
       Array.isArray(selected.models) && selected.models.length > 0;
+    const configuredModelId =
+      cfg.agentModels?.[selected.id]?.model ?? defaultAgentModelId(selected);
+    const modelReasoningOptions = selected.models?.find(
+      (model) => model.id === configuredModelId,
+    )?.reasoningOptions;
+    const activeReasoningOptions = modelReasoningOptions ?? selected.reasoningOptions;
     const hasReasoning =
-      Array.isArray(selected.reasoningOptions) &&
-      selected.reasoningOptions.length > 0;
+      Array.isArray(activeReasoningOptions) &&
+      activeReasoningOptions.length > 0;
     // AMR's live catalog only lands a beat after sign-in. While the user is
     // signed in but the model list hasn't arrived yet, show the picker in a
     // loading state instead of hiding it — so the dropdown appears at sign-in
     // and simply fills in, rather than popping in seconds later.
-    if (selected.id === 'amr' && !hasModels && (amrCardStatus?.loggedIn ?? false)) {
+    if (selected.id === 'amr' && !hasModels && amrCardSignedIn) {
       return (
         <div className="agent-card-config">
           <label className="field">
@@ -3989,9 +4024,10 @@ export function SettingsDialog({
         : configuredModel ?? defaultAgentModelId(selected) ?? '';
     const modelValue = customModelDraft ?? fallbackModelValue;
     const reasoningValue =
-      effectiveChoice.reasoning ??
-      choice.reasoning ??
-      selected.reasoningOptions?.[0]?.id ?? '';
+      activeReasoningOptions?.some((option) => option.id === effectiveChoice.reasoning)
+        ? effectiveChoice.reasoning!
+        : activeReasoningOptions?.find((option) => option.default)?.id ??
+          activeReasoningOptions?.[0]?.id ?? '';
     const customActive =
       allowCustomModel &&
       hasModels &&
@@ -4131,7 +4167,7 @@ export function SettingsDialog({
                   setChoice({ reasoning: e.target.value })
                 }
               >
-                {selected.reasoningOptions!.map((r) => (
+                {activeReasoningOptions!.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.label}
                   </option>
@@ -4170,22 +4206,11 @@ export function SettingsDialog({
         aria-labelledby="settings-dialog-title"
         onClick={pageMode ? undefined : (e) => e.stopPropagation()}
       >
-        {/* Top-right chrome strip — anchored to the modal corner so the
-            autosave indicator and the close button float above the
-            sidebar/content rhythm without competing with the title.
-            We use `position: absolute` instead of putting these inside
-            `.modal-head` so the welcome variant's tall hero (kicker /
-            title / subtitle / pet teaser) keeps its centred reading
-            measure, and the close button always lands at the same
-            optical location regardless of how much copy the header
-            renders. */}
-        <div className="settings-chrome" aria-hidden={false}>
-          {/* Autosave status pill. Only renders something while a save
-              is in flight or has just completed — idle = invisible so
-              first-open feels calm. The chrome strip itself stays
-              mounted so the close button never shifts when the pill
-              appears, and the pill is announced via aria-live for
-              assistive tech. */}
+        {/* Autosave feedback is viewport-level rather than part of the
+            top-right dialog chrome. Local CLI pickers and the page-mode
+            content both occupy that upper band, so keeping this passive
+            status at the bottom avoids obscuring the active controls. */}
+        <div className="settings-autosave-layer">
           <div
             className={`settings-autosave is-${autosaveStatus}`}
             role="status"
@@ -4208,6 +4233,11 @@ export function SettingsDialog({
               </>
             ) : null}
           </div>
+        </div>
+        {/* Top-right chrome strip — anchored to the modal corner so the
+            close and fullscreen controls stay at a stable optical location
+            regardless of the header copy. */}
+        <div className="settings-chrome" aria-hidden={false}>
           {pageMode ? null : (
             <button
               type="button"
@@ -4453,8 +4483,8 @@ export function SettingsDialog({
                 </button>
               </div>
               </div>
-              {cfg.mode === 'daemon' && amrCardStatus?.loggedIn !== true ? (
-                // Only prompt to sign into Open Design Cloud when NOT already
+              {cfg.mode === 'daemon' && !amrCardSignedIn ? (
+                // Only prompt to sign into OpenDesign Cloud when NOT already
                 // signed in — the AMR/vela session IS the cloud identity (one
                 // session drives both), so a logged-in user has nothing to do
                 // here and the callout was showing spuriously.
@@ -4463,7 +4493,7 @@ export function SettingsDialog({
                     <strong>{t('settings.cloudCalloutTitle')}</strong>
                     <p>{t('settings.cloudCalloutBody')}</p>
                   </div>
-                  {/* Same device-auth flow as the 授权 button on the Open Design
+                  {/* Same device-auth flow as the 授权 button on the OpenDesign
                       agent card below — the AMR/vela session IS the cloud
                       identity, so signing in here is that one flow. This used to
                       navigate to onboarding, which walked the user through the
@@ -4620,7 +4650,8 @@ export function SettingsDialog({
                     {installedAgents.length > 0 ? (
                       <div className="agent-grid agent-grid-installed">
                         {installedAgents.map((a) => {
-                          const active = cfg.agentId === a.id;
+                          const needsSetup = deepSeekHarnessNeedsSetup(a);
+                          const active = !needsSetup && cfg.agentId === a.id;
                           const running =
                             active && agentTestState.status === 'running';
                           const isAmrAgent = a.id === 'amr';
@@ -4653,15 +4684,15 @@ export function SettingsDialog({
                               : (a.path ?? '');
                           const amrHighlighted = isAmrAgent && amrHighlightActive;
                           const amrCardEmail =
-                            isAmrAgent && active && amrCardStatus?.loggedIn
-                              ? amrCardStatus.user?.email || t('settings.amrSignedIn')
+                            isAmrAgent && active && amrCardSignedIn
+                              ? amrCardStatus?.user?.email || t('settings.amrSignedIn')
                               : '';
                           const amrCardProfileBadge =
-                            isAmrAgent && active && amrCardStatus?.loggedIn
-                              ? amrProfileBadgeLabel(amrCardStatus.profile)
+                            isAmrAgent && active && amrCardSignedIn
+                              ? amrProfileBadgeLabel(amrCardStatus?.profile)
                               : null;
                           const amrWalletVisible =
-                            isAmrAgent && active && amrCardStatus?.loggedIn === true;
+                            isAmrAgent && active && amrCardSignedIn;
                           const amrStatusBalance =
                             amrWalletVisible
                               ? formatVelaBalanceUsd(amrCardStatus?.account?.balanceUsd)
@@ -4670,14 +4701,6 @@ export function SettingsDialog({
                             amrWalletVisible && amrWalletSnapshot?.status === 'available'
                               ? formatVelaBalanceUsd(amrWalletSnapshot.balanceUsd)
                               : null;
-                          // recvpZPzGJL7o7: `amrStatusBalance` and `amrWalletBalance`
-                          // are both vela ACCOUNT-scoped reads. A team balance
-                          // may only come from the nested v2 workspace wallet
-                          // response whose workspace identity Vela returned;
-                          // never display the account summary's balance as a
-                          // team fallback. Personal/local use keeps the account
-                          // summary and login-status fallbacks.
-                          //
                           // recvqakgSc1Pwd: this must read `balanceUsd` — the
                           // dollar figure vela already computed — not
                           // `totalAvailableCredits`, a raw credits COUNT on a
@@ -4686,19 +4709,9 @@ export function SettingsDialog({
                           // credits count as a dollar amount is what put
                           // "Balance $388307.00" on a workspace whose real
                           // balance was under $39.
-                          const workspaceBalanceUsd = workspaceBillingBalanceUsd(
-                            workspaceBillingResponse,
-                            workspaceContext,
-                          );
-                          const amrWorkspaceBalance =
-                            amrWalletVisible && workspaceBalanceUsd
-                              ? formatVelaBalanceUsd(workspaceBalanceUsd)
-                              : null;
                           const amrCardBalanceLabel =
-                            isAmrAgent && active && amrCardStatus?.loggedIn
-                              ? workspaceContext?.workspaceType === 'team'
-                                ? amrWorkspaceBalance
-                                : amrWorkspaceBalance ?? amrStatusBalance ?? amrWalletBalance
+                            isAmrAgent && active && amrCardSignedIn
+                              ? amrStatusBalance ?? amrWalletBalance
                               : null;
                           // vela's `account.plan` is ACCOUNT-scoped, so a member
                           // whose plan is held by the team workspace reads
@@ -4712,11 +4725,11 @@ export function SettingsDialog({
                           // account row and cannot drift from it). An id outside
                           // the badge set still renders verbatim.
                           const amrCardResolvedPlan =
-                            isAmrAgent && active && amrCardStatus?.loggedIn
+                            isAmrAgent && active && amrCardSignedIn
                               ? resolvePlanTier({
                                   billing: workspaceBilling,
                                   context: workspaceContext,
-                                  accountPlan: amrCardStatus.account?.plan,
+                                  accountPlan: amrCardStatus?.account?.plan,
                                 })
                               : null;
                           const amrCardPlanLabel = amrCardResolvedPlan
@@ -4745,7 +4758,7 @@ export function SettingsDialog({
                           // an upgrade to the top tier they already hold, while
                           // the badge beside it correctly read Max.
                           const amrCardCanUpgrade =
-                            isAmrAgent && active && amrCardStatus?.loggedIn
+                            isAmrAgent && active && amrCardSignedIn
                               ? canUpgradeFromPlanTier(amrCardResolvedPlan) &&
                                 Boolean(workspaceContext?.permissions?.canManageBilling)
                               : false;
@@ -4753,7 +4766,7 @@ export function SettingsDialog({
                             isAmrAgent &&
                             active &&
                             hoveredAgentCardId === a.id &&
-                            amrCardStatus?.loggedIn !== true &&
+                            !amrCardSignedIn &&
                             amrCardStatus?.loginInFlight === true;
                           const cardEl = (
                             <div
@@ -4763,6 +4776,7 @@ export function SettingsDialog({
                               className={
                                 'agent-card agent-card-installed' +
                                 (active ? ' active' : '') +
+                                (needsSetup ? ' agent-card-needs-setup' : '') +
                                 (amrHighlighted ? ' agent-card--amr-highlight' : '')
                               }
                               onMouseEnter={() => {
@@ -4787,6 +4801,10 @@ export function SettingsDialog({
                                       cli_provider_id: agentIdToTracking(a.id),
                                       install_status: 'installed',
                                     });
+                                    if (needsSetup) {
+                                      setDshSetup({ busy: false, error: null });
+                                      return;
+                                    }
                                     if (isAmrAgent) {
                                       recordAmrEntry(
                                         analytics.track,
@@ -4848,7 +4866,11 @@ export function SettingsDialog({
                                           </VisuallyHidden>
                                         ) : null}
                                       </div>
-                                      {metaLabel ? (
+                                      {needsSetup ? (
+                                        <div className="agent-card-meta">
+                                          <span>{t('settings.dshSetupRequired')}</span>
+                                        </div>
+                                      ) : metaLabel ? (
                                         <div className="agent-card-meta">
                                           <span title={metaTitle}>
                                             {metaLabel}
@@ -4915,7 +4937,7 @@ export function SettingsDialog({
                                       onMouseEnter={() => setAmrCoachmarkDismissed(true)}
                                     >
                                       {amrCoachmarkArmed &&
-                                      amrCardStatus?.loggedIn === false &&
+                                      !amrCardSignedIn &&
                                       !amrCoachmarkDismissed ? (
                                         <span className="amr-coachmark" aria-hidden="true">
                                           <span className="amr-coachmark__ring" />
@@ -4974,7 +4996,7 @@ export function SettingsDialog({
                                         initialStatus={amrCardStatus}
                                         skipInitialRefresh
                                         signInLabel={t('settings.amrAuthorize')}
-                                        showConsoleAction={amrCardStatus?.loggedIn === true}
+                                        showConsoleAction={amrCardSignedIn}
                                         iconOnlySignOut
                                         amrEntrySourceDetail="settings_amr_authorize"
                                         metricsConsent={cfg.telemetry?.metrics === true}
@@ -6208,6 +6230,16 @@ export function SettingsDialog({
     return (
       <div className="settings-page-shell">
         {surface}
+        {dshSetup ? (
+          <DeepSeekHarnessSetupDialog
+            busy={dshSetup.busy}
+            error={dshSetup.error}
+            onCancel={() => {
+              if (!dshSetup.busy) setDshSetup(null);
+            }}
+            onConfirm={() => void handleConfirmDshSetup()}
+          />
+        ) : null}
       </div>
     );
   }
@@ -6215,6 +6247,16 @@ export function SettingsDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       {surface}
+      {dshSetup ? (
+        <DeepSeekHarnessSetupDialog
+          busy={dshSetup.busy}
+          error={dshSetup.error}
+          onCancel={() => {
+            if (!dshSetup.busy) setDshSetup(null);
+          }}
+          onConfirm={() => void handleConfirmDshSetup()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -8249,7 +8291,7 @@ function MediaProvidersSection({
 // Important: every snippet uses absolute paths to the daemon's current
 // Node-compatible runtime and built cli.js, fetched at runtime. macOS
 // and Linux ship a system /usr/bin/od (octal-dump) that shadows any
-// `od` we might add to PATH, and most Open Design users run from
+// `od` we might add to PATH, and most OpenDesign users run from
 // source where `od` is not installed globally. The installer panel
 // must NOT reference bare `od`.
 type McpClientId =
