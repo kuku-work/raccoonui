@@ -765,13 +765,16 @@ function isRetryableWorkspaceWriteFailure(status: number, retryable: boolean): b
 
 export async function createProject(
   input: {
-    /** Optional caller-minted id used for an optimistic route handoff. */
+    /**
+     * Optional caller-minted id used for an optimistic route handoff.
+     *
+     * RACCOONUI-PATCH: the fork routes its slug-style id
+     * (`^[A-Za-z0-9._-]{1,128}$`) through this same field so the per-project
+     * git workflow gets stable folder / repo names. The upstream UI flow omits
+     * it and keeps the generated uuid. — 2026-05-04
+     */
     id?: string;
     name: string;
-    // RACCOONUI-PATCH: optional explicit slug-style id (`^[A-Za-z0-9._-]{1,128}$`)
-    // so the per-project git workflow gets stable folder / repo names. Omitted
-    // by the upstream UI flow, which keeps the generated uuid. — 2026-05-04
-    id?: string;
     projectLocationId?: string;
     skillId: string | null;
     skillCatalogScope?: LocalCatalogScope | null;
