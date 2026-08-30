@@ -371,8 +371,14 @@ function pruneToolsDevSupervisors(): number {
   const psRoot = `'${FORK_ROOT.replace(/'/g, "''")}'`;
   const ps = [
     `$root = ${psRoot};`,
-    '$p = @(Get-CimInstance Win32_Process | Where-Object {',
-    "  $_.CommandLine -like '*tools-dev*' -and $_.CommandLine -like ('*' + $root + '*')",
+    // Name + entrypoint filename + this fork's path, all three. A looser
+    // match on the string 'tools-dev' alone is actively dangerous: measured
+    // 2026-08-30, it also selected three bash.exe and one powershell.exe that
+    // merely MENTIONED tools-dev on their command line -- the very shells
+    // driving this repo. A daily Stop-Process over that set would kill the
+    // operator's own tooling every morning.
+    "$p = @(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object {",
+    "  $_.CommandLine -like '*tools-dev.mjs*' -and $_.CommandLine -like ('*' + $root + '*')",
     '});',
     'foreach ($x in $p) { Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue };',
     '$p.Count',
