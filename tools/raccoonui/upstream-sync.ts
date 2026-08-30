@@ -330,6 +330,26 @@ function skip(reason: string): void {
   emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: ${reason}`);
 }
 
+// The tool is normally open at 06:00, and skipping on that is exactly what let
+// the fork drift 67 commits behind (five consecutive daemon-running skips,
+// 2026-08-30). Operator's call: shut it down and sync anyway -- they relaunch by
+// hand when they next need it. Shut down through `tools-dev stop`, the same path
+// start.ps1's own finally block uses, so the supervisor tears down daemon + web
+// + desktop together and start.ps1's watchdog exits cleanly instead of leaving
+// the orphan chain a bare port-kill would.
+async function stopRunningDaemon(): Promise<boolean> {
+  emit(`🛑 *Upstream Sync ${TODAY}* — RaccoonUI 開著，先關掉它再同步（需要時請自己重開）。`);
+  sh('pnpm tools-dev stop', 60_000);
+  // Trust the port, not the command's exit code: `stop` reports success for
+  // apps it did not start, and the only thing that matters is the port going
+  // quiet before git touches the working tree.
+  for (let i = 0; i < 20; i++) {
+    if (!(await portOpen(DAEMON_PORT))) return true;
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  return false;
+}
+
 // ── main ─────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -347,8 +367,10 @@ async function main(): Promise<void> {
     return;
   }
   if (await portOpen(DAEMON_PORT)) {
-    skip(`raccoonui daemon is running (:${DAEMON_PORT}). Won't disrupt an active session.`);
-    return;
+    if (!(await stopRunningDaemon())) {
+      skip(`daemon still listening on :${DAEMON_PORT} 20s after \`tools-dev stop\`. Not forcing it.`);
+      return;
+    }
   }
 
   // Preflight passed: this run does real work, so the skip streak is over.
