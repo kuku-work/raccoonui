@@ -343,11 +343,44 @@ async function stopRunningDaemon(): Promise<boolean> {
   // Trust the port, not the command's exit code: `stop` reports success for
   // apps it did not start, and the only thing that matters is the port going
   // quiet before git touches the working tree.
+  let released = false;
   for (let i = 0; i < 20; i++) {
-    if (!(await portOpen(DAEMON_PORT))) return true;
+    if (!(await portOpen(DAEMON_PORT))) { released = true; break; }
     await new Promise((r) => setTimeout(r, 1_000));
   }
-  return false;
+  if (!released) return false;
+
+  const pruned = pruneToolsDevSupervisors();
+  if (pruned) emit(`   cleaned up ${pruned} orphaned tools-dev supervisor(s).`);
+  return true;
+}
+
+// `tools-dev stop` takes down daemon + web but leaves the `tools-dev run`
+// supervisor itself alive -- start.ps1 has the identical hole (it kills the
+// pnpm.cmd wrapper it spawned, which is two links up the chain from the node
+// supervisor). Verified 2026-08-30: after a clean start.ps1 shutdown the
+// supervisor was still resident, next to a `cmd /c start.cmd` orphan five days
+// old. One stray process is harmless; one per day is not, and this now runs
+// daily. Matched on BOTH the tools-dev entrypoint and this fork's path so a
+// tools-dev belonging to another checkout is never touched.
+function pruneToolsDevSupervisors(): number {
+  if (process.platform !== 'win32') return 0;
+  // Single-quoted in PowerShell on purpose: PowerShell does not treat a
+  // backslash as an escape, so JSON.stringify's doubled separators would turn
+  // the path into a pattern that matches nothing at all.
+  const psRoot = `'${FORK_ROOT.replace(/'/g, "''")}'`;
+  const ps = [
+    `$root = ${psRoot};`,
+    '$p = @(Get-CimInstance Win32_Process | Where-Object {',
+    "  $_.CommandLine -like '*tools-dev*' -and $_.CommandLine -like ('*' + $root + '*')",
+    '});',
+    'foreach ($x in $p) { Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue };',
+    '$p.Count',
+  ].join(' ');
+  const r = sh(`powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`, 30_000);
+  // Last line only: Stop-Process noise lands on the same merged tail.
+  const n = Number((r.tail.trim().split('\n').pop() ?? '').trim());
+  return Number.isFinite(n) ? n : 0;
 }
 
 // ── main ─────────────────────────────────────────────────────────
