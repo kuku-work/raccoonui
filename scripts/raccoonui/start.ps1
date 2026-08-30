@@ -213,5 +213,43 @@ try {
     }
     # Best-effort: tell tools-dev to clean up daemon + web + desktop it spawned
     try { pnpm tools-dev stop 2>$null | Out-Null } catch { }
+
+    # -- background upstream sync --
+    # The daemon is down and the operator has walked away: this is the only
+    # window where merging upstream is both safe and unhurried. The daily cron
+    # cannot use it -- it fires at 06:00, when this tool is usually open, and
+    # its preflight then skips on the live :17456. Five straight days of that
+    # is what let the fork drift 67 commits behind on 2026-08-30.
+    #
+    # Detached on purpose: a sync can run for minutes and must never hold the
+    # console open. Verified to survive both a clean console exit and a forced
+    # kill of the console. No gating is duplicated here -- upstream-sync.ts runs
+    # its own preflight (branch / dirty tracked files / daemon port) and its own
+    # five merge gates, writes audit-logs/, and pushes origin only when every
+    # gate is green. The next start.ps1 run picks that up in its pre-start pull,
+    # so the operator never has to think about any of it.
+    try {
+        $syncScript = Join-Path $RaccoonUIDir 'tools\raccoonui\upstream-sync.ts'
+        $nodeBin = (Get-Command node -ErrorAction SilentlyContinue).Source
+        if ((Test-Path $syncScript) -and $nodeBin) {
+            $syncLogDir = Join-Path $RaccoonUIDir 'audit-logs'
+            New-Item -ItemType Directory -Path $syncLogDir -Force | Out-Null
+            # Single file, overwritten each shutdown: only the last run is worth
+            # reading, and a dated file per shutdown would just accumulate.
+            $syncOut = Join-Path $syncLogDir 'shutdown-sync.log'
+            $syncErr = Join-Path $syncLogDir 'shutdown-sync.err.log'
+            Start-Process -FilePath $nodeBin `
+                -ArgumentList '--experimental-strip-types', $syncScript `
+                -WorkingDirectory $RaccoonUIDir `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $syncOut `
+                -RedirectStandardError $syncErr | Out-Null
+            Write-Host "🔄 upstream 同步已在背景啟動 — 可以直接關視窗" -ForegroundColor DarkGray
+            Write-Host "   結果：audit-logs\shutdown-sync.log" -ForegroundColor DarkGray
+        }
+    } catch {
+        # Shutdown housekeeping must never be the thing that blocks shutdown.
+    }
+
     Pop-Location
 }
