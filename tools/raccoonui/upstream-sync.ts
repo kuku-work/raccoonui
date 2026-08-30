@@ -350,20 +350,29 @@ async function stopRunningDaemon(): Promise<boolean> {
   }
   if (!released) return false;
 
-  const pruned = pruneToolsDevSupervisors();
-  if (pruned) emit(`   cleaned up ${pruned} orphaned tools-dev supervisor(s).`);
+  const pruned = pruneLauncherRemnants();
+  if (pruned) emit(`   cleaned up ${pruned} orphaned launcher process(es).`);
   return true;
 }
 
-// `tools-dev stop` takes down daemon + web but leaves the `tools-dev run`
-// supervisor itself alive -- start.ps1 has the identical hole (it kills the
-// pnpm.cmd wrapper it spawned, which is two links up the chain from the node
-// supervisor). Verified 2026-08-30: after a clean start.ps1 shutdown the
-// supervisor was still resident, next to a `cmd /c start.cmd` orphan five days
-// old. One stray process is harmless; one per day is not, and this now runs
-// daily. Matched on BOTH the tools-dev entrypoint and this fork's path so a
-// tools-dev belonging to another checkout is never touched.
-function pruneToolsDevSupervisors(): number {
+// Shutting the tool down leaves two kinds of debris, both measured on
+// 2026-08-30 and both harmless once but not once per day, which is what this
+// becomes now that the sync closes the tool every morning:
+//
+//   1. the `tools-dev run` supervisor. `tools-dev stop` frees the ports but
+//      not the supervisor, and start.ps1 has the same hole -- it kills the
+//      pnpm.cmd wrapper it spawned, two links up the chain from the node
+//      supervisor.
+//   2. the `cmd /c start.cmd` shell. start.cmd ends in `pause`, so once pwsh
+//      exits the shell sits forever on "Press any key to close". The box had
+//      one of these dated 2026-08-25 still waiting.
+//
+// Every match requires this fork's path, so another checkout is never touched.
+// Case 2 additionally requires the shell to have no live pwsh child: that is
+// the launcher's actual work, and while it runs the shell must be left alone.
+// Testing for "no children at all" does not work -- every console owns a
+// conhost.exe, so that test never fires (measured, 2026-08-30).
+function pruneLauncherRemnants(): number {
   if (process.platform !== 'win32') return 0;
   // Single-quoted in PowerShell on purpose: PowerShell does not treat a
   // backslash as an escape, so JSON.stringify's doubled separators would turn
@@ -377,9 +386,18 @@ function pruneToolsDevSupervisors(): number {
     // merely MENTIONED tools-dev on their command line -- the very shells
     // driving this repo. A daily Stop-Process over that set would kill the
     // operator's own tooling every morning.
-    "$p = @(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object {",
+    "$sup = @(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object {",
     "  $_.CommandLine -like '*tools-dev.mjs*' -and $_.CommandLine -like ('*' + $root + '*')",
     '});',
+    '$all = Get-CimInstance Win32_Process;',
+    // $c captures the outer pipeline item: a nested Where-Object rebinds $_,
+    // so the childless test has to compare against $c, not $_.
+    "$sh = @($all | Where-Object { $c = $_;",
+    "  $c.Name -eq 'cmd.exe' -and $c.CommandLine -like '*start.cmd*'",
+    "  -and $c.CommandLine -like ('*' + $root + '*')",
+    "  -and -not ($all | Where-Object { $_.ParentProcessId -eq $c.ProcessId -and $_.Name -eq 'pwsh.exe' })",
+    '});',
+    '$p = @($sup) + @($sh);',
     'foreach ($x in $p) { Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue };',
     '$p.Count',
   ].join(' ');
