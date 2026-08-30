@@ -38,12 +38,19 @@
 
 import { spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
-import { mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const FORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const AUDIT_DIR = resolve(FORK_ROOT, 'audit-logs');
+// Runtime bookkeeping (gitignored, fork rule #2: .raccoonui/ holds runtime data).
+const RUNTIME_DIR = resolve(FORK_ROOT, '.raccoonui');
+const SKIP_STREAK_FILE = resolve(RUNTIME_DIR, 'sync-skip-streak');
+// One skip is correct. A skip EVERY day is an outage wearing a skip's clothes: the
+// 2026-08-30 sync found 5 consecutive daemon-running skips and 67 unsynced commits,
+// every run exit 0 and nothing louder than a shrug. Escalate on the streak.
+const SKIP_STREAK_ALERT = 3;
 
 // Local-date label (toISOString is UTC and can drift the day at 06:00 TPE).
 const TODAY = (() => {
@@ -242,10 +249,17 @@ function normalizeLineEndings(): number {
   const eol = git(['ls-files', '--eol'], { allowFail: true });
   const crlf = eol.split('\n').filter((l) => l.includes('w/crlf')).map((l) => l.split('\t').pop()!).filter(Boolean);
   if (!crlf.length) return 0;
-  // Delete then checkout forces git to re-materialize from index as LF (autocrlf=input smudge
-  // is identity, so a plain checkout of "already-matching" files is a no-op without the rm).
-  for (const f of crlf) git(['rm', '-f', '--', f], { allowFail: true });
-  git(['checkout', '--', '.'], { allowFail: true });
+  // Rewrite in place. The previous `git rm -f` + `git checkout -- .` dance did NOT restore
+  // the files: `git rm` drops the index entry too, so the checkout had nothing left to
+  // re-materialize from and stranded them staged-deleted (hit for real, 2026-08-30 sync).
+  for (const f of crlf) {
+    const abs = resolve(FORK_ROOT, f);
+    try {
+      writeFileSync(abs, readFileSync(abs, 'utf8').replace(/\\r\\n/g, '\\n'), 'utf8');
+    } catch {
+      // File vanished mid-merge; the status checks downstream will surface it.
+    }
+  }
   return crlf.length;
 }
 
@@ -284,26 +298,61 @@ function emit(line: string): void {
   console.log(line);
 }
 
+function readSkipStreak(): number {
+  try {
+    return Number(readFileSync(SKIP_STREAK_FILE, 'utf8').trim()) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSkipStreak(n: number): void {
+  try {
+    mkdirSync(RUNTIME_DIR, { recursive: true });
+    writeFileSync(SKIP_STREAK_FILE, String(n), 'utf8');
+  } catch {
+    // Bookkeeping must never be the thing that fails a sync run.
+  }
+}
+
+// Every preflight bail routes through here, so a precondition stuck for days stops
+// reading like a routine skip and starts reading like the outage it actually is.
+function skip(reason: string): void {
+  const streak = readSkipStreak() + 1;
+  writeSkipStreak(streak);
+  if (streak >= SKIP_STREAK_ALERT) {
+    emit(
+      `🚨 *Upstream Sync ${TODAY}* — skipped ${streak} runs in a row: ${reason} Sync is effectively OFF.` +
+        ' Clear the precondition, or run the sync by hand: node --experimental-strip-types tools/raccoonui/upstream-sync.ts',
+    );
+    return;
+  }
+  emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: ${reason}`);
+}
+
 // ── main ─────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   // 1) Preflight — never clobber a human mid-work.
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true });
   if (branch !== WORK_BRANCH) {
-    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: on \`${branch || '?'}\`, not \`${WORK_BRANCH}\`. No action.`);
+    skip(`on \`${branch || '?'}\`, not \`${WORK_BRANCH}\`. No action.`);
     return;
   }
   // Only TRACKED modifications block: a merge/checkout can clobber WIP edits, but stray
   // untracked files (logs, scratch, an uncommitted tool) are not the cron's concern.
   const dirty = git(['status', '--porcelain', '--untracked-files=no'], { allowFail: true });
   if (dirty) {
-    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: ${dirty.split('\n').length} tracked file(s) modified. Manual state, leaving untouched.`);
+    skip(`${dirty.split('\n').length} tracked file(s) modified. Manual state, leaving untouched.`);
     return;
   }
   if (await portOpen(DAEMON_PORT)) {
-    emit(`⏭️ *Upstream Sync ${TODAY}* — skipped: raccoonui daemon is running (:${DAEMON_PORT}). Won't disrupt an active session.`);
+    skip(`raccoonui daemon is running (:${DAEMON_PORT}). Won't disrupt an active session.`);
     return;
   }
+
+  // Preflight passed: this run does real work, so the skip streak is over.
+  writeSkipStreak(0);
 
   // 2) Fetch + delta.
   if (!git(['remote'], { allowFail: true }).split('\n').includes('upstream')) {
