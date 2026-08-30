@@ -32,7 +32,7 @@ Typography pairs **Pontano Sans** (Latin) with **思源黑體 / Source Han Sans 
 - **Brand Light** (`#6B96EC`): Outline buttons, dashed "add new" borders, approachability accents. Token `--brand-light` (`hsl(220, 77%, 67%)`); pairs with `--brand-hover` (`hsl(220.8, 68.4%, 61.6%)`) and `--brand-disabled` (`hsl(218, 100%, 91%)`).
 
 ### Brand Secondary
-- **Brand Secondary Mid Blue** (`#3D5BCD`): Switch checked alternate, secondary brand emphasis, trial-banner upgrade links. Token `--brand-secondary` (`hsl(230, 59%, 52%)`).
+- **Brand Secondary Mid Blue** (`#3D57CD`): Switch checked alternate, secondary brand emphasis, trial-banner upgrade links. Token `--brand-secondary` (`hsl(230, 59%, 52%)`).
 - **Button Blue** (`#5FA8F9`): Bright-blue CTA variant for non-primary surfaces. Token `--button-blue` (`hsl(213, 94%, 68%)`).
 
 ### Accent
