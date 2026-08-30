@@ -248,7 +248,9 @@ try {
             Write-Host "   結果：audit-logs\shutdown-sync.log" -ForegroundColor DarkGray
         }
     } catch {
-        # Shutdown housekeeping must never be the thing that blocks shutdown.
+        # Housekeeping must never block shutdown -- but it must not vanish
+        # either. Say what broke, then let the shutdown finish.
+        Write-Host "⚠️  背景同步啟動失敗（不影響關閉）：$_" -ForegroundColor Yellow
     }
 
     Pop-Location
