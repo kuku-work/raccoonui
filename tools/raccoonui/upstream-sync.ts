@@ -438,7 +438,13 @@ async function main(): Promise<void> {
     emit(`🚨 *Upstream Sync ${TODAY}* — 'upstream' remote not configured. Manual fix required.`);
     return;
   }
-  git(['fetch', 'upstream', '--quiet'], { timeout: 180_000 });
+  // Fetch ONLY the release branch we actually merge from. The default refspec pulls all
+  // ~2.2k upstream branches, and a concurrent fetch racing on any one of them fails the
+  // whole command ("incorrect old value provided") -- aborting a sync that had nothing
+  // wrong with it. RACCOONUI-PATCH: narrow upstream fetch to the merge source -- 2026-09-01
+  git(['fetch', 'upstream', `+refs/heads/${RELEASE_BRANCH}:refs/remotes/upstream/${RELEASE_BRANCH}`, '--quiet'], {
+    timeout: 180_000,
+  });
   const mergeBase = git(['merge-base', WORK_BRANCH, `upstream/${RELEASE_BRANCH}`]);
   const tip = git(['rev-parse', `upstream/${RELEASE_BRANCH}`]);
   const range = `${mergeBase}..upstream/${RELEASE_BRANCH}`;
