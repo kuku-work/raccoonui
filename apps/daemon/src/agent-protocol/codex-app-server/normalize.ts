@@ -1,3 +1,4 @@
+import { createCodexTurnUsage } from '../../observability/codex-turn-usage.js';
 /** @module agent-protocol/codex-app-server/normalize
  *
  * Translates codex `app-server` JSON-RPC notifications into the OpenDesign
@@ -19,7 +20,7 @@
  * absent there). Dropping it to keep the frame narrow is what made codex file
  * rows show elapsed time where Claude's showed `+N −M`.
  *
- * Exactly four things cannot round-trip through an `exec --json` frame,
+ * These additions cannot round-trip through an `exec --json` frame,
  * because that stream has no shape for them, and are therefore owned here:
  *
  *   - assistant text deltas (`item/agentMessage/delta`)
@@ -27,12 +28,14 @@
  *   - raw reasoning deltas (`item/reasoning/textDelta`), used by local models
  *   - token usage (`thread/tokenUsage/updated` carries two counters the
  *     `exec --json` parser has never read)
+ *   - live command output and file targets observed during patch generation
  *
  * Unknown methods, unknown item types, and unknown extra fields are ignored
  * rather than raised: the app-server protocol ships no version negotiation and
  * no changelog, so a codex upgrade that adds a notification must degrade to
  * "we render one thing less", never to "the run fails".
  */
+import { resolve } from 'node:path';
 import { createCodexFrameHandler } from '../../runtimes/json-event-stream.js';
 
 type JsonObject = Record<string, unknown>;
@@ -72,6 +75,25 @@ function execPatchKind(kind: unknown): string {
   if (typeof kind === 'string') return kind;
   return isRecord(kind) ? str(kind.type) : '';
 }
+
+/**
+ * Bounds on the in-progress command output carried to the client.
+ *
+ * Both numbers are taken from the ACP bridge rather than invented here
+ * (`agent-protocol/acp/constants.ts`: `ACP_IN_FLIGHT_TOOL_OUTPUT_LIMIT`,
+ * `ACP_IN_FLIGHT_TOOL_MIN_INTERVAL_MS`), because this is the same event on the
+ * same contract feeding the same row, and two transports disagreeing about how
+ * much of a running command's output is "enough" would be a difference no user
+ * could explain. They are re-declared instead of imported so the codex
+ * transport does not take a dependency on the ACP module's internals.
+ *
+ * The CAP bounds one event; the INTERVAL bounds how many events a chatty
+ * command can produce. Neither alone is sufficient: `yes` would defeat the cap
+ * by frequency, and a single `cat` of a large file would defeat the interval by
+ * size.
+ */
+const COMMAND_OUTPUT_LIMIT = 2_000;
+const COMMAND_OUTPUT_MIN_INTERVAL_MS = 250;
 
 /** Item types whose `exec --json` branch ends an assistant-message run. */
 const BOUNDARY_CLEARING_ITEM_TYPES = new Set([
@@ -163,7 +185,16 @@ export interface CodexAppServerNormalizer {
 
 export function createCodexAppServerNormalizer(
   onEvent: CodexAppServerEventHandler,
+  /**
+   * Injectable clock, for the publication throttle only. The parser is
+   * otherwise a pure function of its frames; tests drive a whole turn inside a
+   * single millisecond, which would let the throttle swallow every update after
+   * the first and make an accumulation bug invisible.
+   */
+  now: () => number = Date.now,
+  cwd?: string,
 ): CodexAppServerNormalizer {
+  const evaluationUsage = createCodexTurnUsage();
   let emittedCount = 0;
   const emit = (event: AgentEvent) => {
     emittedCount += 1;
@@ -199,6 +230,122 @@ export function createCodexAppServerNormalizer(
     const before = emittedCount;
     const consumed = codex.handleFrame(frame);
     return consumed && emittedCount > before;
+  }
+
+  /**
+   * Commands whose `item/started` has arrived and whose `item/completed` has
+   * not. Only this transport can populate it: `exec --json` has no output-delta
+   * frame, so a command row there is silent until it exits.
+   */
+  type RunningCommand = {
+    command: string;
+    startedAt: number;
+    output: string;
+    published: boolean;
+    lastPublishedAt: number;
+    lastSignature: string;
+  };
+  const runningCommands = new Map<string, RunningCommand>();
+
+  // Patch snapshots may reorder files as more paths arrive. A path-based item
+  // id keeps each preview paired with its final row; ordinal ids cannot do so.
+  const patchFiles = new Map<string, Set<string>>();
+  const completedPatches = new Set<string>();
+  let patchTurnEnded = false;
+
+  function patchFileItemId(itemId: string, path: string): string {
+    return `${itemId}#${JSON.stringify(cwd ? resolve(cwd, path) : path)}`;
+  }
+
+  function handlePatchUpdated(params: JsonObject): void {
+    const itemId = str(params.itemId);
+    if (!itemId || patchTurnEnded || completedPatches.has(itemId) || !Array.isArray(params.changes)) return;
+    for (const change of params.changes) {
+      if (!isRecord(change)) continue;
+      const rawPath = str(change.path);
+      const path = rawPath && cwd ? resolve(cwd, rawPath) : rawPath;
+      const kind = execPatchKind(change.kind);
+      if (!path || (kind !== 'add' && kind !== 'update')) continue;
+      const paths = patchFiles.get(itemId) ?? new Set<string>();
+      if (paths.has(path)) continue;
+      paths.add(path);
+      patchFiles.set(itemId, paths);
+      // One small target event per file, independent of patch size/chunk count.
+      // Full code and tentative line counts are not needed to show the row.
+      emit({
+        type: 'tool_in_flight',
+        id: `${patchFileItemId(itemId, path)}#0`,
+        name: kind === 'add' ? 'Write' : 'Edit',
+        input: { file_path: path },
+        startedAt: now(),
+      });
+      previousEventWasMessage = false;
+      lastMessageEndedWithNewline = false;
+    }
+  }
+
+  /**
+   * Publish the early form of a running command row.
+   *
+   * Why the early form and not the settled `tool_use` the `exec --json` branch
+   * emits at `item.started`: the client retires an early row into the settled
+   * row that shares its id, and it does that by dropping every early row whose
+   * id ALREADY has a settled one (`dropSupersededInFlightToolUses` in
+   * `apps/web/src/runtime/tool-events.ts`). Forwarding the started frame and
+   * then sending output updates would therefore emit events that the client
+   * discards without rendering — the row would sit empty for the whole run and
+   * every test at this layer would still be green. The settled pair is emitted
+   * from `item.completed` instead, which is where the output is final anyway.
+   *
+   * `startedAt` is the item's own start, never the moment a delta arrived: it
+   * is what the row's stopwatch counts from, and it is what the client carries
+   * onto the settled row when it retires this one. Reading the clock here would
+   * restart the stopwatch on every chunk.
+   *
+   * The first publication of a call is never throttled — a row must appear when
+   * the command starts, which is the entire answer to "where is it stuck". Only
+   * the updates that follow are rate-limited, and only when they would say
+   * something new.
+   */
+  function publishRunningCommand(id: string, run: RunningCommand): void {
+    const output = run.output.slice(0, COMMAND_OUTPUT_LIMIT);
+    const signature = output;
+    if (run.published) {
+      if (signature === run.lastSignature) return;
+      if (now() - run.lastPublishedAt < COMMAND_OUTPUT_MIN_INTERVAL_MS) return;
+    }
+    run.published = true;
+    run.lastSignature = signature;
+    run.lastPublishedAt = now();
+    emit({
+      type: 'tool_in_flight',
+      id,
+      name: 'Bash',
+      input: { command: run.command },
+      startedAt: run.startedAt,
+      ...(output ? { output } : {}),
+    });
+  }
+
+  /**
+   * `item/commandExecution/outputDelta` — the child's stdout/stderr as it is
+   * produced. Recorded against codex-cli 0.153.4 (2026-09-08): one frame per
+   * write, `{ threadId, turnId, itemId, delta }`.
+   *
+   * A frame naming no known running command is dropped rather than raised: the
+   * app-server protocol ships no version negotiation, so a codex that reorders
+   * or renames its lifecycle must cost one row, never the run.
+   */
+  function handleCommandOutputDelta(params: JsonObject): void {
+    const id = str(params.itemId);
+    if (!id) return;
+    const run = runningCommands.get(id);
+    if (!run) return;
+    const delta = params.delta;
+    if (typeof delta !== 'string' || delta.length === 0) return;
+    // Stop growing the buffer once it can no longer change what is published.
+    if (run.output.length < COMMAND_OUTPUT_LIMIT) run.output += delta;
+    publishRunningCommand(id, run);
   }
 
   function emitMessageText(itemId: string, text: string): void {
@@ -320,6 +467,58 @@ export function createCodexAppServerNormalizer(
       if (lifecycle === 'item.completed') handleReasoningCompleted(item);
       return;
     }
+    /*
+     * A command row is owned here for the length of its run, because only this
+     * transport can fill it in while it runs (`item/commandExecution/
+     * outputDelta`). Routing the started frame would emit the SETTLED row, and
+     * a settled row makes every later update invisible — see
+     * `publishRunningCommand`. The settled pair still comes from the completed
+     * frame below, unchanged.
+     */
+    if (item.type === 'commandExecution' && lifecycle === 'item.started') {
+      const id = str(item.id);
+      if (id) {
+        runningCommands.set(id, {
+          command: str(item.command),
+          startedAt: num(params.startedAtMs) ?? now(),
+          output: '',
+          published: false,
+          lastPublishedAt: 0,
+          lastSignature: '',
+        });
+        publishRunningCommand(id, runningCommands.get(id) as RunningCommand);
+        previousEventWasMessage = false;
+        lastMessageEndedWithNewline = false;
+        return;
+      }
+    }
+    if (item.type === 'commandExecution' && lifecycle === 'item.completed') {
+      runningCommands.delete(str(item.id));
+    }
+
+    if (item.type === 'fileChange') {
+      const id = str(item.id);
+      if (completedPatches.has(id)) return;
+      if (patchFiles.has(id)) {
+        // Keep previews live until execution completes, then let the existing
+        // parser own final diff counts/results. Split by path so adding an
+        // alphabetically earlier file cannot retire a different file's row.
+        if (lifecycle === 'item.started') return;
+        if (!Array.isArray(item.changes)) return;
+        completedPatches.add(id);
+        patchFiles.delete(id);
+        for (const change of item.changes) {
+          if (!isRecord(change) || !str(change.path)) continue;
+          const execItem = toExecItem({ ...item, id: patchFileItemId(id, str(change.path)), changes: [change] });
+          if (execItem) routeFrame({ type: lifecycle, item: execItem });
+        }
+        previousEventWasMessage = false;
+        lastMessageEndedWithNewline = false;
+        return;
+      }
+      if (lifecycle === 'item.completed') completedPatches.add(id);
+    }
+
     const execItem = toExecItem(item);
     if (!execItem) {
       unknownItems += 1;
@@ -336,8 +535,8 @@ export function createCodexAppServerNormalizer(
     const tokenUsage = isRecord(params.tokenUsage) ? params.tokenUsage : null;
     // `total` is the thread-cumulative counter, which is the same semantics
     // `exec --json` reports at `turn.completed` (codex's stream usage has
-    // always been cumulative). `last` is per-turn and deliberately unused so a
-    // resumed thread keeps reporting the same number the exec path would.
+    // always been cumulative). Keep legacy counters unchanged for resumed threads.
+    // Additive v2 separately deduplicates last-call usage within an explicit Turn.
     const total = tokenUsage && isRecord(tokenUsage.total) ? tokenUsage.total : null;
     if (!total) return;
     const usage: Record<string, number> = {};
@@ -357,7 +556,7 @@ export function createCodexAppServerNormalizer(
     if (cacheWrite !== undefined) usage.cached_write_tokens = cacheWrite;
     if (totalTokens !== undefined) usage.total_tokens = totalTokens;
     if (Object.keys(usage).length === 0) return;
-    emit({ type: 'usage', usage });
+    emit({ type: 'usage', usage, usageScope: 'sessionCumulative', evaluationTurnUsage: evaluationUsage.add(str(params.turnId), tokenUsage) });
     emitThinkingTokens(reasoning);
   }
 
@@ -421,6 +620,8 @@ export function createCodexAppServerNormalizer(
   }
 
   function handleTurnCompleted(params: JsonObject): void {
+    patchTurnEnded = true;
+    patchFiles.clear();
     const turn = isRecord(params.turn) ? params.turn : null;
     if (!turn || turn.status !== 'failed') return;
     const error = isRecord(turn.error) ? turn.error : null;
@@ -451,6 +652,9 @@ export function createCodexAppServerNormalizer(
           return;
         }
         case 'turn/started':
+          evaluationUsage.start(str(isRecord(params.turn) ? params.turn.id : params.turnId));
+          patchTurnEnded = false;
+          completedPatches.clear();
           previousEventWasMessage = false;
           lastMessageEndedWithNewline = false;
           routeFrame({ type: 'turn.started' });
@@ -472,6 +676,12 @@ export function createCodexAppServerNormalizer(
           return;
         case 'item/reasoning/textDelta':
           handleReasoningTextDelta(params);
+          return;
+        case 'item/commandExecution/outputDelta':
+          handleCommandOutputDelta(params);
+          return;
+        case 'item/fileChange/patchUpdated':
+          handlePatchUpdated(params);
           return;
         case 'thread/tokenUsage/updated':
           handleTokenUsage(params);

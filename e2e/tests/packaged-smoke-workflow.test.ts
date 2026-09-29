@@ -83,6 +83,14 @@ const releasePrereleaseTestsWorkflowPath = join(workspaceRoot, ".github", "workf
 const releasePrereleaseSmokeWorkflowPath = join(workspaceRoot, ".github", "workflows", "release-prerelease-smoke.yml");
 const releasePrereleaseCardWorkflowPath = join(workspaceRoot, ".github", "workflows", "release-prerelease-card.yml");
 const prereleaseCardScriptPath = join(workspaceRoot, "tools", "release", "src", "notifications", "prerelease-progress-card.ts");
+const prereleaseFallbackScriptPath = join(
+  workspaceRoot,
+  "tools",
+  "release",
+  "src",
+  "notifications",
+  "prerelease-fallback-notice.ts",
+);
 const mainPrereleaseWinSmokeWorkflowPath = join(
   workspaceRoot,
   ".github",
@@ -100,6 +108,7 @@ const notifyDailyFeishuWorkflowPath = join(workspaceRoot, ".github", "workflows"
 const notifyReleaseFeishuWorkflowPath = join(workspaceRoot, ".github", "workflows", "notify-release-feishu.yml");
 const cutReleaseWorkflowPath = join(workspaceRoot, ".github", "workflows", "cut-release.yml");
 const cutPatchReleaseWorkflowPath = join(workspaceRoot, ".github", "workflows", "cut-patch-release.yml");
+const patchCutPreflightScriptPath = join(workspaceRoot, ".github", "scripts", "release", "resolve-patch-cut.ts");
 const feishuCardScriptPath = join(workspaceRoot, "tools", "release", "src", "notifications", "feishu.ts");
 const feishuNoticeScriptPath = join(workspaceRoot, "tools", "release", "src", "notifications", "feishu-notice.ts");
 const dshBootstrapPublishWorkflowPath = join(workspaceRoot, ".github", "workflows", "dsh-bootstrap-publish.yml");
@@ -279,8 +288,8 @@ async function runScopesPrint(eventName: string, eventPayload: unknown, changedF
     run_playwright_critical: value.enabled.playwright_critical,
     run_playwright_visual: value.enabled.playwright_visual,
     run_preflight: value.enabled.preflight,
-    run_ui_p0: value.enabled.ui_p0,
-    run_web_workspace_tests: value.enabled.web_workspace_tests,
+    run_ui_p0: Object.entries(value.enabled).some(([id, enabled]) => id.startsWith("ui_p0_") && enabled),
+    run_web_workspace_tests: [1, 2].some((shard) => value.enabled[`web_workspace_${shard}`]),
     run_windows_tools_pack_payload_tests: value.enabled.windows_tools_pack_payload_tests,
     run_workspace_unit_tests: value.enabled.workspace_unit_tests,
   };
@@ -378,9 +387,9 @@ async function renderFeishuBuildCard(env: Record<string, string>): Promise<Recor
       env: {
         ...process.env,
         BUILD_STATE: "success",
-        CHANNEL_LABEL: "Prerelease",
+        CHANNEL_LABEL: "Beta",
         FEISHU_WEBHOOK: `http://127.0.0.1:${address.port}`,
-        VERSION: "0.19.0-prerelease.1",
+        VERSION: "0.19.0-beta.1",
         ...env,
       },
     });
@@ -532,9 +541,10 @@ describe("packaged smoke workflow", () => {
   });
 
   it("[P2] surfaces a merge-queue needs-validation ejection as a PR comment handoff", async () => {
-    const [ciWorkflow, commentWorkflow] = await Promise.all([
+    const [ciWorkflow, commentWorkflow, needsValidationTemplate] = await Promise.all([
       readFile(ciWorkflowPath, "utf8"),
       readFile(commentWorkflowPath, "utf8"),
+      readFile(join(workspaceRoot, ".github/templates/merge-queue/needs-validation.md"), "utf8"),
     ]);
 
     const mergePolicy = sectionBetween(ciWorkflow, "  merge_policy:", "  validate:");
@@ -545,7 +555,8 @@ describe("packaged smoke workflow", () => {
     expect(mergePolicy).toContain("needs: [plan, runners]");
     expect(mergePolicy).toContain("if: ${{ github.event_name == 'merge_group' }}");
     expect(mergePolicy).toContain("fromJSON(needs.runners.outputs.runs_on).control");
-    expect(mergePolicy).toContain("<!-- merge-queue-needs-validation -->");
+    expect(mergePolicy).toContain("merge-queue/needs-validation.md");
+    expect(needsValidationTemplate).toContain("<!-- merge-queue-needs-validation -->");
     expect(mergePolicy).toContain("emit_ejection_notice");
     expect(mergePolicy).toContain(
       "if: ${{ failure() && steps.merge_blocking_label_gate.outputs.comment_created == 'true' }}",
@@ -581,7 +592,10 @@ describe("packaged smoke workflow", () => {
   });
 
   it("[P2] surfaces a merge-queue CI failure ejection as a PR comment handoff", async () => {
-    const ciWorkflow = await readFile(ciWorkflowPath, "utf8");
+    const [ciWorkflow, failureTemplate] = await Promise.all([
+      readFile(ciWorkflowPath, "utf8"),
+      readFile(join(workspaceRoot, ".github/templates/merge-queue/ci-failure.md"), "utf8"),
+    ]);
     const mergePolicy = sectionBetween(ciWorkflow, "  merge_policy:", "  validate:");
     const validate = sectionBetween(ciWorkflow, "  validate:", "  runtime_summary:");
 
@@ -594,7 +608,8 @@ describe("packaged smoke workflow", () => {
 
     // Producer: merge-group only, only after the gate has already failed, unable to change the
     // gate result, and uploaded on the failure path exactly like the label notice.
-    expect(validate).toContain("<!-- merge-queue-ci-failure -->");
+    expect(validate).toContain("merge-queue/ci-failure.md");
+    expect(failureTemplate).toContain("<!-- merge-queue-ci-failure -->");
     expect(validate).toContain("if: ${{ failure() && github.event_name == 'merge_group' }}");
     expect(validate).toContain("continue-on-error: true");
     expect(validate).toContain(
@@ -844,10 +859,11 @@ else { process.stderr.write("unexpected gh call: " + args + "\\n"); process.exit
   });
 
   it("[P1] routes configured contributors into an independent maintainer merge block", async () => {
-    const [routingWorkflow, ciWorkflow, inactivityWorkflow] = await Promise.all([
+    const [routingWorkflow, ciWorkflow, inactivityWorkflow, maintainerTemplate] = await Promise.all([
       readFile(contributorMaintainerCheckWorkflowPath, "utf8"),
       readFile(ciWorkflowPath, "utf8"),
       readFile(prAuthorInactivityWorkflowPath, "utf8"),
+      readFile(join(workspaceRoot, ".github/templates/merge-queue/needs-maintainer-check.md"), "utf8"),
     ]);
     const trigger = sectionBetween(routingWorkflow, "on:", "\npermissions:");
 
@@ -867,7 +883,8 @@ else { process.stderr.write("unexpected gh call: " + args + "\\n"); process.exit
 
     expect(ciWorkflow).toContain("Block merge while a merge-blocking label is present");
     expect(ciWorkflow).toContain("grep -qx 'needs-maintainer-check'");
-    expect(ciWorkflow).toContain("<!-- merge-queue-needs-maintainer-check -->");
+    expect(ciWorkflow).toContain("merge-queue/needs-maintainer-check.md");
+    expect(maintainerTemplate).toContain("<!-- merge-queue-needs-maintainer-check -->");
     expect(ciWorkflow).toContain("needs-maintainer-check-pr-$pr");
     expect(inactivityWorkflow).toContain("'needs-maintainer-check'");
   });
@@ -1302,7 +1319,7 @@ process.stdin.on("end", () => {
     // the PR head.
     expect(feishuStep).toContain("steps.pr.outputs.head_oid == github.event.workflow_run.head_sha");
     // Sign the release webhook with the SAME secret the rest of the repo pairs with
-    // FEISHU_RELEASE_WEBHOOK (notify-release-feishu / notify-daily-feishu / backport-automerge),
+    // FEISHU_RELEASE_WEBHOOK (notify-daily-feishu / cut-release / backport-automerge),
     // not a stray secret that resolves empty and sends an unsigned, rejected request.
     expect(feishuStep).toContain("secrets.FEISHU_RELEASE_WEBHOOK");
     expect(feishuStep).toContain("secrets.FEISHU_RELEASE_SIGN_SECRET");
@@ -1366,9 +1383,12 @@ process.stdin.on("end", () => {
     const validate = sectionBetween(workflow, "  validate:", "  runtime_summary:");
 
     expect(workflow).toContain("ci_mode:");
-    expect(plan).toContain("run: ${{ steps.convergence.outputs.run }}");
+    expect(plan).toContain("run: ${{ steps.gate.outputs.run }}");
     expect(plan).toContain("scopes: ${{ steps.scopes.outputs.scopes }}");
-    expect(workflow).toContain("fromJSON(needs.plan.outputs.run).ui_p0");
+    expect(plan).toContain("github.event_name == 'merge_group'");
+    expect(plan).toContain("github.event.pull_request.head.repo.full_name == github.repository");
+    expect(plan).toContain("&& 'enforce' || 'shadow'");
+    expect(workflow).toContain("needs.plan.outputs.ui_p0_count != '0'");
     expect(validate).toContain("[$run | to_entries[] | select(.value) | .key]");
 
     await expect(runScopesPrint("workflow_dispatch", { inputs: { ci_mode: "hot" } }, ["apps/web/src/app/page.tsx"])).resolves.toMatchObject({
@@ -1544,9 +1564,9 @@ process.stdin.on("end", () => {
     const daemonTests = sectionBetween(workflow, "  daemon_unit_tests:", "  windows_tools_pack_payload_tests:");
     const validate = sectionBetween(workflow, "  validate:", "  runtime_summary:");
 
-    expect(daemonTests).toContain("if: ${{ fromJSON(needs.plan.outputs.run).daemon_unit_tests }}");
+    expect(daemonTests).toContain("if: ${{ needs.plan.outputs.daemon_count != '0' }}");
     expect(daemonTests).toContain("fail-fast: false");
-    expect(daemonTests).toContain("shard: [1, 2, 3, 4]");
+    expect(daemonTests).toContain("matrix: ${{ fromJSON(needs.plan.outputs.daemon_matrix) }}");
     expect(daemonTests).toContain("pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4");
     expect(validate).toContain("- daemon_unit_tests");
     expect(validate).toContain("[$run | to_entries[] | select(.value) | .key]");
@@ -1777,19 +1797,24 @@ process.stdin.on("end", () => {
     expect(runners).toContain("python3 .github/scripts/runners.py");
     expect(plan).toContain("needs: [runners]");
     expect(plan).toContain("fromJSON(needs.runners.outputs.runs_on).control");
+    expect(plan).toContain("daemon_matrix: ${{ steps.convergence.outputs.daemon_matrix }}");
+    expect(plan).toContain("web_matrix: ${{ steps.convergence.outputs.web_matrix }}");
+    expect(plan).toContain("ui_p0_matrix: ${{ steps.convergence.outputs.ui_p0_matrix }}");
+    expect(plan).toContain("Project workload decisions onto CI jobs");
     expect(staticGate).toContain("needs: [plan, runners]");
     expect(staticGate).toContain("fromJSON(needs.runners.outputs.runs_on).control");
     expect(workspaceUnitTests).toContain("fromJSON(needs.runners.outputs.runs_on).workspace_unit");
     expect(workspaceUnitTests).toContain("toJSON(fromJSON(needs.runners.outputs.runs_on).workspace_unit)");
     expect(daemonUnitTests).toContain("fromJSON(needs.runners.outputs.runs_on).workspace_unit");
     expect(daemonUnitTests).toContain("toJSON(fromJSON(needs.runners.outputs.runs_on).workspace_unit)");
+    expect(daemonUnitTests).toContain("matrix: ${{ fromJSON(needs.plan.outputs.daemon_matrix) }}");
     expect(webWorkspaceTests).toContain("fromJSON(needs.runners.outputs.runs_on).js_hot");
     expect(webWorkspaceTests).toContain("toJSON(fromJSON(needs.runners.outputs.runs_on).js_hot)");
     expect(webWorkspaceTests).not.toContain('"od-persistent-ci"');
     // Pin two-way vitest sharding so a later YAML edit cannot collapse the split or restore the
     // monolithic `pnpm --filter @open-design/web test` command while this suite still passes.
     expect(webWorkspaceTests).toContain("fail-fast: false");
-    expect(webWorkspaceTests).toContain("shard: [1, 2]");
+    expect(webWorkspaceTests).toContain("matrix: ${{ fromJSON(needs.plan.outputs.web_matrix) }}");
     expect(webWorkspaceTests).toContain(
       "pnpm --filter @open-design/web exec vitest run -c vitest.config.ts --maxWorkers=2 --shard=${{ matrix.shard }}/2",
     );
@@ -1801,10 +1826,14 @@ process.stdin.on("end", () => {
     expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0");
     expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy");
     expect(uiP0).toContain("matrix.shard == 'project-collab'");
+    expect(uiP0).toContain("matrix: ${{ fromJSON(needs.plan.outputs.ui_p0_matrix) }}");
+    expect(uiP0).toContain("if: ${{ needs.plan.outputs.ui_p0_count != '0' }}");
+    expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy");
+    expect(uiP0).toContain("matrix.shard == 'project-collab'");
     expect(uiP0).toContain(
       "toJSON(matrix.shard == 'project-collab' && fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy || fromJSON(needs.runners.outputs.runs_on).ui_p0)",
     );
-    expect(uiP0).toContain("include: ${{ fromJSON(needs.plan.outputs.ui_p0_matrix) }}");
+    expect(uiP0).toContain("matrix: ${{ fromJSON(needs.plan.outputs.ui_p0_matrix) }}");
     expect(uiP0CiMatrix.map((entry) => entry.name)).toEqual([
       "entry-settings",
       "project-workspace",
@@ -1815,6 +1844,10 @@ process.stdin.on("end", () => {
     ]);
     expect(uiP0Groups["project-workspace"].files).toEqual([
       "ui/app.test.ts",
+      // Enrolled 2026-09-08: the fork divider's ellipsis is only observable in
+      // a real browser at a constrained width, so an unenrolled P1 would ship
+      // a witness nothing on the merge path ever executes.
+      "ui/fork-note-ellipsis.test.ts",
       "ui/project-management-flows.test.ts",
       "ui/workspace-keyboard-flows.test.ts",
     ]);
@@ -2199,11 +2232,20 @@ process.stdin.on("end", () => {
     expect(handoffScript).toContain('"report"');
     expect(handoffScript).toContain('"convergence"');
     expect(convergenceWorkflow).toContain("handoff.py resolve-run-artifact convergence ci-results");
+    expect(convergenceWorkflow).toContain("workflow_call:");
+    expect(convergenceWorkflow).toContain("github.event.workflow_run.conclusion)");
+    expect(convergenceWorkflow).toContain("fromJSON('[\"success\", \"failure\"]')");
     expect(convergenceWorkflow).toContain("Checkout trusted convergence code");
     expect(convergenceWorkflow).toContain("convergence.py admit");
+    expect(convergenceWorkflow).toContain("convergence.py --config \"$CONVERGENCE_CONFIG\" admit --isolated");
     expect(convergenceWorkflow).toContain("python3 .github/scripts/convergence.py publish");
+    expect(convergenceWorkflow).toContain("publish --isolated");
     expect(convergenceWorkflow).toContain("convergence.py stage-products");
     expect(convergenceWorkflow).toContain("convergence.py storage-status");
+    expect(convergenceWorkflow).toContain("artifact-ids: ${{ steps.artifact.outputs.id }}");
+    expect(convergenceWorkflow).toContain("name: ${{ steps.artifact.outputs.name }}");
+    expect(ciWorkflow).toContain("uses: ./.github/workflows/convergence.atom.yml");
+    expect(ciWorkflow).toContain("name: '[validate] Restored platform package'");
     expect(convergenceWorkflow).toContain("CLOUDFLARE_R2_WORKLOAD_RESULTS_AK");
     expect(convergenceWorkflow).not.toContain("gh api");
     expect(convergenceWorkflow).not.toContain("jq");
@@ -2383,7 +2425,7 @@ process.stdin.on("end", () => {
   it("[P2] prerelease publishes github.commit so its changelog has a baseline", async () => {
     // The Feishu release card computes its changelog as `git log <previous>..<current>`,
     // where <previous> is read from prerelease/latest/metadata.json's `.github.commit`
-    // (notify-release-feishu.yml). That field is written by githubInfo() from the
+    // (release-prerelease-card.yml). That field is written by githubInfo() from the
     // RELEASE_COMMIT env. release-beta sets RELEASE_COMMIT on every build + publish job,
     // but release-prerelease historically set it on none, so every prerelease published an
     // empty github.commit and the card could never diff against the prior prerelease
@@ -2501,7 +2543,9 @@ process.stdin.on("end", () => {
     }
 
     const stableWorkflow = workflows[2] ?? "";
-    expect(stableWorkflow).toContain("Validate stable release note policy");
+    // Stable still runs the release-note preflight in `metadata`, but it
+    // reports coverage instead of gating on it (docs/CHANGELOG/README.md).
+    expect(stableWorkflow).toContain("Check stable release note coverage");
     expect(stableWorkflow).toContain(
       "RELEASE_PUBLISH_SIDE_EFFECTS: ${{ needs.metadata.outputs.publish_side_effects_enabled }}",
     );
@@ -2717,6 +2761,34 @@ process.stdin.on("end", () => {
     expect(dailyWorkflow).toContain("RELEASE_STATE: ${{ needs.build.outputs.release_state }}");
   });
 
+  it("[P1] gives every exempted beta smoke step a visible failure signal", async () => {
+    // `continue-on-error: true` is deliberate — a red packaged smoke must not
+    // block the daily beta channel — but it also turns the job green, which is
+    // how a release-gating mac_arm64 case stayed red for eleven days. The
+    // exemption stays; the silence does not. Each exempted smoke step must feed
+    // its outcome to `tools-release write-report`, which turns a failure into a
+    // run annotation plus a caution banner at the top of the step summary.
+    const workflow = await readFile(releaseBetaWorkflowPath, "utf8");
+    const steps = workflow.split(/^ {6}- name: /m).slice(1);
+    const exemptedSmokeStepIds = steps
+      .filter((step) => /^ {8}continue-on-error: true$/m.test(step))
+      .map((step) => /^ {8}id: (\w+_smoke)$/m.exec(step)?.[1])
+      .filter((id): id is string => id != null);
+
+    // Guard the guard: an empty list would make every assertion below vacuous.
+    expect(exemptedSmokeStepIds).toEqual(["mac_arm64_smoke", "win_x64_smoke"]);
+
+    for (const stepId of exemptedSmokeStepIds) {
+      const reportStep = steps.find((step) =>
+        step.includes(`RELEASE_SMOKE_OUTCOME: \${{ steps.${stepId}.outcome }}`),
+      );
+      expect(reportStep, `no report step consumes ${stepId}.outcome`).toBeDefined();
+      expect(reportStep).toContain("pnpm exec tools-release write-report");
+      expect(reportStep).toContain('RELEASE_SMOKE_EXEMPT: "true"');
+      expect(reportStep).toContain("if: ${{ always() }}");
+    }
+  });
+
   it("[P2] daily beta resolve defaults to main and preserves the ref override", async () => {
     // Beta is the daily R&D channel and must track the development tip (main).
     // Selecting the highest-semver release/vX.Y.Z branch stalls the build: once
@@ -2793,7 +2865,12 @@ process.stdin.on("end", () => {
     expect(canary).toContain("OD_VELA_WEB_URL: ${{ secrets.VELA_WEB_URL_PROD }}");
     expect(canary).toContain("--namespace release-prerelease-canary-win");
     expect(canary).toContain('OD_PACKAGED_E2E_RELEASE_CHANNEL: prerelease');
-    expect(canary).toContain('OD_PACKAGED_E2E_WIN_SMOKE_PROFILE: core');
+    expect(canary).toContain("OD_PACKAGED_E2E_WIN_SMOKE_PROFILE: ${{ inputs.smoke_profile || 'core' }}");
+    expect(canary).toContain("ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'main' }}");
+    expect(canary).toContain("if: ${{ inputs.smoke_profile == 'full' }}");
+    expect(canary).toContain("OD_PACKAGED_E2E_WIN_UPDATE_FIXTURE: tools-serve");
+    expect(canary).toContain("windows-tools-pack-update-build.json");
+    expect(canary).toContain("github.event_name != 'workflow_dispatch' && needs.smoke.result == 'failure'");
     expect(canary).toContain("pnpm exec tsx scripts/release-smoke.ts win specs/win.spec.ts");
     expect(canary).toContain("tools-pack win validate-payload");
     expect(canary).toContain("tools/release/src/notifications/feishu-notice.ts");
@@ -2885,12 +2962,13 @@ process.stdin.on("end", () => {
   });
 
   it("[P1] keeps one writer on the progressive prerelease card", async () => {
-    const [prerelease, card, watcher, notify, feishuCard] = await Promise.all([
+    const [prerelease, card, watcher, notify, feishuCard, notifyDaily] = await Promise.all([
       readFile(releasePrereleaseWorkflowPath, "utf8"),
       readFile(releasePrereleaseCardWorkflowPath, "utf8"),
       readFile(prereleaseCardScriptPath, "utf8"),
       readFile(notifyReleaseFeishuWorkflowPath, "utf8"),
       readFile(feishuCardScriptPath, "utf8"),
+      readFile(notifyDailyFeishuWorkflowPath, "utf8"),
     ]);
 
     // A Feishu PATCH replaces the whole card, so three build jobs updating
@@ -2909,35 +2987,111 @@ process.stdin.on("end", () => {
     expect(card).toContain("origin_run_id:");
     expect(card).toContain("expect_tests:");
     expect(card).toContain("expect_smoke:");
-    // Same compare-API changelog the webhook card uses; no local git history.
+    // Changelog comes from the compare API, so the card needs no git history.
     expect(card).toContain("gh api --paginate");
     expect(card).toContain("compare/${PREV}...${CUR}?per_page=100");
 
-    // The watcher polls; it is never pushed to.
+    // The watcher polls; it is never pushed to. That holds for the durations
+    // the card reports too: they are the job list's own `started_at` /
+    // `completed_at`, so no build job has to report a timing to anyone. (When
+    // the first card is posted is behaviour, not workflow topology — it is
+    // asserted against the real script in
+    // tools/release/tests/prerelease-card-delivery-signal.test.ts.)
     expect(watcher).toContain("/repos/${repo}/actions/runs/${runId}/jobs");
     expect(watcher).toContain("origin-run ${originRunId}");
-    expect(watcher).toContain("shouldPostFirstCard");
+    expect(watcher).toContain("timingOf(job)");
     // A wrong URL would ship a 404 button to the whole channel.
     expect(watcher).toContain("verifyDownloadUrl");
 
-    // The old one-shot webhook card stays until the new one has carried a
-    // couple of real releases: a gap in release notification is worse than a
-    // duplicate.
-    const notifyJob = notify.slice(notify.indexOf("  notify:"));
-    expect(notifyJob).toContain("tools/release/src/notifications/feishu.ts");
-    expect(notifyJob).toContain("MAC_ARM64_URL: ${{ needs.build.outputs.mac_arm64_url }}");
-    expect(notifyJob).toContain("WIN_URL: ${{ needs.build.outputs.win_url }}");
-    // ...but it no longer claims a smoke verdict it cannot see, and it colours
-    // itself from whether a package shipped rather than from a workflow
-    // conclusion that goes red for anything anywhere in the run.
-    expect(notifyJob).not.toContain("MAC_ARM64_SMOKE_RESULT: ${{ needs.build.outputs.mac_arm64_smoke_result }}");
-    expect(notifyJob).toContain("VERSION_METADATA_URL: ${{ needs.build.outputs.version_metadata_url }}");
+    // The transitional one-shot webhook card is retired. `notify-release-feishu`
+    // is now a build-only entry point: a second poster would reintroduce exactly
+    // the duplicate notification the transition existed to end, and the PATCH
+    // card cannot be co-owned.
+    expect(notify).not.toContain("  notify:");
+    expect(notify).not.toContain("tools/release/src/notifications/feishu.ts");
+    expect(notify).not.toContain("FEISHU_RELEASE_WEBHOOK");
+    expect(notify).not.toContain("FEISHU_RELEASE_SIGN_SECRET");
+
+    // feishu.ts itself survives the retirement — notify-daily-feishu.yml renders
+    // the beta download card with it — so its "a red pipeline does not mean no
+    // package" rule has to keep holding for that lane.
     expect(feishuCard).toContain("const packagePublished = versionMetadataUrl.length > 0 || buildState === \"success\";");
     expect(feishuCard).toContain("const smokeFailures = packagePublished");
     expect(feishuCard).toContain("return packagePublished ? \"blue\" : \"red\";");
+    expect(notifyDaily).toContain("tools/release/src/notifications/feishu.ts");
   });
 
-  it("[P1] keeps download actions on a prerelease card with a failed Windows smoke", async () => {
+  it("[P1] alerts through the other Feishu bot when the prerelease card lane goes silent", async () => {
+    // The progressive card is now the ONLY prerelease notification, and every
+    // way it breaks is silent: the pipeline stays green, the packages ship, and
+    // the channel hears nothing. Two fallback jobs close that, and both have to
+    // hold three properties or they are worse than useless.
+    const [prerelease, card, watcher, fallback, notice] = await Promise.all([
+      readFile(releasePrereleaseWorkflowPath, "utf8"),
+      readFile(releasePrereleaseCardWorkflowPath, "utf8"),
+      readFile(prereleaseCardScriptPath, "utf8"),
+      readFile(prereleaseFallbackScriptPath, "utf8"),
+      readFile(feishuNoticeScriptPath, "utf8"),
+    ]);
+
+    // 1. A different bot. The card posts through the Feishu APPLICATION bot; the
+    //    fallback must post through the custom-bot WEBHOOK, or "the application
+    //    credential expired" — one of the ways the card goes silent — takes the
+    //    alert down with it.
+    const fallbackStart = card.indexOf("  fallback_notice:");
+    expect(fallbackStart).toBeGreaterThanOrEqual(0);
+    const fallbackJob = card.slice(fallbackStart);
+    expect(card).toContain("FEISHU_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}");
+    expect(card).toContain("FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_RELEASE_SIGN_SECRET }}");
+    expect(fallbackJob).not.toContain("${{ secrets.FEISHU_APP_SECRET }}");
+    expect(fallbackJob).not.toContain("${{ secrets.FEISHU_APP_ID }}");
+    expect(fallbackJob).toContain("tools/release/src/notifications/feishu-notice.ts");
+    expect(notice).toContain('required("FEISHU_WEBHOOK")');
+
+    // 2. Reachable. A job with `needs` carries an implicit success(), which
+    //    would skip the fallback in exactly the case it exists for — the trap
+    //    that skipped `dispatch_smoke` for N runs. It must break that itself.
+    expect(fallbackJob).toContain("always() && !cancelled()");
+    // The dispatch-side ping is steps of `dispatch_validation`, NOT a job:
+    // nothing may appear in a `needs:` on the dispatchers (asserted in
+    // tools/pack/tests/release-workflows.test.ts), and a step needs no such
+    // edge to read the dispatch outcome.
+    const dispatchJob = sectionBetween(prerelease, "  dispatch_validation:", "  build_mac:");
+    expect(dispatchJob).toContain("tools/release/src/notifications/prerelease-fallback-notice.ts");
+    expect(dispatchJob).toContain("tools/release/src/notifications/feishu-notice.ts");
+    expect(dispatchJob).toContain("STAGE: dispatch");
+    // `always()` so a dispatch that failed above still reaches the notifier.
+    expect(dispatchJob).toContain("always() && github.repository == 'nexu-io/open-design' &&");
+    expect(dispatchJob).toContain("steps.checkout.outcome == 'success'");
+
+    // 3. Silent on a healthy release. A green watcher job is NOT proof of a
+    //    delivered card — the watcher catches every Feishu error on purpose and
+    //    exits 0 — so the gate reads the watcher's own delivery report, and the
+    //    watcher writes it only for a card whose final state reached the chat.
+    expect(fallbackJob).toContain(
+      "!(needs.card.result == 'success' && needs.card.outputs.delivered == 'true')",
+    );
+    expect(card).toContain("delivered: ${{ steps.track.outputs.card_delivered }}");
+    expect(watcher).toContain('appendFileSync(file, "card_delivered=true\\n")');
+    expect(watcher).toContain("if (chatHoldsLatest) reportDelivered();");
+    expect(dispatchJob).toContain("CARD_DISPATCHED: ${{ steps.card_dispatch.outputs.dispatched }}");
+    // The dispatch helper exits non-zero on failure and `run:` blocks stop at
+    // the first failure, so the marker is only written when a card workflow was
+    // really requested — and stays empty when the step is skipped for missing
+    // application-bot credentials.
+    expect(dispatchJob).toContain('echo "dispatched=true" >> "$GITHUB_OUTPUT"');
+    expect(dispatchJob).toContain("if: ${{ env.FEISHU_APP_ID != '' && env.FEISHU_RELEASE_CHAT_ID != '' }}");
+
+    // The notice itself has to stand alone: version, whether a package shipped,
+    // and where to look.
+    expect(fallback).toContain("VERSION_METADATA_URL");
+    expect(fallback).toContain("probeMetadata");
+    expect(fallback).toContain('setOutput("alert", "false")');
+  });
+
+  it("[P1] keeps download actions on a beta card with a failed Windows smoke", async () => {
+    // notify-daily-feishu.yml is the only lane left that renders through
+    // feishu.ts, and it is the one that forwards the two smoke results.
     const payload = await renderFeishuBuildCard({
       MAC_ARM64_SMOKE_RESULT: "success",
       MAC_ARM64_URL: "https://releases.example/mac.dmg",
@@ -2964,7 +3118,6 @@ process.stdin.on("end", () => {
 
   it("[P1] keeps download actions on a partial beta card without claiming latest promotion", async () => {
     const payload = await renderFeishuBuildCard({
-      CHANNEL_LABEL: "Beta",
       MAC_ARM64_URL: "https://releases.example/beta-mac.dmg",
       RELEASE_NOTE: "共享 beta/latest 版本高于 main，本次仅发布版本化快照。",
       RELEASE_STATE: "partial",
@@ -2989,41 +3142,48 @@ process.stdin.on("end", () => {
     ]);
   });
 
-  it("[P2] gates the Thursday patch cut on the Tuesday minor being published", async () => {
+  it("[P2] gates the Thursday patch cut on the previous release being published", async () => {
     // cut-patch-release is the Tuesday cut-release flow, one weekday later, with a
     // PATCH bump and a publish guard. Lock the three properties that make it safe:
     //   1. It fires Thursday and bumps patch (not minor) from the highest release branch.
-    //   2. It only cuts when this line's minor base X.Y.0 is a PUBLISHED stable
+    //   2. It only cuts when the PREVIOUS release branch is a PUBLISHED stable
     //      GitHub Release (non-draft, non-prerelease) — otherwise it must NOT create
     //      a branch or launch the prerelease publication; it posts a notice and stops.
     //   3. The happy path still cuts from main and pushes with the App token, so the
     //      existing notify-release-feishu push trigger produces the prerelease + card.
-    const [workflow, notice] = await Promise.all([
+    // The decision itself is covered behaviorally in
+    // e2e/tests/scripts/resolve-patch-cut.test.ts; this test owns the wiring.
+    const [workflow, notice, preflight] = await Promise.all([
       readFile(cutPatchReleaseWorkflowPath, "utf8"),
       readFile(feishuNoticeScriptPath, "utf8"),
+      readFile(patchCutPreflightScriptPath, "utf8"),
     ]);
 
     // Thursday cron, and a patch (not minor) bump.
     const trigger = sectionBetween(workflow, "on:", "\npermissions:");
     expect(trigger).toContain("cron: '0 1 * * 4'");
-    expect(workflow).toContain('V="${major}.${minor}.$((patch+1))"');
-    expect(workflow).not.toContain("minor+1");
+    expect(preflight).toContain("const patch = highest.patch + 1;");
+    expect(preflight).not.toContain("minor + 1");
 
-    // The guard target (MINOR_BASE) must derive from the FINAL version V, not from
-    // the highest branch — otherwise a manual `version=` on another line is gated
-    // against the wrong minor (e.g. version=0.15.1 while latest is 0.14.0 would
-    // wrongly check open-design-v0.14.0). Assert V's own major/minor drive it.
-    expect(workflow).toContain('vmajor=${V%%.*}; vrest=${V#*.}; vminor=${vrest%%.*}');
-    expect(workflow).toContain('MINOR_BASE="${vmajor}.${vminor}.0"');
-    expect(workflow).not.toContain('MINOR_BASE="${major}.${minor}.0"');
+    // The gate target is the release the cut stacks on — the highest release
+    // branch below it — not the minor base X.Y.0. Gating on the base only ever
+    // checks the line's first patch: once X.Y.0 shipped, X.Y.2 and X.Y.3 could be
+    // cut on top of unshipped releases, which is how release/v0.22.3 got cut on
+    // 2026-09-10 while release/v0.22.2 was still unshipped.
+    const resolveStep = sectionBetween(workflow, "- name: Compute next patch version", "# Guard:");
+    expect(resolveStep).toContain("resolve-patch-cut.ts resolve");
+    expect(preflight).toContain("const gate = previousRelease(branches, version).text;");
+    expect(preflight).toContain("branches.filter((branch) => compareVersions(branch, version) < 0).at(-1)");
+    expect(preflight).not.toContain("`${version.major}.${version.minor}.0`");
 
-    // The guard reads the minor base's stable release and requires it published
-    // (neither draft nor prerelease); a missing release falls back to not published.
-    const guard = sectionBetween(workflow, "- name: Check the Tuesday minor is published", "# ---- Skip path");
-    expect(guard).toContain('gh release view "$MINOR_TAG"');
-    expect(guard).toContain("--jq '(.isDraft or .isPrerelease) | not'");
-    expect(guard).toContain("|| published=false");
-    expect(workflow).toContain('echo "minor_tag=open-design-v$MINOR_BASE"');
+    // The guard reads that release and requires it published (neither draft nor
+    // prerelease); a missing release falls back to not published.
+    const guard = sectionBetween(workflow, "- name: Check the previous release is published", "# ---- Skip path");
+    expect(guard).toContain("GATE_TAG: ${{ steps.ver.outputs.gate_tag }}");
+    expect(guard).toContain("resolve-patch-cut.ts gate");
+    expect(preflight).toContain('"(.isDraft or .isPrerelease) | not"');
+    expect(preflight).toContain('const published = answer === "true" ? "true" : "false";');
+    expect(preflight).toContain('setOutput("gate_tag", `${TAG_PREFIX}${gate}`)');
 
     // Skip path: no branch, no build — only the Feishu notice runs, gated on !published.
     const noticeStep = sectionBetween(workflow, "- name: Notify Feishu that the patch cut was skipped", "- name: Stop here when skipping");

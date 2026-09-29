@@ -22,7 +22,6 @@ import { Button } from "@open-design/components";
 import { navigate } from "../router";
 import { deleteProjectFile, projectFileUrl, uploadProjectFiles } from "../providers/registry";
 import { useProjectCollabContext } from "../collab/collab-context";
-import { workspaceProjectHeaders } from "../collab/workspace-identity";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -59,18 +58,19 @@ import {
   hasOdCard,
   narrowProducedFilesToFocus,
   pickPrimaryArtifacts,
-  splitOnOdCards,
   stripArtifactFocusMarkers,
   stripCritiqueGrammar,
   stripTrailingOpenOdCard,
   todoStatusIsUnfinished,
   type ChatSessionMode,
   type OdCard,
-  type OdCardBrandBrowserAssist,
   type RunContextSelection,
   type WorkspaceContextItem,
 } from "@open-design/contracts";
 import { OdCardView, type BrandBrowserAssistConfirm } from "./OdCard";
+import { computeSkipRanges, rangeContains } from "../artifacts/markdown-context";
+import { splitShellCards } from "../runtime/chat/split-shell-cards";
+import { orderArtifactCards } from "../runtime/chat/artifact-card-order";
 import {
   AnsweredValue,
   isShortValueAnswer,
@@ -83,14 +83,12 @@ import {
 import type { VisualStyleContext } from "../runtime/visual-style-catalog";
 import { splitStreamingArtifact, stripArtifact, stripRecoveredHtmlFallbackForDisplay } from "../artifacts/strip";
 import { stripInternalControlMarkers } from "../artifacts/internal-markers";
-import { BRAND_BROWSER_TAB_ID } from "../runtime/brand-browser-bridge";
 import {
   getPluginFolderCandidates,
   type PluginFolderCandidate,
 } from "./design-files/pluginFolders";
 import type { PluginFolderAgentAction } from "./design-files/pluginFolderActions";
 import { Icon, type IconName } from "./Icon";
-import { UserActionCard } from "./UserActionCard";
 import { NextStepActions, type NextStepActionsVariant } from "./NextStepActions";
 import type { DesignToolboxActionId } from "../runtime/design-toolbox";
 import { copyToClipboard } from "../lib/copy-to-clipboard";
@@ -140,22 +138,6 @@ const QUESTION_FORM_DRAFT_STORAGE_PREFIX = "open-design:question-form-draft:";
 const QUESTION_FORM_SUBMITTED_STORAGE_PREFIX =
   "open-design:question-form-submitted:";
 
-interface ActionNotice {
-  message: string;
-  url?: string;
-}
-
-function buildActionNotice(message: string, url?: string): ActionNotice {
-  const trimmedMessage = message.trim();
-  const trimmedUrl = url?.trim();
-  if (!trimmedUrl) return { message: trimmedMessage };
-  const normalizedMessage = trimmedMessage.replace(
-    new RegExp(`\\s*${escapeRegExp(trimmedUrl)}\\s*$`),
-    "",
-  );
-  return { message: normalizedMessage.trim() || trimmedUrl, url: trimmedUrl };
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -175,186 +157,6 @@ function textNeedsBrandBrowserAssistFallback(content: string): boolean {
     /浏览器辅助卡片|瀏覽器輔助卡片/.test(content) ||
     /More\s*>\s*Download Page/i.test(content) ||
     /More\s*>\s*(下载页面|下載頁面)/.test(content)
-  );
-}
-
-function buildBrandBrowserAssistFallbackCard({
-  content,
-  metadata,
-  nextStepVariant,
-}: {
-  content: string;
-  metadata?: ProjectMetadata;
-  nextStepVariant: NextStepActionsVariant;
-}): OdCardBrandBrowserAssist | null {
-  if (!isBrandExtractionNextStepVariant(nextStepVariant)) return null;
-  if (!textNeedsBrandBrowserAssistFallback(content)) return null;
-  const brandId = metadata?.brandId?.trim();
-  if (!brandId) return null;
-  const url = metadata?.brandSourceUrl?.trim();
-  return {
-    kind: 'brand-browser-assist',
-    brandId,
-    browserTabId: BRAND_BROWSER_TAB_ID,
-    ...(url ? { url } : {}),
-    reason: 'Browser',
-  };
-}
-
-function ActionNoticeView({ notice }: { notice: ActionNotice | null }) {
-  if (!notice) return null;
-  return (
-    <>
-      <span>{notice.message}</span>
-      {notice.url ? (
-        <>
-          {" "}
-          <a href={notice.url} target="_blank" rel="noreferrer">
-            {notice.url}
-          </a>
-        </>
-      ) : null}
-    </>
-  );
-}
-
-type SkillPluginCandidateBlock = Extract<Block, { kind: "plugin-candidate" }>;
-
-function SkillPluginCandidateCard({
-  block,
-  projectId,
-  onRequestOpenFile,
-}: {
-  block: SkillPluginCandidateBlock;
-  projectId?: string | null;
-  onRequestOpenFile?: (name: string) => void;
-}) {
-  const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
-  const [busy, setBusy] = useState<null | "draft" | "contribute">(null);
-  const [notice, setNotice] = useState<ActionNotice | null>(null);
-  const disabled = !projectId || busy !== null;
-  const description =
-    block.description === "Reusable skill material detected from a repository link." ||
-    block.description === "This repo looks like it could work as a plugin."
-      ? t("skillPluginCandidate.repoDescription")
-      : block.description || t("skillPluginCandidate.repoDescription");
-
-  async function post(path: string, body: Record<string, unknown> = {}) {
-    const resp = await fetch(path, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json().catch(() => null);
-    if (!resp.ok) {
-      const message =
-        data?.message ??
-        (typeof data?.error === "string" ? data.error : data?.error?.message) ??
-        resp.statusText;
-      throw new Error(message || t('chat.pluginAction.failed'));
-    }
-    return data;
-  }
-
-  async function createDraft() {
-    if (!projectId) return;
-    setBusy("draft");
-    setNotice(null);
-    try {
-      const data = await post(
-        `/api/projects/${encodeURIComponent(projectId)}/plugin-candidates/${encodeURIComponent(block.candidateId)}/draft`,
-      );
-      const draftPath = String(data?.draftPath ?? "");
-      if (data?.validation?.ok === false) {
-        setNotice({ message: t('chat.pluginAction.validationIssues') });
-      } else if (draftPath) {
-        const install = await post(
-          `/api/projects/${encodeURIComponent(projectId)}/plugins/install-folder`,
-          { path: draftPath },
-        );
-        if (install?.ok === false) {
-          setNotice({ message: install?.message ?? t('chat.pluginAction.failed') });
-        } else {
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("open-design:plugins-changed"));
-          }
-          setNotice({ message: install?.message ?? t('chat.pluginAction.saved') });
-        }
-      } else {
-        setNotice({ message: t('chat.pluginAction.saved') });
-      }
-      if (draftPath && onRequestOpenFile) onRequestOpenFile(`${draftPath}/open-design.json`);
-    } catch (err) {
-      setNotice({ message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function share(action: "contribute-open-design") {
-    if (!projectId) return;
-    setBusy("contribute");
-    setNotice(null);
-    try {
-      const data = await post(
-        `/api/projects/${encodeURIComponent(projectId)}/plugin-candidates/${encodeURIComponent(block.candidateId)}/share-tasks`,
-        { action },
-      );
-      setNotice({
-        message: t('chat.pluginAction.contributionStarted', {
-          path: data?.path ?? t('chat.designToolbox.kind.plugin'),
-        }),
-      });
-    } catch (err) {
-      setNotice({ message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <div className="plugin-action-candidate" data-testid={`skill-plugin-candidate-${block.candidateId}`}>
-      <UserActionCard
-        dataKind="plugin-suggestion"
-        icon="puzzle"
-        title={block.title}
-        detailsLabel={t("brand.viewDetails")}
-        actions={
-          <button
-            type="button"
-            className="plugin-action-button"
-            disabled={disabled}
-            onClick={() => void share("contribute-open-design")}
-          >
-            <Icon name={busy === "contribute" ? "spinner" : "share"} size={13} />
-            <span>{busy === "contribute" ? t("pluginCard.starting") : t("skillPluginCandidate.contributeToMain")}</span>
-          </button>
-        }
-        details={
-          <div className="plugin-action-candidate__details">
-            <p className="plugin-action-card__description">{description}</p>
-            <button
-              type="button"
-              className="plugin-action-button"
-              disabled={disabled}
-              onClick={() => void createDraft()}
-            >
-              <Icon name={busy === "draft" ? "spinner" : "plus"} size={13} />
-              <span>{busy === "draft" ? t("pluginCard.creating") : t("skillPluginCandidate.createForMe")}</span>
-            </button>
-          </div>
-        }
-        status={notice ? (
-          <span role="status">
-            <ActionNoticeView notice={notice} />
-          </span>
-        ) : null}
-      />
-    </div>
   );
 }
 
@@ -402,6 +204,11 @@ interface Props {
   showRole?: boolean;
   // True only for the most recent assistant message.
   isLast?: boolean;
+  // True only for the most recent assistant message that actually ran a turn —
+  // i.e. `isLast` with host-authored cards (the memory card, the brand assist
+  // card) skipped over. Recovery belongs to that real turn; next-step actions
+  // have their own ownership rule in `ownsTrailingNextStep` below.
+  isLastTurn?: boolean;
   // Assistant message id whose run-failure error is rendered as ChatPane's
   // top-level error card; that message's per-message error pill is suppressed
   // to avoid duplication. Other messages keep their error pill.
@@ -501,6 +308,7 @@ const ASSISTANT_MESSAGE_COMPARED_PROPS: Array<keyof Props> = [
   'hiddenPluginActionPaths',
   'showRole',
   'isLast',
+  'isLastTurn',
   'errorCardOwnerId',
   'nextUserContent',
   'questionFormSubmitDisabled',
@@ -598,20 +406,18 @@ function AssistantMessageImpl({
   projectKind = null,
   conversationId = null,
   projectFiles = [],
-  projectMetadata,
   projectFileNames,
   projectResolvedDir,
   mediaTasks = [],
   onRequestOpenFile,
   onRetryImage,
   onBrandBrowserAssistConfirm,
-  onRequestPluginFolderAgentAction,
-  activePluginActionPaths = new Set(),
   hiddenPluginActionPaths = new Set(),
   onShareToOpenDesign,
   shareToOpenDesignBusy = false,
   showRole = true,
   isLast,
+  isLastTurn,
   errorCardOwnerId = null,
   nextUserContent,
   onSubmitQuestionForm,
@@ -743,6 +549,8 @@ function AssistantMessageImpl({
    */
   /** 壳头那颗秒表的「现在」+ S12 的静默起点,每秒同刻取一次(见 `useTickingNow`)。 */
   const { nowMs, lastEventAtMs } = useTickingNow(streaming, message.runId);
+  // A retried message keeps its creation date but carries the new run's start.
+  const runStartedAt = message.startedAt ?? message.createdAt;
 
   /**
    * 执行记录里的文件名要判归属才决定做不做链接(产品 2026-08-27:
@@ -766,7 +574,7 @@ function AssistantMessageImpl({
       // 「一件事都还没发生」那一格(S12)靠它算静默时长;它同时也是壳头耗时的
       // 兜底起点 —— 不发工具事件的那批 agent(plain-stream / qoder)整轮没有一个
       // 带时刻的事件,没有这一对起止,壳头就只有一句光秃秃的「已完成」。
-      ...(message.createdAt != null ? { startedAtMs: message.createdAt } : {}),
+      ...(runStartedAt != null ? { startedAtMs: runStartedAt } : {}),
       ...(message.endedAt != null ? { endedAtMs: message.endedAt } : {}),
       // 取不到就**不传** —— 让 `shellQuiet` 退回轮次开头,而不是拿一个假的
       // 「刚刚」把 S12 悄悄关掉(「卡在首个 token」那一档每月 5,547 次)。
@@ -788,7 +596,7 @@ function AssistantMessageImpl({
     };
     // `message.endedAt` 从 undefined 变成时刻**就在轮次终止那一刻** —— 不进依赖的话
     // 兜底耗时会停在「还没有终点」的那一版,壳头刚收起时秒数是空的。
-  }, [displayEvents, turnRunStatus, nowMs, previousTodos, message.endedAt, streaming, lastEventAtMs, mediaTasks]);
+  }, [displayEvents, turnRunStatus, nowMs, previousTodos, runStartedAt, message.endedAt, streaming, lastEventAtMs, mediaTasks]);
   /**
    * 执行记录里**真的有东西**。
    *
@@ -1054,10 +862,10 @@ function AssistantMessageImpl({
      * 没有 `show` 就只保留 daemon 权威归属的 `producedFiles`。所以这里不能再回到
      * raw fileOps / `displayedProduced` —— 后两者还混着裸工具行与正文 / mtime 推断。
      */
-    if (summaryArtifactOps.length > 0) return summaryArtifactOps;
+    if (summaryArtifactOps.length > 0) return orderArtifactCards(summaryArtifactOps, artifactFocus);
     if (streaming) return [];
-    return producedFilesAsFileOps(declaredArtifactFiles);
-  }, [declaredArtifactFiles, streaming, summaryArtifactOps]);
+    return orderArtifactCards(producedFilesAsFileOps(declaredArtifactFiles), artifactFocus);
+  }, [artifactFocus, declaredArtifactFiles, streaming, summaryArtifactOps]);
   // The single artifact the "next step" affordance anchors to: prefer the HTML
   // produced by THIS turn; if the final turn emitted none (a summary / continue
   // message) fall back to the most recently modified HTML in the project so
@@ -1082,64 +890,6 @@ function AssistantMessageImpl({
         : [],
     [displayedProduced, hiddenPluginActionPaths, isLast, message.content, projectFiles, projectId, streaming, turnFileOps],
   );
-  // Plugin action state lives at the AssistantMessage level (not inside
-  // PluginActionPanel) so the success notice survives the unmount/remount
-  // cycle ProjectView triggers via `hiddenPluginActionPaths` during install
-  // (issue #2876). If state lived inside the panel the setNoticeByFolder
-  // call after `await onRequestPluginFolderAgentAction(...)` would land on
-  // a dead fiber and the user would see nothing change after "Sending...".
-  const [pluginBusyKey, setPluginBusyKey] = useState<string | null>(null);
-  const [pluginNoticeByFolder, setPluginNoticeByFolder] = useState<Record<string, ActionNotice>>({});
-  const runPluginAction = useCallback(
-    async (folder: PluginFolderCandidate, action: PluginFolderAgentAction) => {
-      if (pluginBusyKey || !onRequestPluginFolderAgentAction) return;
-      const key = `${action}:${folder.path}`;
-      setPluginBusyKey(key);
-      setPluginNoticeByFolder((prev) => {
-        if (!(folder.path in prev)) return prev;
-        const next = { ...prev };
-        delete next[folder.path];
-        return next;
-      });
-      try {
-        const outcome = await onRequestPluginFolderAgentAction(folder.path, action);
-        const url =
-          outcome && typeof outcome === "object" && typeof outcome.url === "string"
-            ? outcome.url
-            : "";
-        const message =
-          outcome && typeof outcome === "object" && typeof outcome.message === "string"
-            ? outcome.message
-            : "";
-        // The install endpoint's PluginInstallOutcome contract leaves
-        // `message` optional. When both message and url are absent we still
-        // need to confirm success — the bug report explicitly describes
-        // "the plugin was in fact added successfully, but the original
-        // screen did not communicate that outcome." Default to a short
-        // success label keyed off the action.
-        const notice: ActionNotice | null =
-          message || url
-            ? buildActionNotice(message || url, url)
-            : action === "install"
-              ? { message: t('chat.pluginAction.saved') }
-              : null;
-        if (notice) {
-          setPluginNoticeByFolder((prev) => ({
-            ...prev,
-            [folder.path]: notice,
-          }));
-        }
-      } catch (err) {
-        setPluginNoticeByFolder((prev) => ({
-          ...prev,
-          [folder.path]: { message: err instanceof Error ? err.message : String(err) },
-        }));
-      } finally {
-        setPluginBusyKey(null);
-      }
-    },
-    [pluginBusyKey, onRequestPluginFolderAgentAction, t],
-  );
   const usage = events.find((e) => e.kind === "usage") as
     | Extract<AgentEvent, { kind: "usage" }>
     | undefined;
@@ -1155,17 +905,6 @@ function AssistantMessageImpl({
     isBrandExtractionNextStepVariant(nextStepVariant) &&
     (message.content.includes('<od-card type="brand-browser-assist"') ||
       textNeedsBrandBrowserAssistFallback(message.content));
-  const brandBrowserAssistFallbackCard = useMemo(
-    () =>
-      streaming
-        ? null
-        : buildBrandBrowserAssistFallbackCard({
-            content: message.content,
-            metadata: projectMetadata,
-            nextStepVariant,
-          }),
-    [message.content, nextStepVariant, projectMetadata, streaming],
-  );
   // A settled `completed` strategy verdict outranks a stale TodoWrite snapshot:
   // the deliverable was verified on disk, so the footer must not report the
   // turn as stopped with unfinished work (and must not withhold next steps).
@@ -1242,12 +981,6 @@ function AssistantMessageImpl({
     hasEmptyResponse ||
     !!copyMarkdown ||
     canFork);
-  // Continuing unfinished work is current-turn state, unlike copy/feedback/
-  // fork. Restoring historical action rows must not revive stale todo work.
-  const continueRemaining =
-    isLast && onContinueRemainingTasks && continuableTodos.length > 0
-      ? () => onContinueRemainingTasks(continuableTodos)
-      : undefined;
   const canShowOpenDesignSubmission = !!onShareToOpenDesign && showFeedback && runSucceeded;
   const showOpenDesignSubmission =
     canShowOpenDesignSubmission && (!!isLast || shareToOpenDesignBusy);
@@ -1265,10 +998,10 @@ function AssistantMessageImpl({
    * 取**最后一条**:一轮里理应只有一条,但重试会在同一条消息上再来一轮,
    * 那时新的一条才是当前这一轮的。
    *
-   * 旧会话没有这个事件 —— 于是这里是空数组,下一步引导整块不出。这是产品
-   * 明确要的兼容口径:不退回工具箱、不出空壳。
+   * 无事件通常不出建议。OPEND-2776 为成功交付图片的回合增加了下方的
+   * 媒体兜底;它只使用本轮权威产物,不从附件或项目旧文件猜测。
    */
-  const nextStepSuggestions = useMemo(() => {
+  const agentNextStepSuggestions = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       const event = events[i];
       if (event?.kind !== 'next_steps') continue;
@@ -1280,6 +1013,26 @@ function AssistantMessageImpl({
     }
     return [];
   }, [events]);
+  const fallbackImagePaths = useMemo(() => {
+    if (!runSucceeded || message.runStatus !== 'succeeded' || message.strategyTaskBlocked || effectiveNextStepVariant !== 'default') return [];
+    const files = artifactFocus.show
+      ? declaredArtifactCards(message.producedFiles ?? [], artifactFocus.show)
+      : message.producedFiles ?? [];
+    // A website's supporting images must not turn a non-image delivery into
+    // an image-generation workflow. Explicit focus may select its image output.
+    if (!files.length || !files.every(file => file.size > 0 &&
+      (file.kind === 'image' || file.mime?.startsWith('image/')))) return [];
+    return [...new Set(files.map(file => file.path || file.name).filter(Boolean))];
+  }, [artifactFocus.show, effectiveNextStepVariant, message.producedFiles, message.runStatus, message.strategyTaskBlocked, runSucceeded]);
+  const useImageNextStepFallback = agentNextStepSuggestions.length === 0 && fallbackImagePaths.length > 0;
+  const nextStepSuggestions = useImageNextStepFallback
+    ? [t('nextStep.imageContinue'), t('nextStep.imageVariants'), t('nextStep.imageStyle')]
+    : agentNextStepSuggestions;
+  const handleNextStepSuggestion = useCallback((text: string) => {
+    onNextStepSuggestion?.(useImageNextStepFallback
+      ? `${text}\n\n${fallbackImagePaths.join('\n')}`
+      : text);
+  }, [fallbackImagePaths, onNextStepSuggestion, useImageNextStepFallback]);
   const hasNextStepPrimary =
     effectiveNextStepVariant === 'brand-extraction'
       ? !!onNextStepAiOptimize || !!onNextStepCreateDesign || !!onNextStepContinueExtraction
@@ -1309,15 +1062,56 @@ function AssistantMessageImpl({
   // path), the turn is mid-handshake, not settled. Suppressed direction forms
   // render as a locked pill the user cannot answer, so they don't hold the
   // card back.
-  const hasPendingQuestionForm = useMemo(() => {
-    if (hasUnterminatedQuestionForm(message.content)) return true;
-    return splitOnQuestionForms(message.content).some(
+  const { hasPendingQuestionForm, hasPendingCompleteQuestionForm } = useMemo(() => {
+    const hasPendingCompleteQuestionForm = splitOnQuestionForms(message.content).some(
       (seg) =>
         seg.kind === "form" &&
         !(suppressDirectionForms && isDirectionForm(seg.form)) &&
         (!nextUserContent || !parseSubmittedAnswers(seg.form, nextUserContent)),
     );
+    return {
+      hasPendingCompleteQuestionForm,
+      hasPendingQuestionForm:
+        hasPendingCompleteQuestionForm || hasUnterminatedQuestionForm(message.content),
+    };
   }, [message.content, nextUserContent, suppressDirectionForms]);
+  // Host notifications cannot own a run recovery action. When one follows a
+  // stopped turn, keep the action on that turn instead of hiding it altogether.
+  // Direct callers without a conversation-level owner retain their isLast gate.
+  const ownsContinuableTurn = (isLastTurn ?? isLast) && !assistantMessageNeverHadARun(message);
+  // A complete pending form must be answered first; terminal truncated forms
+  // have no answer control and retain recovery. Streaming turns already contribute
+  // no continuableTodos, including when their Todo snapshot was inherited.
+  const continueRemaining =
+    ownsContinuableTurn && !hasPendingCompleteQuestionForm && onContinueRemainingTasks && continuableTodos.length > 0
+      ? () => onContinueRemainingTasks(continuableTodos)
+      : undefined;
+  /**
+   * 整轮失败的那一轮,**「这一轮到此为止」由壳头那句「运行失败」宣布**,页脚不再重说。
+   *
+   * 出处(逐条,不是「看起来重复」):
+   *  · `specs/current/chat-panel-next.md` B18 逐字:「整轮失败:执行记录头「运行失败」
+   *    默认收起,下面出组件 19 报错卡…**不出回合状态行**」;
+   *  · `specs/current/chat-panel-dev-design.md` 状态机「运行失败(默认收起,报错卡接手)」
+   *    与场景表「失败 | … | 壳头「运行失败」收起 + 报错卡,**无回合状态行**」;
+   *    同文件写死分工 —— 壳只有三态,「运行失败」是**壳的词**;
+   *  · `specs/current/chat-panel-next-review.md` B18 同条;
+   *  · 交付稿(`729fa43ce7:docs/design/chat-panel-next.html`):「任务挂了是 19 · 报错。
+   *    两边不重复:这一行只负责宣布『这轮到此为止』」。
+   *
+   * ⚠️ 上面第 ① 条(报错卡在场)只覆盖**转录末尾**那一帧:报错卡的归属
+   * (`ChatPane` 的 `errorCardOwnerId`)要求这条失败助手消息正好是最后一条,用户再发
+   * 任何一条消息就变 null。而页脚那条文案阶梯里只认识 `canceled` 一个终态,`failed`
+   * 一个字都没有,于是这一轮直落 `doneLabel` —— 壳头写着「运行失败」、页脚挂着
+   * 「✓ 已完成」,同屏自相矛盾。所以这条例外必须按**终态本身**判,不能靠报错卡在不在。
+   *
+   * ⚠️ **必须绕开空流那一档**:API 空回复把这一轮也写成 `runStatus: 'failed'`
+   * (`ProjectView.tsx` 的 `emptyApiResponse` 分支同时补一条 `status(empty_response)`),
+   * 但它的状态词是「没有输出」,由 `e2e/ui/api-empty-response.test.ts` 那条 P0 钉死
+   * (那格必须显示 "No output",且 "Done" 计数为 0)。它也没有壳头替它说话。
+   */
+  const failedTurnIsAnnouncedByTheShell =
+    message.runStatus === "failed" && !hasEmptyResponse;
   /**
    * 这一行要不要报「这一轮怎么样了」。
    *
@@ -1326,20 +1120,22 @@ function AssistantMessageImpl({
    * 也丢了」。运行中的去重已经由 `showCompletionRow` 整行不出来解决,不归这里管。
    * 所以这里只列**具名的例外**,一条都不能凭「看起来重复」加进来。
    *
-   * 三条例外:
+   * 四条例外:
    *  ① 报错卡那一轮 —— 原因和下一步由报错卡说,这一行让位;
    *  ② 问卷还悬着的那一轮 —— run 进程上确实终止了,但握手没完成;挂绿勾会把它变成
    *     假成功,回放老式子标签表单时尤其明显;
    *  ③ **宿主自己补发的卡从来没有过一轮**(记忆卡、品牌协助卡)。它是上一轮的附属
    *     组件,给它挂「已完成」是在陈述一件没发生过的事,读起来就是又一轮 ——
    *     工单 OPEND-2745 里那「两个进行中」正是同一条判据缺口的另一面。
+   *  ④ **整轮失败的那一轮**(判据见下面 `failedTurnIsAnnouncedByTheShell`)。
    *
    * 复制、时间这些**照旧**:它们说的是这段内容本身,不是某一轮的结果。
    */
   const hideRunStatus =
     message.id === errorCardOwnerId
     || hasPendingQuestionForm
-    || assistantMessageNeverHadARun(message);
+    || assistantMessageNeverHadARun(message)
+    || failedTurnIsAnnouncedByTheShell;
   // "Next step" is a delivery affordance, not a generic terminal-state card.
   // Keep it out of pure Q&A, failures/cancellations and incomplete Todo turns;
   // only a successful turn that actually produced something may surface it.
@@ -1377,11 +1173,39 @@ function AssistantMessageImpl({
     (effectiveNextStepVariant === 'brand-extraction-incomplete' ||
       effectiveNextStepVariant === 'brand-programmatic-incomplete' ||
       effectiveNextStepVariant === 'brand-ai-incomplete');
+  /**
+   * 「下一步引导」归**这条**消息管吗。
+   *
+   * 引导是会话**队尾**的东西:它说的是「接下来还能做什么」,所以只有队尾那条消息
+   * 有资格出。原来这句写的就是 `isLast` —— 而 `isLast` 是「流水里最后一条 assistant
+   * 消息」,**把宿主自己补发的卡也算了进去**。
+   *
+   * 记忆卡(`useMemoryWrittenCard`)恰恰是**轮次结束之后**才回报的:提取由守护进程
+   * 在子进程关闭时排队,卡因此几乎总是落在刚交付的那一轮后面。于是产物那条消息被
+   * 顶掉一格,`isLast` 变成 false,三条建议连同 `suggestions` / `onSuggestion` 两个
+   * prop 一起被摘光 —— PPT 明明交付成功、`next_steps` 事件也已下发,面板上一条引导
+   * 都没有(OPEND-2764)。宿主卡是**上一轮的附属组件,不是新的一轮**(OPEND-2745
+   * 的裁决原话),它不该改变谁是队尾。
+   *
+   * ⚠️ 判据写成**两者取或**,而不是拿 `isLastTurn` 直接换掉 `isLast`,因为队尾有
+   * 两种长法,少哪一半都会当场红(都有红测钉着):
+   *  · `isLastTurn` —— 真跑过的那一轮,后面只跟着宿主卡。这是本单要修的那一半;
+   *  · `isLast` —— 宿主卡**自己就是队尾**的那一档。品牌协助卡不是被动的通知,它带着
+   *    〔继续抽取〕/〔继续 AI 抽取〕两颗恢复入口,而且整条会话可能只有它一条消息
+   *    (`ChatPane.connect-repo` 那条用例就是)。只认 `isLastTurn` 会把品牌抽取的
+   *    恢复路径整个关掉。
+   *
+   * 「最后一条」这个说法在这个组件里被**三个互不相同的问题**共用,别再并:问卷可否
+   * 作答问的是「后面还有没有东西」(OPEND-2644,用户走过去就得锁),运行态归属问的
+   * 是「这条消息有没有过一次运行」(OPEND-2745)。三者各有各的红测,合并任意两个都
+   * 会红。
+   */
+  const ownsTrailingNextStep = !!isLast || !!isLastTurn;
   const showNextStepActions =
     !streaming &&
     unfinishedTodos.length === 0 &&
     !hasPendingQuestionForm &&
-    ((!!isLast && hasNextStepPrimary &&
+    ((ownsTrailingNextStep && hasNextStepPrimary &&
       ((runSucceeded && nextStepDeliveryEvidence) || isBrandExtractionRecovery)) ||
       showOpenDesignSubmission);
   // Pre-output vs working: before any real content (text / thinking / tools /
@@ -1438,22 +1262,7 @@ function AssistantMessageImpl({
           onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
         />
       );
-    if (b.kind === "plugin-candidate") {
-      return (
-        <SkillPluginCandidateCard
-          key={key}
-          block={b}
-          projectId={projectId}
-          onRequestOpenFile={onRequestOpenFile}
-        />
-      );
-    }
     if (b.kind === "status") {
-      // Suppress this message's gray error pill ONLY when ChatPane is
-      // rendering the top-level error card for it (the last failed run).
-      // Other failed turns — older history, or once a follow-up makes
-      // this no longer the last assistant message — keep their pill so
-      // the error detail still survives reload / history review.
       /*
        * `error` 这一档**一律不出**。稿子里没有这种状态行,用户 2026-08-27
        * 指认过两次:「为什么还会有这种错误样式?? 你的错误卡片呢??」
@@ -1518,6 +1327,16 @@ function AssistantMessageImpl({
               imageSrc={imageSrc}
               /* done 一到就收起,不等 run 结束(产品 2026-09-04,见 `concludedAt`) */
               concluded={entry.concluded}
+              /* D43 把 done 之前的正文收进壳,里面可能夹着 `<od-card>`。壳内那条
+                 通道共享代码上下文解析;保留原实例标识传递和品牌浏览器辅助回调。 */
+              odCardScope={[
+                projectId ?? "no-project",
+                conversationId ?? "no-conversation",
+                message.runId ?? "no-run",
+                message.id,
+                entry.key,
+              ].join(":")}
+              onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
             />
           ) : (
             <Fragment key={entry.key}>
@@ -1529,19 +1348,6 @@ function AssistantMessageImpl({
         )}
         {/* 状态行 / 插件候选不属于执行记录,也没有流里的位置 —— 收在最后 */}
         {restBlocks.map((b, i) => renderOuterBlock(b, `rest-${i}`))}
-        {brandBrowserAssistFallbackCard ? (
-          <OdCardView
-            card={brandBrowserAssistFallbackCard}
-            onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
-            instanceScope={[
-              projectId ?? "no-project",
-              conversationId ?? "no-conversation",
-              message.runId ?? "no-run",
-              message.id,
-              "brand-browser-assist-fallback",
-            ].join(":")}
-          />
-        ) : null}
         {/* #5517 shape: the collapsible tool-op summary lists only the ops the
             turn actually emitted, and the produced-files list stays its own
             flat block below it (name / size / Open / Download). Folding the
@@ -1574,6 +1380,7 @@ function AssistantMessageImpl({
           <FileOpsSummary
             entries={turnArtifactPanelEntries}
             projectFileNames={projectFileNames}
+            projectFiles={projectFiles}
             onRequestOpenFile={onRequestOpenFile}
             projectId={projectId ?? undefined}
             onPublish={onArtifactShare}
@@ -1592,39 +1399,6 @@ function AssistantMessageImpl({
             artifactRefs={messageArtifactRefs(message)}
           />
         ) : null}
-        {!streaming && projectId && pluginActionFolders.length > 0 ? (
-          <PluginActionPanel
-            folders={pluginActionFolders}
-            notices={pluginNoticeByFolder}
-            busyKey={pluginBusyKey}
-            onRunAction={runPluginAction}
-            onRequestOpenFile={onRequestOpenFile}
-            onRequestPluginFolderAgentAction={onRequestPluginFolderAgentAction}
-            activePluginActionPaths={activePluginActionPaths}
-          />
-        ) : null}
-        {/*
-          Notices for folders that completed an action while the panel was
-          unmounted (the parent toggled `hiddenPluginActionPaths` during the
-          install) need a place to render once the panel goes away. Without
-          this fallback, a successful "Add to My plugins" that hides the
-          folder afterwards would silently swallow the confirmation
-          (issue #2876).
-         */}
-        {!streaming && projectId
-          ? Object.entries(pluginNoticeByFolder)
-              .filter(([path]) => !pluginActionFolders.some((folder) => folder.path === path))
-              .map(([path, notice]) => (
-                <div
-                  key={`plugin-orphan-notice-${path}`}
-                  className="plugin-action-orphan-notice"
-                  role="status"
-                  data-testid={`plugin-folder-notice-${path}`}
-                >
-                  <ActionNoticeView notice={notice} />
-                </div>
-              ))
-          : null}
         {showCompletionRow ? (
           <div className="assistant-completion-row">
             {showFeedback ? (
@@ -1679,27 +1453,44 @@ function AssistantMessageImpl({
         ) : null}
         {showNextStepActions ? (
           <NextStepActions
-            fileName={isLast ? nextStepFileName : null}
-            planFileName={isLast ? planNextStepName : null}
-            artifactFileName={isLast ? nextStepArtifactName : null}
-            onShare={isLast && nextStepArtifactName && !isPlanNextStep ? onArtifactShare : undefined}
-            onToolboxAction={isLast ? onToolboxAction : undefined}
-            onPromptAction={isLast ? onNextStepPromptAction : undefined}
-            onAiOptimize={isLast ? onNextStepAiOptimize : undefined}
-            aiOptimizeBusy={Boolean(isLast && nextStepAiOptimizeBusy)}
-            onContinueExtraction={isLast ? onNextStepContinueExtraction : undefined}
-            continueExtractionBusy={Boolean(isLast && nextStepContinueExtractionBusy)}
-            onContinueAiExtraction={isLast ? onNextStepContinueAiExtraction : undefined}
-            continueAiExtractionBusy={Boolean(isLast && nextStepContinueAiExtractionBusy)}
-            onCreateDesign={isLast ? onNextStepCreateDesign : undefined}
-            createDesignBusy={Boolean(isLast && nextStepCreateDesignBusy)}
-            onCreateDesignSystem={isLast ? onNextStepCreateDesignSystem : undefined}
-            createDesignSystemBusy={Boolean(isLast && nextStepCreateDesignSystemBusy)}
-            onPickSkill={isLast ? onPickSkill : undefined}
-            suggestions={isLast ? nextStepSuggestions : undefined}
-            onSuggestion={isLast ? onNextStepSuggestion : undefined}
-            onDownload={isLast && nextStepFileName ? onArtifactDownload : undefined}
-            skills={isLast ? nextStepSkills : undefined}
+            /*
+             * ⚠️ 这一排的门必须和 `showNextStepActions` 用**同一个**判据。
+             * 它们原来各写各的 `isLast`,于是「整块出不出」和「出了之后有没有内容」
+             * 是两把锁 —— 只开其中一把,得到的是一块空壳(或者一块永远为空、
+             * 因而 `hasNextStepPrimary` 判 false 的死块)。OPEND-2764 的
+             * `suggestions` / `onSuggestion` 正是被这一排摘掉的。
+             */
+            fileName={ownsTrailingNextStep ? nextStepFileName : null}
+            planFileName={ownsTrailingNextStep ? planNextStepName : null}
+            artifactFileName={ownsTrailingNextStep ? nextStepArtifactName : null}
+            onShare={
+              ownsTrailingNextStep && nextStepArtifactName && !isPlanNextStep
+                ? onArtifactShare
+                : undefined
+            }
+            onToolboxAction={ownsTrailingNextStep ? onToolboxAction : undefined}
+            onPromptAction={ownsTrailingNextStep ? onNextStepPromptAction : undefined}
+            onAiOptimize={ownsTrailingNextStep ? onNextStepAiOptimize : undefined}
+            aiOptimizeBusy={Boolean(ownsTrailingNextStep && nextStepAiOptimizeBusy)}
+            onContinueExtraction={ownsTrailingNextStep ? onNextStepContinueExtraction : undefined}
+            continueExtractionBusy={Boolean(ownsTrailingNextStep && nextStepContinueExtractionBusy)}
+            onContinueAiExtraction={
+              ownsTrailingNextStep ? onNextStepContinueAiExtraction : undefined
+            }
+            continueAiExtractionBusy={
+              Boolean(ownsTrailingNextStep && nextStepContinueAiExtractionBusy)
+            }
+            onCreateDesign={ownsTrailingNextStep ? onNextStepCreateDesign : undefined}
+            createDesignBusy={Boolean(ownsTrailingNextStep && nextStepCreateDesignBusy)}
+            onCreateDesignSystem={ownsTrailingNextStep ? onNextStepCreateDesignSystem : undefined}
+            createDesignSystemBusy={Boolean(ownsTrailingNextStep && nextStepCreateDesignSystemBusy)}
+            onPickSkill={ownsTrailingNextStep ? onPickSkill : undefined}
+            suggestions={ownsTrailingNextStep ? nextStepSuggestions : undefined}
+            onSuggestion={ownsTrailingNextStep && onNextStepSuggestion ? handleNextStepSuggestion : undefined}
+            onDownload={
+              ownsTrailingNextStep && nextStepFileName ? onArtifactDownload : undefined
+            }
+            skills={ownsTrailingNextStep ? nextStepSkills : undefined}
             onShareToOpenDesign={showOpenDesignSubmission ? onShareToOpenDesign : undefined}
             shareToOpenDesignBusy={shareToOpenDesignBusy}
             variant={effectiveNextStepVariant}
@@ -1713,26 +1504,37 @@ function AssistantMessageImpl({
             「新会话开口就给了三条建议」;用户真机指认过。
 
             落在**新会话**里,不是源会话:点完分叉页面就跳到新会话,人此刻站在这里,
-            而那行脚注「上文已带过来,接着说就行」也只有对着这一截复制过来的上下文
-            才说得通。标题用**源会话**的标题 —— 这条线回答的是「上面这些是从哪来的」。
-            盖标记的地方在 daemon 的 fork 分支(`routes/project/conversations.ts`)。 */}
+            而这行字「从上一个会话继续」也只有站在新会话里回看才说得通。
+            盖标记的地方在 daemon 的 fork 分支(`routes/project/conversations.ts`)。
+
+            **一行,不是两行**(OPEND-2714):原来是「线上写源会话标题 + 线下一行脚注」
+            两块。改成对齐 Codex 的那一种 —— 分支图标配一行文案,一起摆进线中间那一格。
+            源会话标题因此不再出现在界面上:一条只说「上面这些是带过来的」的线,
+            比一条报出旧标题的线更接近它真正的作用,而标题本身在会话列表里随时找得到。
+            `forkedInto.title` 仍留在契约和库里,不为这次改动动数据。 */}
         {message.forkedInto ? (
-          <>
-            {/* `.is-new` 是入场动画的开关(稿子第 38 格「落一下」)。
-                这两块只在这里渲染,陈列页那一格是手写的裸类名 —— 稿子交代的
-                「钉住展示的那一格不挂 .is-new」因此天然成立。 */}
-            <div className="fork-sep is-new" data-testid="assistant-fork-divider">
-              <i aria-hidden />
-              <span title={message.forkedInto.title}>{message.forkedInto.title}</span>
-              <i aria-hidden />
-            </div>
-            {/* 脚注跟着分界线【居中】:它是这条线的注解,不是新会话里的第一句话。
-                左对齐会让人读成「新会话已经开口说了一句」。 */}
-            <div className="fork-note is-new" data-testid="assistant-fork-note">
+          /* `.is-new` 是入场动画的开关(稿子第 38 格「落一下」)。
+             只在这里挂,陈列页那一格是手写的裸类名 —— 稿子交代的
+             「钉住展示的那一格不挂 .is-new」因此天然成立。 */
+          <div className="fork-sep is-new" data-testid="assistant-fork-divider">
+            <i aria-hidden />
+            {/* 文案住在线**中间**那一格:它是这条线的注解,不是新会话里的第一句话。
+                摆到线下面、左对齐,都会读成「新会话已经开口说了一句」。 */}
+            <span className="fork-note" data-testid="assistant-fork-note">
               <Icon name="fork" size={12} />
-              {t('assistant.forkNote')}
-            </div>
-          </>
+              {/* 文案必须住在**自己的具名元素**里,不能是 `.fork-note` 的裸文本。
+                  `.fork-note` 是 flex 容器(图标和字要并排),裸文本会被包进一个
+                  **匿名 flex item** —— 而 `text-overflow` 是非继承属性,匿名盒
+                  拿不到 `ellipsis`,长译文于是被齐口切断而不是省略。
+                  截断那几条因此挂在这一层上(`chat.css` 的 `.fork-note-label`)。
+                  `data-testid` 是给守卫用的稳定抓手:`e2e/ui/fork-note-ellipsis.test.ts`
+                  在受限宽度下量这一格真的省略了没有,不去碰类名和样式声明。 */}
+              <span className="fork-note-label" data-testid="assistant-fork-note-label">
+                {t('assistant.forkNote')}
+              </span>
+            </span>
+            <i aria-hidden />
+          </div>
         ) : null}
       </div>
     </div>
@@ -2309,8 +2111,8 @@ interface AssistantFooterProps {
   forking?: boolean;
   feedbackControls?: ReactNode;
   forceVisible?: boolean;
-  // Identifies the latest reply for UI/analytics hooks. Completed controls are
-  // hover/focus-gated on pointer devices and remain visible without hover.
+  // Marks the latest reply for footer visibility. The CSS data-last flag also
+  // keeps an actual continuation action visible without hover or focus.
   isLast?: boolean;
   // When the turn has an execution disclosure, its run state lives at the top
   // of the answer. The footer keeps only actions so run state is not repeated.
@@ -2363,7 +2165,9 @@ export function AssistantFooter({
       data-streaming={streaming ? "true" : "false"}
       // 中断的那一轮不能戴完成勾:它并没有跑完(稿子 15-6「绿点转灰」)
       data-canceled={canceled ? "true" : "false"}
-      data-last={isLast ? "true" : "false"}
+      // A real current turn may precede a host card. Its recovery action must
+      // stay visible without hover; ordinary historical controls keep isLast.
+      data-last={isLast || onContinueRemaining ? "true" : "false"}
     >
       {/* 稿子这一行的头是**一个**元素:`<span class="fin"><svg class="tick"/>已完成</span>` ——
           勾在字里面,不是它旁边的兄弟。原来 dot 和文字是平级的两个 span,
@@ -2901,8 +2705,8 @@ export function feedbackReasonOptions(
       : [
           "missed_request",
           "weak_visual",
-          "could_not_run",
-          "too_slow",
+          "incomplete_output",
+          "hard_to_use",
         ];
   return codes.map((code) => ({ code, label: feedbackReasonLabel(code, t) }));
 }
@@ -2940,143 +2744,6 @@ function feedbackReasonLabel(
       return t("assistant.feedbackReasonOther");
   }
   return code;
-}
-
-// Pure renderer. State (busyKey, notices) and the action runner live in the
-// AssistantMessage parent so they survive the panel's unmount/remount cycle
-// during install (issue #2876).
-function PluginActionPanel({
-  folders,
-  notices,
-  busyKey,
-  onRunAction,
-  onRequestOpenFile,
-  onRequestPluginFolderAgentAction,
-  activePluginActionPaths = new Set(),
-}: {
-  folders: PluginFolderCandidate[];
-  notices: Record<string, ActionNotice>;
-  busyKey: string | null;
-  onRunAction: (
-    folder: PluginFolderCandidate,
-    action: PluginFolderAgentAction,
-  ) => Promise<void> | void;
-  onRequestOpenFile?: (name: string) => void;
-  onRequestPluginFolderAgentAction?: (
-    relativePath: string,
-    action: PluginFolderAgentAction,
-  ) => Promise<{ message?: string; url?: string } | void> | { message?: string; url?: string } | void;
-  activePluginActionPaths?: Set<string>;
-}) {
-  const noticeByFolder = notices;
-  const runAction = onRunAction;
-  const t = useT();
-
-  return (
-    <div className="plugin-action-panel" aria-label={t('chat.pluginAction.aria')}>
-      <div className="plugin-action-panel__head">
-        <span className="plugin-action-panel__icon" aria-hidden>
-          <Icon name="sparkles" size={15} />
-        </span>
-        <div>
-          <div className="plugin-action-panel__title">{t('chat.pluginAction.title')}</div>
-          <div className="plugin-action-panel__subtitle">
-            {t('chat.pluginAction.subtitle')}
-          </div>
-        </div>
-      </div>
-      <div className="plugin-action-panel__list">
-        {folders.map((folder) => {
-          const actionBusy = activePluginActionPaths.has(folder.path);
-          return (
-          <div
-            key={folder.path}
-            className="plugin-action-card"
-            data-testid={`assistant-plugin-actions-${folder.path}`}
-          >
-            <div className="plugin-action-card__main">
-              <span className="plugin-action-card__folder-icon" aria-hidden>
-                <Icon name="folder" size={14} />
-              </span>
-              <div className="plugin-action-card__copy">
-                <code className="plugin-action-card__path">{folder.path}</code>
-                <span>{t('chat.pluginAction.filesReady', { count: folder.fileCount })}</span>
-              </div>
-            </div>
-              <div className="plugin-action-card__actions">
-                <button
-                  type="button"
-                  className="plugin-action-button plugin-action-button--primary"
-                  data-testid={`assistant-plugin-install-${folder.path}`}
-                  disabled={actionBusy || busyKey !== null || !onRequestPluginFolderAgentAction}
-                  onClick={() => void runAction(folder, "install")}
-                >
-                  <Icon
-                    name={actionBusy && busyKey === `install:${folder.path}` ? "spinner" : "plus"}
-                    size={13}
-                  />
-                  <span>
-                    {actionBusy && busyKey === `install:${folder.path}`
-                      ? t('chat.comments.sending')
-                      : t('chat.pluginAction.install')}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="plugin-action-button"
-                  data-testid={`assistant-plugin-publish-${folder.path}`}
-                  disabled={actionBusy || busyKey !== null || !onRequestPluginFolderAgentAction}
-                  onClick={() => void runAction(folder, "publish")}
-                >
-                  <Icon
-                    name={actionBusy && busyKey === `publish:${folder.path}` ? "spinner" : "github"}
-                    size={13}
-                  />
-                  <span>
-                    {actionBusy && busyKey === `publish:${folder.path}`
-                      ? t('chat.comments.sending')
-                      : t('pluginCard.publish')}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="plugin-action-button"
-                  data-testid={`assistant-plugin-contribute-${folder.path}`}
-                  disabled={actionBusy || busyKey !== null || !onRequestPluginFolderAgentAction}
-                  onClick={() => void runAction(folder, "contribute")}
-                >
-                  <Icon
-                    name={actionBusy && busyKey === `contribute:${folder.path}` ? "spinner" : "share"}
-                    size={13}
-                  />
-                  <span>
-                    {actionBusy && busyKey === `contribute:${folder.path}`
-                      ? t('chat.comments.sending')
-                      : t('pluginCard.contribute')}
-                  </span>
-                </button>
-                {onRequestOpenFile ? (
-                  <button
-                    type="button"
-                    className="plugin-action-button"
-                    data-testid={`assistant-plugin-open-manifest-${folder.path}`}
-                    onClick={() => onRequestOpenFile(folder.manifestPath)}
-                  >
-                    <Icon name="file-code" size={13} />
-                    <span>{t('ds.openManifest')}</span>
-                  </button>
-                ) : null}
-              </div>
-            {noticeByFolder[folder.path] ? (
-              <div className="plugin-action-card__notice" role="status">
-                <ActionNoticeView notice={noticeByFolder[folder.path] ?? null} />
-              </div>
-            ) : null}
-          </div>
-        )})}
-      </div>
-    </div>
-  );
 }
 
 function kindIconName(
@@ -3251,8 +2918,11 @@ function ProseBlock({
      * 噪音清掉,它们的扫描才不会被岔开。
      * 语法出处在 `@open-design/contracts`,两边共用一份,不会分叉。
      */
+    // Hide a reminder as one opaque block before forms/cards/artifacts can
+    // extract UI from its payload. Other protocol payloads remain untouched.
+    const withoutReminders = stripSystemReminders(text, streaming);
     const withoutMarkers = stripArtifactFocusMarkers(
-      stripCritiqueGrammar(stripInternalControlMarkers(text, { streaming })),
+      stripCritiqueGrammar(stripInternalControlMarkers(withoutReminders, { streaming })),
     );
     const stripped = stripArtifact(withoutMarkers);
     return hideRecoveredHtmlFallback
@@ -3270,12 +2940,9 @@ function ProseBlock({
     const card = stripTrailingOpenOdCard(form.text);
     return { text: card.text, hadOpenForm: form.hadOpenForm };
   }, [cleaned, isLastAssistant, streaming]);
-  // While an `<artifact type="text/html">` is still streaming (no closing tag
-  // yet), surface its body in a live code panel instead of leaking the raw
-  // tag + half-written HTML as Markdown text. Once it closes, stripArtifact
-  // removes it and the file/preview panel takes over — so this only fires
-  // mid-stream.
-  const { head, live } = useMemo(
+  // Keep unfinished artifact markup and source out of prose. Completed
+  // artifacts continue through stripArtifact and the produced-file panel.
+  const { head } = useMemo(
     () => (streaming ? splitStreamingArtifact(visibleText) : { head: visibleText, live: null }),
     [visibleText, streaming]
   );
@@ -3293,10 +2960,10 @@ function ProseBlock({
    * 助手消息(`ProjectView` 的 memory-applied 记忆卡)—— 问卷不再是最后一条,
    * 于是一个字都没答就被锁住、还被标成「已回答」(OPEND-2644)。
    *
-   * `isLastAssistant` 仍然留在或的前半:流式当轮里 `nextUserContent` 本来就是空的,
-   * 两半同时成立,它是判据的一个特例,不是替代品。
+   * 普通 user 到达但下一条 assistant 尚未到达时,旧问卷仍可能是最后一条助手消息;
+   * 因此只看下一条 user 是否存在,不能再用 isLastAssistant 放宽。
    */
-  const questionFormAnswerable = isLastAssistant || nextUserContent === undefined;
+  const questionFormAnswerable = nextUserContent === undefined;
   /**
    * 逐字化开(W9):稿子把流式光标删了,新到的字自己化开就是流式的样子。
    * 判据挂在「这是最后一条且还在流」上 —— 历史消息重渲染时不能再化开一遍。
@@ -3311,14 +2978,13 @@ function ProseBlock({
     () => chatFileLinkClickHandler(onRequestOpenFile, projectFileNames, projectId, projectResolvedDir),
     [onRequestOpenFile, projectFileNames, projectId, projectResolvedDir],
   );
-  // Each text segment is further split on `<od-card>` blocks (so memory cards
-  // render inline, composing with the surrounding question-form handling) and
-  // then on `<system-reminder>` blocks (so those render as their own
-  // collapsible chip instead of raw markup). Splitting od-cards BEFORE
-  // system-reminders keeps a card's JSON body out of the reminder scanner.
+  // The question-form scanner preserves card/code spans as opaque text. Decode
+  // those complete cards here so payload-owned forms never become renderables.
+  // Use the shell's code-aware boundary so quoted card examples stay Markdown,
+  // including retired card types whose real payloads no longer render.
+  // Reminder-owned payloads have already been removed before protocol splitting.
   type Renderable =
     | { key: string; kind: "text"; text: string }
-    | { key: string; kind: "reminder"; text: string }
     | { key: string; kind: "form"; form: QuestionForm }
     | { key: string; kind: "od-card"; card: OdCard }
     | { key: string; kind: "suppressed-direction" };
@@ -3330,16 +2996,12 @@ function ProseBlock({
       return [{ key: `f-${idx}`, kind: "form", form: seg.form }];
     }
     if (seg.text.trim().length === 0) return [];
-    return splitOnOdCards(seg.text).flatMap((cardSeg, c): Renderable[] => {
+    return splitShellCards(seg.text, false).flatMap((cardSeg, c): Renderable[] => {
       if (cardSeg.kind === "card") {
         return [{ key: `c-${idx}-${c}`, kind: "od-card", card: cardSeg.card }];
       }
       if (cardSeg.text.trim().length === 0) return [];
-      return splitSystemReminders(cardSeg.text).map((s, j) => ({
-        key: `t-${idx}-${c}-${j}`,
-        kind: s.kind,
-        text: s.text,
-      }));
+      return [{ key: `t-${idx}-${c}`, kind: "text", text: cardSeg.text }];
     });
   });
   /**
@@ -3350,16 +3012,13 @@ function ProseBlock({
    * 新执行记录按 D43 把表单之前的过程叙述收进壳内,壳外只剩这半截标记,
    * 于是 `renderable` 真的是空的;在这里返回 null 就把加载框一起吞了。
    */
-  if (renderable.length === 0 && !live && !hadOpenForm) return null;
+  if (renderable.length === 0 && !hadOpenForm) return null;
   return (
     <div
       ref={proseRef}
       className="prose-block"
     >
       {renderable.map((seg) => {
-        if (seg.kind === "reminder") {
-          return <SystemReminderBlock key={seg.key} text={seg.text} variant="injection" />;
-        }
         if (seg.kind === "text") {
           return (
             <Fragment key={seg.key}>
@@ -3406,14 +3065,6 @@ function ProseBlock({
           />
         );
       })}
-      {live ? (
-        <StreamingCodeCard
-          icon="file-code"
-          titleLabel={t("tool.write")}
-          metaLabel={live.title || live.identifier || undefined}
-          code={live.content}
-        />
-      ) : null}
       {hadOpenForm ? <QuestionFormLoading /> : null}
     </div>
   );
@@ -3810,6 +3461,7 @@ function FormBlock({
       <QuestionFormView
         form={form}
         interactive={interactive}
+        unanswered={nextUserContent !== undefined && !submittedFromHistory}
         draftAnswers={draftAnswers}
         onDraftChange={updateDraftAnswers}
         onAnswerChange={handleAnswerChange}
@@ -4073,48 +3725,6 @@ function visualStyleContextForProjectKind(
   return undefined;
 }
 
-function SystemReminderBlock({
-  text,
-  variant = "trusted",
-}: {
-  text: string;
-  // "injection" — model-echoed <system-reminder> tag (prompt injection risk): amber warning chip.
-  // "trusted"   — reserved for harness-sourced reminders; no current call sites use this default.
-  variant?: "trusted" | "injection";
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const trimmed = text.trim();
-  const preview = trimmed.split("\n")[0]?.slice(0, 120) ?? "";
-  const isInjection = variant === "injection";
-  return (
-    <div className={`system-reminder-block${isInjection ? " injection" : ""}`}>
-      <button
-        className="system-reminder-toggle"
-        onClick={() => setOpen((o) => !o)}
-        type="button"
-      >
-        <span className="system-reminder-icon" aria-hidden>
-          <Icon name={isInjection ? "alert-triangle" : "settings"} size={12} />
-        </span>
-        <span className="system-reminder-label">
-          {isInjection
-            ? t("assistant.possiblePromptInjection")
-            : t("assistant.systemReminder")}
-        </span>
-        <span className="system-reminder-preview">
-          {open ? "" : preview}
-          {!open && trimmed.length > preview.length ? "…" : ""}
-        </span>
-        <span className="system-reminder-chev">
-          <Icon name={open ? "chevron-down" : "chevron-right"} size={11} />
-        </span>
-      </button>
-      {open ? <pre className="system-reminder-body">{trimmed}</pre> : null}
-    </div>
-  );
-}
-
 /**
  * 推理段落的 markdown 形态(可展开、按 markdown 渲染、文件链接在应用内打开)。
  *
@@ -4250,49 +3860,6 @@ function splitStatusDetailUrlPunctuation(url: string): [string, string] {
 interface ToolItem {
   use: Extract<AgentEvent, { kind: "tool_use" }>;
   result?: Extract<AgentEvent, { kind: "tool_result" }>;
-}
-
-// Presentational in-flight code panel: a boxed header (spinner + shimmer
-// title + optional meta) over a monospace body with a typing caret. Plain
-// monospace on purpose — shiki highlighting is async and would thrash on
-// every streamed delta; the finished, highlighted view is taken over by the
-// normal card once the artifact completes. Only the streaming-artifact path
-// (ProseBlock) uses it — a still-streaming tool call renders nothing (D3).
-function StreamingCodeCard({
-  icon,
-  titleLabel,
-  metaLabel,
-  code,
-}: {
-  icon: IconName;
-  titleLabel: string;
-  metaLabel?: string;
-  code: string;
-}) {
-  const preRef = useRef<HTMLPreElement | null>(null);
-  // Keep the latest streamed line in view as code grows.
-  useEffect(() => {
-    const el = preRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [code]);
-  return (
-    <div className="op-card op-file live-code-box" data-testid="live-code-box">
-      <div className="op-card-head live-code-head">
-        <span className="op-status op-status-category op-status-running" aria-hidden>
-          <Icon name={icon} size={14} />
-        </span>
-        <span className="op-title shimmer-text">{titleLabel}</span>
-        {metaLabel ? <span className="op-meta">{metaLabel}</span> : null}
-      </div>
-      {code ? (
-        <pre className="live-code-pre" ref={preRef}>
-          <code>
-            {code}
-          </code>
-        </pre>
-      ) : null}
-    </div>
-  );
 }
 
 function toolFamily(name: string): string {
@@ -4513,38 +4080,55 @@ function buildBlocks(events: AgentEvent[]): Block[] {
   return out;
 }
 
-// Split prose into alternating plain-text and `<system-reminder>` segments.
-// Claude Code injects `<system-reminder>...</system-reminder>` blocks into the
-// agent's input (memory hints, tool reminders, etc.); the model occasionally
-// echoes those tags into its response. Rendering the raw markup as prose
-// looks broken — surface them as their own collapsible block, and strip stray
-// orphan open/close tags from the surrounding text.
-type ProseSegment = { kind: "text" | "reminder"; text: string };
+// Scan the original prose in order: a reminder owns its whole payload, while
+// an earlier card/form/artifact owns any reminder-like text inside its payload.
+// Reuse the renderer's code boundaries; each complete protocol block is opaque
+// and cannot change the Markdown context of the prose that follows it.
+function stripSystemReminders(input: string, streaming: boolean): string {
+  const out: string[] = [];
+  let remaining = input;
+  const opener = '<system-reminder>';
+  const closer = '</system-reminder>';
+  while (remaining) {
+    const { ranges, unclosedFenceStart } = computeSkipRanges(remaining);
+    const inCode = (index: number) => rangeContains(ranges, index) ||
+      (unclosedFenceStart !== null && index >= unclosedFenceStart);
+    const tokens = /<system-reminder>|<(od-card|question-form|ask-question|artifact)(?=\s|>)[^>]*>/gi;
+    let token: RegExpExecArray | null;
+    do {
+      token = tokens.exec(remaining);
+    } while (token && inCode(token.index));
 
-function splitSystemReminders(input: string): ProseSegment[] {
-  const re = /<system-reminder>([\s\S]*?)<\/system-reminder>/g;
-  const out: ProseSegment[] = [];
-  let lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(input))) {
-    if (m.index > lastIndex) {
-      out.push({ kind: "text", text: input.slice(lastIndex, m.index) });
+    if (!token) {
+      let visibleEnd = remaining.length;
+      const prefixStart = remaining.lastIndexOf('<');
+      if (streaming && prefixStart !== -1 && !inCode(prefixStart) &&
+        opener.startsWith(remaining.slice(prefixStart))) {
+        visibleEnd = prefixStart;
+      }
+      out.push(remaining.slice(0, visibleEnd));
+      break;
     }
-    out.push({ kind: "reminder", text: m[1] ?? "" });
-    lastIndex = re.lastIndex;
+
+    const isReminder = token[0] === opener;
+    const tag = token[1] ?? 'system-reminder';
+    const close = new RegExp(`</${tag}>`, 'gi');
+    close.lastIndex = tokens.lastIndex;
+    const end = isReminder
+      ? remaining.indexOf(closer, tokens.lastIndex)
+      : close.exec(remaining)?.index ?? -1;
+    if (end === -1) {
+      // Only an actual live reminder opener owns the unfinished tail. Keep
+      // terminal malformed text and other protocols for their existing parser.
+      out.push(streaming && isReminder ? remaining.slice(0, token.index) : remaining);
+      break;
+    }
+    const blockEnd = end + `</${tag}>`.length;
+    out.push(remaining.slice(0, token.index));
+    if (!isReminder) out.push(remaining.slice(token.index, blockEnd));
+    remaining = remaining.slice(blockEnd);
   }
-  if (lastIndex < input.length) {
-    out.push({ kind: "text", text: input.slice(lastIndex) });
-  }
-  // Drop any orphan tags that survived (open without close, or vice versa)
-  // and discard text segments that became empty after stripping.
-  return out
-    .map((seg) =>
-      seg.kind === "text"
-        ? { ...seg, text: seg.text.replace(/<\/?system-reminder>/g, "") }
-        : seg
-    )
-    .filter((seg) => seg.kind === "reminder" || seg.text.trim().length > 0);
+  return out.join('');
 }
 
 /**

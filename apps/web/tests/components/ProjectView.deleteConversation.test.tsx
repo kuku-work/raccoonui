@@ -48,6 +48,7 @@ const chatPaneProps: {
     sourceAssistantMessageId?: string,
   ) => boolean | Promise<boolean>;
   questionFormSubmitDisabled?: boolean;
+  viewerOnly?: boolean;
   activeConversationId?: string | null;
   conversations?: Array<{ id: string; title?: string | null }>;
   messages?: ChatMessage[];
@@ -142,6 +143,7 @@ vi.mock('../../src/components/ChatPane', () => ({
       sourceAssistantMessageId?: string,
     ) => boolean | Promise<boolean>;
     questionFormSubmitDisabled?: boolean;
+    viewerOnly?: boolean;
     activeConversationId?: string | null;
     conversations?: Array<{ id: string; title?: string | null }>;
     messages?: ChatMessage[];
@@ -150,6 +152,7 @@ vi.mock('../../src/components/ChatPane', () => ({
     chatPaneProps.onForkFromMessage = props.onForkFromMessage;
     chatPaneProps.onSubmitQuestionForm = props.onSubmitQuestionForm;
     chatPaneProps.questionFormSubmitDisabled = props.questionFormSubmitDisabled;
+    chatPaneProps.viewerOnly = props.viewerOnly;
     chatPaneProps.activeConversationId = props.activeConversationId;
     chatPaneProps.conversations = props.conversations;
     chatPaneProps.messages = props.messages;
@@ -209,6 +212,7 @@ describe('ProjectView conversation delete', () => {
     chatPaneProps.onForkFromMessage = undefined;
     chatPaneProps.onSubmitQuestionForm = undefined;
     chatPaneProps.questionFormSubmitDisabled = undefined;
+    chatPaneProps.viewerOnly = undefined;
     chatPaneProps.activeConversationId = undefined;
     chatPaneProps.conversations = undefined;
     chatPaneProps.messages = undefined;
@@ -245,10 +249,12 @@ describe('ProjectView conversation delete', () => {
 
     renderProjectView(onProjectsRefresh);
 
-    // ChatPane mount is async (ProjectView loads conversations in an
-    // effect, then renders chat). Wait for the mocked ChatPane to
-    // surface its `onDeleteConversation` prop.
-    await waitFor(() => expect(chatPaneProps.onDeleteConversation).toBeDefined());
+    // ChatPane can expose its callback before workspace scope settles.
+    // Wait for the real permission state to permit deletion as well.
+    await waitFor(() => {
+      expect(chatPaneProps.onDeleteConversation).toBeDefined();
+      expect(chatPaneProps.viewerOnly).toBe(false);
+    });
 
     await act(async () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
@@ -591,7 +597,7 @@ describe('ProjectView conversation fork analytics', () => {
      *
      * 这一条原来断言客户端给**源会话**那条助手消息盖 `forkedInto` 并写回。
      * 可点完分叉页面就跳到新会话,人此刻站在那边 —— 源会话上的那条线除非专门
-     * 翻回去否则永远看不到,而那行脚注「上文已带过来,接着说就行」对着原地没动的
+     * 翻回去否则永远看不到,而那行脚注「从上一个会话继续」对着原地没动的
      * 源会话说也不成立。
      *
      * 标记改由 daemon 在建新会话时盖在**带过来的最后一条**上

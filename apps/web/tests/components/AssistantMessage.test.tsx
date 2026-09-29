@@ -225,10 +225,12 @@ describe('AssistantMessage feedback gate', () => {
     expect(onRequestOpenFile).toHaveBeenCalledWith('poster.png');
   });
 
-  it('renders plugin suggestions as compact user decisions with secondary actions in details', () => {
+  it('hides retired plugin suggestions and their actions while preserving normal message text', () => {
+    const text = 'The repository review is complete.';
     const message = baseMessage({
-      content: '',
+      content: text,
       events: [
+        { kind: 'text', text },
         {
           kind: 'plugin_candidate',
           candidateId: 'candidate-1',
@@ -246,18 +248,14 @@ describe('AssistantMessage feedback gate', () => {
       />,
     );
 
-    expect(container.querySelector('[data-user-action-card="plugin-suggestion"]')).toBeTruthy();
-    const contribute = screen.getByRole('button', { name: 'Contribute to open-design' });
-    expect(contribute).toBeTruthy();
-    expect(contribute.classList.contains('plugin-action-button--primary')).toBe(false);
-    const toggle = screen.getByRole('button', { name: 'View details' });
-    const disclosure = container.querySelector('[data-user-action-card="plugin-suggestion"] .accordion-collapsible');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(disclosure?.classList.contains('open')).toBe(false);
-
-    fireEvent.click(toggle);
-    expect(disclosure?.classList.contains('open')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Create plugin/template' })).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+    expect(container.querySelector('[data-user-action-card="plugin-suggestion"]')).toBeNull();
+    expect(screen.queryByText('Design review helper')).toBeNull();
+    expect(screen.queryByText('Turn this repository workflow into a reusable helper.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Contribute to open-design' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create plugin/template' })).toBeNull();
+    expect(container.textContent).not.toContain('candidate-1');
   });
 
   it('omits the repeated identity header for a consecutive assistant reply', () => {
@@ -416,10 +414,10 @@ describe('AssistantMessage feedback gate', () => {
    * 新家」一起记着 —— 不在这里再写一份「断言它不可达」,那等于把回归钉死。
    */
 
-  it('lands a fork divider carrying the inherited title plus the "context came with you" note', () => {
+  it('lands a one-line fork divider reading "Continued from chat", with no inherited title', () => {
     // 设计稿第 38 格:Fork 不是跳走 —— 点完必须在这条回复下面**原地**留下痕迹,
-    // 否则人只会以为按钮没反应。分界线中间是承接过来的会话标题,
-    // 线下面那行脚注告诉人上文已经带过去了。
+    // 否则人只会以为按钮没反应。OPEND-2714 之后线中间就一样东西:
+    // 分支图标配一行「Continued from chat」,源会话标题不再上屏。
     render(
       <AssistantMessage
         message={baseMessage({
@@ -431,10 +429,10 @@ describe('AssistantMessage feedback gate', () => {
     );
 
     const divider = screen.getByTestId('assistant-fork-divider');
-    expect(divider.textContent).toContain('Storefront prototype');
-    expect(screen.getByTestId('assistant-fork-note').textContent).toContain(
-      'Context above came along',
-    );
+    expect(divider.textContent).not.toContain('Storefront prototype');
+    const note = screen.getByTestId('assistant-fork-note');
+    expect(note.textContent).toBe('Continued from chat');
+    expect(divider.contains(note)).toBe(true);
   });
 
   it('leaves the fork divider out of turns that were never forked', () => {

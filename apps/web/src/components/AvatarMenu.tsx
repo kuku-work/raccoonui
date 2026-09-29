@@ -12,7 +12,10 @@ import {
   defaultAgentModelId,
   effectiveAgentModelChoice,
 } from './agentModelSelection';
-import { orderModelOptionsByAvailability } from './modelOptions';
+import {
+  modelVersionLabel,
+  orderModelOptionsByAvailability,
+} from './modelOptions';
 import {
   mergeProviderModelOptions,
   providerModelsCacheKey,
@@ -36,7 +39,7 @@ import { isMacPlatform } from '../utils/platform';
 import {
   useWorkspaceBillingResponse,
   useWorkspaceContext,
-  workspaceBillingSnapshotForContext,
+  workspaceBillingSummaryForContext,
 } from '../collab/useWorkspaceContext';
 import {
   projectWorkspaceContext,
@@ -190,10 +193,18 @@ export function AvatarMenu({
 
       const margin = 16;
       const gap = 8;
-      const width = Math.min(208, window.innerWidth - margin * 2);
+      // The popover stays inside the composer shell it belongs to: its left
+      // and right bounds are the shell's own edges (viewport margin as the
+      // outer floor), and it right-aligns to the trigger so a narrow shell
+      // never pushes the menu past the card. Outside a shell (no
+      // `.composer-shell` ancestor) it falls back to the viewport bounds.
+      const composer = triggerRef.current?.closest('.composer-shell')?.getBoundingClientRect();
+      const minLeft = Math.max(margin, composer?.left ?? margin);
+      const maxRight = Math.min(window.innerWidth - margin, composer?.right ?? window.innerWidth - margin);
+      const width = Math.min(208, Math.max(0, maxRight - minLeft));
       const left = Math.min(
-        Math.max(rect.left, margin),
-        window.innerWidth - width - margin,
+        Math.max(composer ? rect.right - width : rect.left, minLeft),
+        maxRight - width,
       );
 
       if (placement === 'up') {
@@ -231,9 +242,15 @@ export function AvatarMenu({
     };
 
     updatePosition();
+    // The composer shell grows and shrinks with the draft (auto-height editor,
+    // attachment band), which moves the trigger without a window resize.
+    const composer = triggerRef.current?.closest('.composer-shell');
+    const resizeObserver = composer ? new ResizeObserver(updatePosition) : null;
+    if (composer) resizeObserver?.observe(composer);
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
@@ -278,13 +295,43 @@ export function AvatarMenu({
       cancelled = true;
     };
   }, [open, amrAvailable]);
-  const exactWorkspaceSnapshot = workspaceBillingSnapshotForContext(
+  /*
+   * The plan tier of the workspace in scope, read through the ONE projection
+   * that is allowed to answer that question.
+   *
+   * This used to read the exact billing SNAPSHOT directly, which is the same
+   * source `workspaceBillingSummaryForContext` consults first — but only the
+   * first. The projection also carries a fallback that was approved and is
+   * load-bearing: when a TEAM workspace has no authorized snapshot, a
+   * team-namespaced account tier may stand in for it (a personal tier may not,
+   * because it describes the account's own subscription and cannot name a team
+   * workspace's plan). Reading the snapshot directly walked around that
+   * fallback, and there was no third source to catch the fall.
+   *
+   * The snapshot goes missing for reasons that have nothing to do with the
+   * viewer's entitlements: A answers the snapshot route 409
+   * `billing_workspace_snapshot_unsupported` while `/wallet/balance` still
+   * answers 200; a rolling deploy leaves an old API pod 404/405-ing the route
+   * for a few minutes; a local vela CLI predates `--workspace-id`. The daemon
+   * then omits the `workspaceSnapshot` key entirely. On this surface that
+   * turned into `scopedPlanId: null`, `canUpgradeVelaPlan(null) === false`, and
+   * a veto landing BEFORE `canReachWorkspaceBillingEntrance` ever got asked —
+   * so a team owner clicked a plan-gated model and nothing happened at all.
+   *
+   * Ordering is unchanged where it matters: the projection consults the
+   * snapshot FIRST, so a present snapshot still outranks the account tier.
+   *
+   * It is a pure function of the response this component already holds, so the
+   * corrected tier lands on the same render frame — there is no second async
+   * hop that would paint the wrong identity first and fix it later.
+   */
+  const scopedWorkspaceBilling = workspaceBillingSummaryForContext(
     workspaceBillingResponse,
     workspaceContext,
   );
   const scopedPlanId =
     workspaceContext?.workspaceType === 'team'
-      ? exactWorkspaceSnapshot?.billing.planId?.trim() || null
+      ? scopedWorkspaceBilling?.membershipTier?.trim() || null
       : workspaceContext?.workspaceType === 'personal'
         ? workspaceBillingResponse?.summary?.membershipTier?.trim() || null
         : null;
@@ -474,7 +521,9 @@ export function AvatarMenu({
     config.mode === 'api'
       ? apiModelLabel
       : config.mode === 'daemon'
-        ? currentModelLabel ?? currentModelId
+        ? currentModelId
+          ? modelVersionLabel(currentModelId, currentModelLabel ?? currentModelId)
+          : currentModelLabel ?? null
         : null;
   // Model id backing the readout — used to resolve the provider brand mark that
   // replaces the model-name text in the composer trigger.
@@ -623,7 +672,7 @@ export function AvatarMenu({
                                 })()}
                               </span>
                               <span className="avatar-model-option-label">
-                                {model.label}
+                                {modelVersionLabel(model.id, model.label)}
                               </span>
                               {locked ? (
                                 <RemixIcon
@@ -701,7 +750,11 @@ export function AvatarMenu({
                     <span className="avatar-select-label">
                       {t('avatar.modelLabel')}
                     </span>
-                    <div className="avatar-static-value">{currentModelLabel}</div>
+                    <div className="avatar-static-value">
+                      {currentModelId
+                        ? modelVersionLabel(currentModelId, currentModelLabel)
+                        : currentModelLabel}
+                    </div>
                   </div>
                 </div>
               ) : currentAgent ? (

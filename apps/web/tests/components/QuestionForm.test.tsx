@@ -219,6 +219,20 @@ const pickedText = (): string | null =>
 describe('QuestionFormView', () => {
   afterEach(() => cleanup());
 
+  it.each(['radio', 'checkbox'] as const)('keeps %s descriptions inline without duplicating them in a native tooltip', type => {
+    const describedForm: QuestionForm = {
+      ...richForm, questions: richForm.questions.map(question => ({ ...question, type })),
+    };
+    render(<QuestionFormView form={describedForm} interactive onSubmit={vi.fn()} />);
+
+    const describedOption = screen.getByRole(type, { name: /Mobile \(iOS\/Android\)/ });
+    expect(describedOption).not.toHaveAttribute('title');
+    expect(describedOption).toHaveTextContent('Phone-first app prototype');
+    expect(screen.getAllByText('Phone-first app prototype')).toHaveLength(1);
+    fireEvent.click(describedOption);
+    expect(describedOption).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('updates locked answers when submitted history arrives after the initial render', () => {
     const onSubmit = vi.fn();
     const { container, rerender } = render(
@@ -914,7 +928,10 @@ describe('QuestionFormView', () => {
       />,
     );
 
-    expect(screen.getByText('1/3').closest('.question-form-head')).toBeTruthy();
+    // OPEND-2641:进度跟着**当前问句**走,不在卡头里。卡头留给卡的名字和整卡状态。
+    // 位置本身的完整判据在 `chat/opend-2641-step-progress-follows-question.test.tsx`。
+    expect(screen.getByText('1/3').closest('.question-form-head')).toBeNull();
+    expect(screen.getByText('1/3').closest('.qf-label')).toBeTruthy();
     expect(screen.getByLabelText(/Auto-continues when the timer ends 10:00/)).toBeTruthy();
     expect(screen.getByText('Who will see this deck?')).toBeTruthy();
     expect(screen.queryByText('How detailed should it be?')).toBeNull();

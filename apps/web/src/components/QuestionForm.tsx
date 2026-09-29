@@ -35,6 +35,8 @@ import {
   rotateVisualStyleBatch,
 } from '../runtime/visual-style-deck';
 import { Icon } from './Icon';
+import { ChevronIcon } from './chat/primitives/icons';
+import styles from './QuestionForm.module.css';
 
 export type QuestionFormInteraction =
   | {
@@ -70,6 +72,9 @@ interface Props {
   // disables the form when the assistant turn is no longer the most recent
   // one (i.e. the user has already moved past it).
   interactive: boolean;
+  // A later ordinary user message retired this occurrence without an answer.
+  // Read-only hosts alone must not be classified as unanswered history.
+  unanswered?: boolean;
   // Pre-existing answers — when we detect a follow-up user message that
   // begins with "[form answers — <id>]", we parse it back out and pass it
   // here so the rendered form reflects what was sent.
@@ -116,6 +121,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   {
     form,
     interactive,
+    unanswered = false,
     submittedAnswers,
     hideInternalSubmit = false,
     draftAnswers,
@@ -131,10 +137,9 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   ref,
 ) {
   const uiT = useT();
-  // Host strings inside the card follow the form's declared content language
-  // (`form.lang`, set by the model alongside the localized labels) so a
-  // Chinese form in an English UI doesn't mix scripts; without a resolvable
-  // tag they follow the app UI locale as before.
+  // Answer-content strings follow the form's declared language, falling back
+  // to the UI locale when it is absent or unsupported. Required/navigation
+  // controls use uiT independently; they are not part of the answer content.
   const t = useMemo(() => tForLanguageTag(form.lang) ?? uiT, [form.lang, uiT]);
   const initial = useMemo(
     () => buildInitialState(form, submittedAnswers, draftAnswers, visualStyleContext),
@@ -173,7 +178,8 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     OPTIONAL_FORM_AUTO_CONTINUE_SECONDS,
   );
   const autoContinuedRef = useRef(false);
-  const locked = !interactive || !onSubmit || submittedAnswers !== undefined;
+  const unansweredHistory = unanswered && submittedAnswers === undefined;
+  const locked = unansweredHistory || !interactive || !onSubmit || submittedAnswers !== undefined;
   /*
    * 「已回答」是一句关于**用户做过什么**的陈述 —— 只有真的解析到提交答案才兑现。
    *
@@ -191,7 +197,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   // Use the normalized snapshot for rendering so legacy tone values select
   // the same visual card that a new submission will send.
   const currentAnswers = submittedAnswers !== undefined ? initial : answers;
-  const stepped = !locked && !hideInternalSubmit && form.questions.length > 1;
+  const stepped = (unansweredHistory || !locked) && !hideInternalSubmit && form.questions.length > 1;
   const activeQuestion = form.questions[activeQuestionIndex];
   const isLastQuestion = activeQuestionIndex === form.questions.length - 1;
   const questionsToRender = stepped && activeQuestion ? [activeQuestion] : form.questions;
@@ -558,7 +564,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
   }
 
   function handleNextQuestion() {
-    if (!activeQuestion || isLastQuestion || !currentQuestionReady) return;
+    if (!activeQuestion || isLastQuestion || (!unansweredHistory && !currentQuestionReady)) return;
     onInteraction?.({
       element: 'step_next',
       questionId: activeQuestion.id,
@@ -605,9 +611,9 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
       className="qf-primary-action"
       onClick={handleSubmit}
       disabled={submitDisabled || !ready}
-      title={!submitDisabled && ready ? t('qf.submitTitle') : t('qf.submitDisabledTitle')}
+      title={!submitDisabled && ready ? uiT('qf.submitTitle') : uiT('qf.submitDisabledTitle')}
     >
-      {form.submitLabel ?? t('qf.submitDefault')}
+      {form.submitLabel ?? uiT('qf.submitDefault')}
     </Button>
   );
   /*
@@ -630,7 +636,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
       onClick={handleSkipAll}
       disabled={submitDisabled}
     >
-      {t('questionForm.skip')}
+      {uiT('questionForm.skip')}
     </Button>
   );
   // A manual Skip all is always available, including for required questions.
@@ -707,9 +713,17 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     );
   }
 
+  // Native details preserves a user-opened history card through rerenders.
+  // Switching from the active div to details starts it closed without
+  // remounting this component's answer/draft state or adding another card.
+  const FormContainer = unansweredHistory ? 'details' : 'div';
+  const FormHead = unansweredHistory ? 'summary' : 'div';
   return (
-    <div className={`question-form${locked ? ' question-form-locked' : ''}`} data-form-id={form.id}>
-      <div className="question-form-head">
+    <FormContainer
+      className={`question-form${locked ? ' question-form-locked' : ''}${unansweredHistory ? ` ${styles.unanswered}` : ''}`}
+      data-form-id={form.id}
+    >
+      <FormHead className="question-form-head">
         {/*
           稿子的卡头是 `.hd > svg + b` —— 图标**直接**放在头里,标题也不套包裹层。
           原来这里多包了 `span.question-form-icon` 和 `div.question-form-titles` 两层,
@@ -721,17 +735,23 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
         </svg>
         {/* 稿子的卡头标题是 `<b>`(`.card > .h b { font-weight: inherit }`),不是 div ——
             标签不一样,逐元素比样式时从这里开始整段串位 */}
-        <b className="question-form-title">{form.title}</b>
-        {stepped ? (
-          <span
-            className="qf-step-progress"
-            aria-label={`${activeQuestionIndex + 1} / ${form.questions.length}`}
-          >
-            {activeQuestionIndex + 1}/{form.questions.length}
-          </span>
-        ) : null}
-        {pickedCount > 0 ? <PickedCount t={t} count={pickedCount} /> : null}
+        <b className="question-form-title" title={form.title}>{form.title}</b>
+        {/*
+          OPEND-2641:分步进度(`1/4`)**不在这里** —— 它跟着当前问句走,
+          渲染在 `.qf-label` 的末尾(见下面 `<StepProgress />` 的调用点)。
+          卡头留给卡的名字和**整卡**状态(「已选 N」/「已回答」/ 倒计时)。
+          进度说的是「这一问在第几问」,那是问句的属性,不是卡的属性;
+          而且卡头是 flex,进度和「已选 N」当时各写了一句 `margin-inline-start: auto`,
+          一行两个 auto 把剩余空间对半分,进度停在卡头中间和计数抢位置。
+        */}
+        {pickedCount > 0 && !unansweredHistory ? <PickedCount t={t} count={pickedCount} /> : null}
         {answered ? <span className="question-form-pill">{t('qf.answered')}</span> : null}
+        {unansweredHistory ? (
+          <>
+            <span className="qf-picked"><span className="qf-picked-label">{uiT('qf.unanswered')}</span></span>
+            <span className={styles.chevron} aria-hidden><ChevronIcon /></span>
+          </>
+        ) : null}
         {/*
           倒计时在【卡头右上】,不在底栏 —— 稿子 `729fa43ce7` 新加的那一处:
             <div class="h">…<b>先定个视觉方向</b>
@@ -750,13 +770,13 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
           <time
             className="qf-auto-continue"
             dateTime={`PT${autoContinueRemaining}S`}
-            title={t('questions.autoSkipHint')}
-            aria-label={`${t('questions.autoSkipHint')} ${autoContinueCountdown}`}
+            title={uiT('questions.autoSkipHint')}
+            aria-label={`${uiT('questions.autoSkipHint')} ${autoContinueCountdown}`}
           >
             {autoContinueCountdown}
           </time>
         ) : null}
-      </div>
+      </FormHead>
       <div className="question-form-body">
         {questionsToRender.map((q) => {
           const value = currentAnswers[q.id];
@@ -800,9 +820,24 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
               */}
               <div className="qf-label">
                 {q.label}
-                {q.required ? <span className="qf-required">{t('qf.required')}</span> : null}
+                {q.required && !unansweredHistory ? <span className="qf-required">{uiT('qf.required')}</span> : null}
+                {/*
+                  OPEND-2641:进度收在**问句这一行的末尾** —— 跟在问句文字后面,
+                  也跟在「必填」角标后面。分步态下 `questionsToRender` 只有当前那一问
+                  (上面 `stepped && activeQuestion ? [activeQuestion] : …`),
+                  所以这里不需要再判「这一问是不是当前问」。
+                */}
+                {stepped ? (
+                  <StepProgress index={activeQuestionIndex} total={form.questions.length} />
+                ) : null}
               </div>
-              {q.help ? <div className="qf-help">{q.help}</div> : null}
+              {/* 一道题就是「题目 + 必填标识 + 用来作答的控件」,没有第四样。
+                  模型写的那行说明(`help`)夹在题目和控件中间,把两者推开,
+                  读起来像卡片自己的旁白而不是这道题的一部分(OPEND-2707)。
+                  这里是**不渲染**而不是藏起来:它是卡片正文这根纵向流里的
+                  一个块级兄弟,留着就还占一整行的行盒 —— 那行空白正是工单
+                  要一起去掉的。`help` 仍留在解析出来的表单结构上,已有的、
+                  流式进来的表单照旧原样往返。 */}
               {q.type === 'select' && q.options && !visualStyleCards
                 && questionUsesSelectMenu(q) ? (
                 <SelectChoice
@@ -810,7 +845,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   options={q.options}
                   value={typeof value === 'string' ? value : ''}
                   disabled={locked}
-                  t={t}
+                  t={uiT}
                   onPick={(next) => pickFixed(q, next)}
                   ownChoice={
                     shouldRenderCustomChoice(q)
@@ -1025,9 +1060,27 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
             稿子第 21 / 22 格的底栏就那一行,再留一条空的底栏会多撑出 8px + 一行高。 */}
         {hideInternalSubmit || visualFootDelegated ? null : (
           <div className="question-form-foot" data-chat-scroll-anchor="question-footer">
-            {locked ? (
+            {unansweredHistory ? (
+              <>
+                <span className="qf-locked-note">{uiT('qf.unansweredContinued')}</span>
+                {stepped ? (
+                  <span className="qf-submit-actions">
+                    {activeQuestionIndex > 0 ? (
+                      <Button type="button" size="sm" variant="ghost" onClick={handlePreviousQuestion}>
+                        {uiT('settings.onboardingBack')}
+                      </Button>
+                    ) : null}
+                    {!isLastQuestion ? (
+                      <Button type="button" size="sm" variant="primary" onClick={handleNextQuestion}>
+                        {uiT('nextStep.title')}
+                      </Button>
+                    ) : null}
+                  </span>
+                ) : null}
+              </>
+            ) : locked ? (
               <span className="qf-locked-note">
-                {submittedAnswers ? t('qf.lockedSubmitted') : t('qf.lockedPrev')}
+                {submittedAnswers ? t('qf.lockedSubmitted') : uiT('qf.lockedPrev')}
               </span>
             ) : stepped ? (
               <>
@@ -1041,7 +1094,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   onClick={handleSkipCurrent}
                   disabled={submitDisabled}
                 >
-                  {t('questionForm.skip')}
+                  {uiT('questionForm.skip')}
                 </Button>
                 <span className="qf-submit-actions">
                   {activeQuestionIndex > 0 ? (
@@ -1053,7 +1106,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                       onClick={handlePreviousQuestion}
                       disabled={submitDisabled}
                     >
-                      {t('settings.onboardingBack')}
+                      {uiT('settings.onboardingBack')}
                     </Button>
                   ) : null}
                   <Button
@@ -1074,15 +1127,15 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     }
                     title={
                       !submitDisabled && activeQuestion?.required === true && !currentQuestionReady
-                        ? t('qf.submitDisabledTitle')
+                        ? uiT('qf.submitDisabledTitle')
                         : isLastQuestion && !submitDisabled && ready
-                          ? t('qf.submitTitle')
+                          ? uiT('qf.submitTitle')
                           : undefined
                     }
                   >
                     {isLastQuestion
-                      ? form.submitLabel ?? t('qf.submitDefault')
-                      : t('nextStep.title')}
+                      ? form.submitLabel ?? uiT('qf.submitDefault')
+                      : uiT('nextStep.title')}
                   </Button>
                 </span>
               </>
@@ -1097,7 +1150,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     onClick={handleSkipAll}
                     disabled={submitDisabled}
                   >
-                    {t('questions.skipAll')}
+                    {uiT('questions.skipAll')}
                   </Button>
                 ) : null}
                 {/* 撑开:稿子里跳过靠左、下一步靠右,中间是空的 */}
@@ -1108,7 +1161,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
           </div>
         )}
       </div>
-    </div>
+    </FormContainer>
   );
 });
 
@@ -1340,7 +1393,6 @@ function OptionButton({
       type="button"
       role={role}
       aria-checked={on}
-      title={option.description}
       disabled={disabled === true}
       className={`qf-chip${on ? ' qf-chip-on' : ''}${maxed === true ? ' qf-chip-disabled' : ''}`}
       onClick={onPick}
@@ -2828,6 +2880,23 @@ function AmountChoice({
  */
 /** 一个绝不会出现在任何译文里的哨兵,用来标记 `{count}` 的落点。 */
 const PICKED_COUNT_SLOT = '\u0000';
+/**
+ * 分步表单「这一问是第几问」的行内进度(`1/4`)。
+ *
+ * 不变量:它**属于当前问句**,所以渲染在 `.qf-label` 的末尾,不在卡头里
+ * (OPEND-2641)。卡头只留卡的名字和整卡状态 —— 「已选 N」是整张卡的状态,
+ * 进度不是;两个都挂在卡头上时,它们会抢同一条 `margin-inline-start: auto`。
+ *
+ * 可读名字保留 `第几 / 共几` 的念法(`1 / 4`),显示文本仍是紧凑的 `1/4`。
+ */
+function StepProgress({ index, total }: { index: number; total: number }) {
+  return (
+    <span className="qf-step-progress" aria-label={`${index + 1} / ${total}`}>
+      {index + 1}/{total}
+    </span>
+  );
+}
+
 function PickedCount({ t, count }: { t: ReturnType<typeof useT>; count: number }) {
   const rendered = t('qf.picked', { count: PICKED_COUNT_SLOT });
   const at = rendered.indexOf(PICKED_COUNT_SLOT);
