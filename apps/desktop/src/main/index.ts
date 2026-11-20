@@ -1,3 +1,5 @@
+import { readLauncherHost } from "@open-design/launcher-proto";
+import type { AmrEndpointBinding } from "@open-design/contracts";
 import { recordIncomingUpdateStageResults, recordIncomingUpdateLifecycle, type UpdateLifecycleObservation } from "./update-lifecycle-observations.js";
 export { recordIncomingUpdateLifecycle, type UpdateLifecycleObservation } from "./update-lifecycle-observations.js";
 import { randomBytes } from "node:crypto";
@@ -44,6 +46,8 @@ import {
 } from "@open-design/sidecar";
 
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime.js";
+import { registerDesktopAuthWithDaemon } from "./register-desktop-auth.js";
+export { registerDesktopAuthWithDaemon } from "./register-desktop-auth.js";
 import { dispatchInviteDeeplink, registerInviteDeeplink } from "./invite-deeplink.js";
 import { focusDesktopForDeeplink } from "./deeplink-focus.js";
 import { setUpDesktopCrashReporter, writeDesktopGpuInfo } from "./crash-diagnostics.js";
@@ -54,7 +58,7 @@ import {
   attachDesktopHostLifecycleRecorder,
   reportPriorDesktopUncleanExits,
 } from "./observability.js";
-import { attachDesktopProcessErrorFilter } from "./uncaught-exception.js";
+import { attachDesktopProcessErrorFilter, markDesktopShutdownInProgress } from "./uncaught-exception.js";
 import {
   DEFAULT_DESKTOP_UPDATE_MENU_LABELS,
   deriveDesktopUpdateMenuItem,
@@ -198,10 +202,18 @@ export function applyLoopbackConnectionLimitSwitch(electronApp: Electron.App): v
 }
 
 export type DesktopMainOptions = {
+  /** Immutable endpoint binding supplied by the packaged runtime. */
+  amrEndpointBinding?: AmrEndpointBinding;
   electronReadyAtMs?: number;
   /** Carries the packaged process origin and sidecar phases into desktop. */
   startupTiming?: StartupTiming | null;
   beforeShutdown?: (record?: (event: UpdateLifecycleObservation) => Promise<void>) => Promise<void>;
+  /**
+   * Called synchronously when shutdown begins, before the window closes and
+   * cancels in-flight renderer requests. Packaged uses it to treat the
+   * resulting AbortErrors as expected teardown rather than fatal errors.
+   */
+  onShutdownStarted?: () => void;
   /** Prevent packaged renderer traffic from reaching sidecars as they retire. */
   quiesceRendererTransport?: () => void | Promise<void>;
   onExternalShow?: () => void | Promise<void>;
@@ -216,7 +228,12 @@ export type DesktopMainOptions = {
    * Node fetch can hit.
    */
   discoverDaemonUrl: () => Promise<string | null>;
-  registerDesktopAuth: (secret: Buffer) => Promise<boolean>;
+  /**
+   * Register the desktop-auth secret with the daemon. `retry` is set for the
+   * on-demand re-registration (picker/import), which may wait and retry; the
+   * startup call blocks window load and stays a single short attempt.
+   */
+  registerDesktopAuth: (secret: Buffer, options?: { retry?: boolean }) => Promise<boolean>;
   /** Stable installed launcher used for Windows opendesign:// registration. */
   inviteProtocolClientPath?: string | null;
   preloadPath?: string;
@@ -339,7 +356,11 @@ export function mergeAmrEnvironmentProfileConfig(
 export function createAmrEnvironmentProfileMenuItems(
   selectedProfile: AmrEnvironmentProfile,
   onSelect: (profile: AmrEnvironmentProfile) => void,
+  binding?: AmrEndpointBinding,
 ): MenuItemConstructorOptions[] {
+  if (binding) {
+    return [{ label: "AMR Profile", submenu: [{ label: binding.webUrl, enabled: false }] }];
+  }
   return [
     {
       label: "AMR Profile",
@@ -399,6 +420,37 @@ async function writeAppConfigToDaemon(
   return payload.config;
 }
 
+// Run in the renderer's main world so the App can settle its navigation
+// guards before the daemon changes environments. A loading window without
+// an App listener has no edits to settle.
+const PREPARE_AMR_PROFILE_SWITCH = `new Promise((resolve) => {
+  const timer = setTimeout(() => resolve(false), 15000);
+  const complete = (allowed) => {
+    clearTimeout(timer);
+    resolve(allowed === true);
+  };
+  const unhandled = window.dispatchEvent(new CustomEvent('open-design:prepare-amr-profile-switch', {
+    cancelable: true,
+    detail: complete,
+  }));
+  if (unhandled) complete(true);
+})`;
+
+export async function writeAmrEnvironmentProfile(
+  options: Pick<DesktopMainOptions, "discoverDaemonUrl" | "discoverWebUrl" | "amrEndpointBinding">,
+  profile: AmrEnvironmentProfile,
+  prepareSwitch?: () => Promise<boolean>,
+): Promise<AmrEnvironmentProfile> {
+  if (options.amrEndpointBinding) return normalizeAmrEnvironmentProfile(options.amrEndpointBinding.profile);
+  const baseUrl = await resolveDaemonBaseUrl(options)();
+  const config = await readAppConfigFromDaemon(baseUrl);
+  const currentProfile = normalizeAmrEnvironmentProfile(config.agentCliEnv?.[AMR_PROFILE_AGENT_ID]?.[AMR_PROFILE_ENV_KEY]);
+  if (profile === currentProfile) return currentProfile;
+  if (prepareSwitch && !(await prepareSwitch())) return currentProfile;
+  const writtenConfig = await writeAppConfigToDaemon(baseUrl, mergeAmrEnvironmentProfileConfig(config, profile));
+  return normalizeAmrEnvironmentProfile(writtenConfig.agentCliEnv?.[AMR_PROFILE_AGENT_ID]?.[AMR_PROFILE_ENV_KEY]);
+}
+
 type DesktopMenuController = {
   dispose(): void;
   setUpdateLabels(labels: DesktopUpdateMenuLabels): void;
@@ -406,7 +458,7 @@ type DesktopMenuController = {
 
 function installDesktopMenu(
   runtime: SidecarRuntimeContext<LegacySidecarRuntimeLayout>,
-  options: Pick<DesktopMainOptions, "discoverDaemonUrl" | "discoverWebUrl"> & {
+  options: Pick<DesktopMainOptions, "discoverDaemonUrl" | "discoverWebUrl" | "amrEndpointBinding"> & {
     onOpenUpdateDialog?: () => void;
     updater: DesktopUpdater;
   },
@@ -425,32 +477,43 @@ function installDesktopMenu(
   const discoverAppConfigBaseUrl = resolveDaemonBaseUrl(options);
 
   const readCurrentAmrProfile = async (): Promise<AmrEnvironmentProfile> => {
+    if (options.amrEndpointBinding) return normalizeAmrEnvironmentProfile(options.amrEndpointBinding.profile);
     const baseUrl = await discoverAppConfigBaseUrl();
     const config = await readAppConfigFromDaemon(baseUrl);
     return normalizeAmrEnvironmentProfile(config.agentCliEnv?.[AMR_PROFILE_AGENT_ID]?.[AMR_PROFILE_ENV_KEY]);
   };
 
-  const writeCurrentAmrProfile = async (profile: AmrEnvironmentProfile): Promise<AmrEnvironmentProfile> => {
-    const baseUrl = await discoverAppConfigBaseUrl();
-    const config = await readAppConfigFromDaemon(baseUrl);
-    const nextConfig = mergeAmrEnvironmentProfileConfig(config, profile);
-    const writtenConfig = await writeAppConfigToDaemon(baseUrl, nextConfig);
-    return normalizeAmrEnvironmentProfile(
-      writtenConfig.agentCliEnv?.[AMR_PROFILE_AGENT_ID]?.[AMR_PROFILE_ENV_KEY],
-    );
-  };
-
+  let amrProfileSwitchInFlight = false;
   const selectAmrProfile = (profile: AmrEnvironmentProfile): void => {
-    void writeCurrentAmrProfile(profile)
+    if (options.amrEndpointBinding || amrProfileSwitchInFlight) return;
+    amrProfileSwitchInFlight = true;
+    let blocked = false;
+    void writeAmrEnvironmentProfile(options, profile, async () => {
+      const results = await Promise.allSettled(BrowserWindow.getAllWindows()
+        .filter((window) => !window.isDestroyed())
+        .map((window) => window.webContents.executeJavaScript(PREPARE_AMR_PROFILE_SWITCH)));
+      blocked = results.some((result) => result.status !== "fulfilled" || result.value !== true);
+      return !blocked;
+    })
       .then((writtenProfile) => {
         lastKnownAmrProfile = writtenProfile;
+        if (blocked) {
+          dialog.showErrorBox(
+            "AMR Environment Profile switch cancelled",
+            "The current environment was kept. Finish any pending edits and try again.",
+          );
+          return;
+        }
         for (const window of BrowserWindow.getAllWindows()) {
           window.webContents.send(APP_CONFIG_CHANGED_IPC_CHANNEL);
         }
-        rebuild();
       })
       .catch((error: unknown) => {
         showDevelopMenuError("AMR Environment Profile switch failed", error);
+      })
+      .finally(() => {
+        amrProfileSwitchInFlight = false;
+        rebuild();
       });
   };
 
@@ -558,7 +621,7 @@ function installDesktopMenu(
         ? [
             {
               label: "Develop",
-              submenu: createAmrEnvironmentProfileMenuItems(lastKnownAmrProfile, selectAmrProfile),
+              submenu: createAmrEnvironmentProfileMenuItems(lastKnownAmrProfile, selectAmrProfile, options.amrEndpointBinding),
             },
           ]
         : []),
@@ -640,8 +703,6 @@ function installDesktopMenu(
     },
   };
 }
-
-const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 800;
 
 function summarizeDesktopIpcInput(input: unknown): Record<string, unknown> | null {
   if (input == null || typeof input !== "object") return null;
@@ -894,9 +955,12 @@ async function runDesktopMainWithTiming(
 
   async function desktopStatusSnapshot(activeDesktop: DesktopRuntime | null): Promise<DesktopStatusSnapshot> {
     const update = await snapshotUpdateForStatus();
+    // A launcher-hosted payload reports its logical payload identity,
+    // not the installed outer it physically runs on.
+    const executablePath = readLauncherHost()?.running.executablePath ?? process.execPath;
     if (activeDesktop == null) {
       return {
-        executablePath: process.execPath,
+        executablePath,
         capabilities: { frameRenderer: true },
         pid: process.pid,
         state: "idle",
@@ -907,7 +971,7 @@ async function runDesktopMainWithTiming(
       };
     }
     return {
-      executablePath: process.execPath,
+      executablePath,
       ...activeDesktop.status(),
       capabilities: { frameRenderer: true },
       ...update,
@@ -925,6 +989,10 @@ async function runDesktopMainWithTiming(
       const startedAt = Date.now();
       let shutdownFailed = false;
       console.info("[open-design desktop] shutdown started");
+      // Closing the window below cancels in-flight requests; their aborts
+      // are expected from here on, in both this filter and the packaged one.
+      markDesktopShutdownInProgress();
+      options.onShutdownStarted?.();
       updateScheduler?.stop("shutdown");
       await updater.recordLifecycle?.({ stage: "shutdown_started", outcome: "started" });
       // Stop the request-producing renderer before retiring its web/daemon
@@ -1054,7 +1122,7 @@ async function runDesktopMainWithTiming(
     // (after a daemon restart, or after a missed startup window). The
     // runtime then mints a FRESH token (new nonce + new exp — replay
     // protection still works) and POSTs once more.
-    registerDesktopAuthWithDaemon: () => options.registerDesktopAuth(desktopAuthSecret),
+    registerDesktopAuthWithDaemon: () => options.registerDesktopAuth(desktopAuthSecret, { retry: true }),
     rendererLogPath,
     // Mark "reached running" only when the window is ACTUALLY revealed (web app
     // mounted + shown), not when createDesktopRuntime returns — it starts async
@@ -1234,19 +1302,7 @@ if (isDirectEntry()) {
               return null;
             }
           },
-          registerDesktopAuth: async (secret) => {
-            try {
-              const result = await client.invoke<RegisterDesktopAuthResult>(
-                APP_KEYS.DAEMON,
-                SIDECAR_MESSAGES.REGISTER_DESKTOP_AUTH,
-                { secret: secret.toString("base64") },
-                { timeoutMs: REGISTER_DESKTOP_AUTH_TIMEOUT_MS },
-              );
-              return result.accepted === true;
-            } catch {
-              return false;
-            }
-          },
+          registerDesktopAuth: (secret, authOptions) => registerDesktopAuthWithDaemon(client, secret, authOptions),
         });
         runtimeHandle = started;
         return started;
