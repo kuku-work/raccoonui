@@ -3633,7 +3633,9 @@ function AppInner() {
           ...(optimisticConversationId ? { conversationId: optimisticConversationId } : {}),
           name: input.name,
           // RACCOONUI-PATCH: slug-based project id for per-project git workflow — 2026-06-12
-          id: input.id,
+          // Only override when a slug was supplied; an unconditional `id: input.id` would clobber
+          // upstream's optimistic project id with undefined (broke Home auto-send handoff).
+          ...(input.id ? { id: input.id } : {}),
           skillId: input.skillId,
           ...(input.skillCatalogScope
             ? { skillCatalogScope: input.skillCatalogScope }
